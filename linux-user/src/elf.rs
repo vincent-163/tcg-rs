@@ -11,6 +11,7 @@ const EV_CURRENT: u8 = 1;
 pub const ET_EXEC: u16 = 2;
 
 // Machine types
+pub const EM_AARCH64: u16 = 183;
 pub const EM_RISCV: u16 = 243;
 
 // Program header types
@@ -57,7 +58,7 @@ impl fmt::Display for ElfError {
                 write!(f, "not little-endian")
             }
             Self::UnsupportedMachine => {
-                write!(f, "not RISC-V")
+                write!(f, "unsupported machine type")
             }
             Self::UnsupportedType => {
                 write!(f, "not ET_EXEC")
@@ -119,6 +120,10 @@ impl Elf64Ehdr {
     }
 
     pub fn validate_riscv64(&self) -> Result<(), ElfError> {
+        self.validate(EM_RISCV)
+    }
+
+    pub fn validate(&self, machine: u16) -> Result<(), ElfError> {
         if self.e_ident[0..4] != ELF_MAGIC {
             return Err(ElfError::InvalidMagic);
         }
@@ -131,7 +136,7 @@ impl Elf64Ehdr {
         if self.e_ident[6] != EV_CURRENT {
             return Err(ElfError::InvalidMagic);
         }
-        if self.e_machine != EM_RISCV {
+        if self.e_machine != machine {
             return Err(ElfError::UnsupportedMachine);
         }
         if self.e_type != ET_EXEC {

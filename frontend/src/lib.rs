@@ -3,6 +3,7 @@
 //! Provides the generic translation framework (`TranslatorOps` trait
 //! and `translator_loop`) plus architecture-specific decoders.
 
+pub mod aarch64;
 pub mod riscv;
 
 use tcg_core::Context;

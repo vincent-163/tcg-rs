@@ -11,6 +11,7 @@ use tcg_frontend::riscv::cpu::{RiscvCpu, NUM_GPRS};
 use tcg_frontend::riscv::ext::RiscvCfg;
 use tcg_frontend::riscv::{RiscvDisasContext, RiscvTranslator};
 use tcg_frontend::{translator_loop, DisasJumpType, TranslatorOps};
+use tcg_linux_user::elf::EM_RISCV;
 use tcg_linux_user::guest_space::GuestSpace;
 use tcg_linux_user::loader::{load_elf, ElfInfo};
 use tcg_linux_user::syscall::{handle_syscall, SyscallResult};
@@ -83,9 +84,14 @@ fn main() {
 
     // Load ELF
     let mut space = GuestSpace::new().expect("failed to create guest space");
-    let info: ElfInfo =
-        load_elf(std::path::Path::new(elf_path), &mut space, &guest_argv, &[])
-            .expect("failed to load ELF");
+    let info: ElfInfo = load_elf(
+        std::path::Path::new(elf_path),
+        &mut space,
+        &guest_argv,
+        &[],
+        EM_RISCV,
+    )
+    .expect("failed to load ELF");
 
     // Set up CPU
     let mut lcpu = LinuxCpu {
