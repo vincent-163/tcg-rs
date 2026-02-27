@@ -7,6 +7,10 @@ edition = "2021"
 name = "tcg-riscv64"
 path = "src/main.rs"
 
+[[bin]]
+name = "tcg-aarch64"
+path = "src/main_aarch64.rs"
+
 [dependencies]
 libc = "0.2"
 tcg-core = { path = "../core" }

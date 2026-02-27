@@ -1,0 +1,229 @@
+#
+# AArch64 A64 instruction decode patterns.
+#
+# Minimum set for CoreMark. All instructions are 32-bit fixed-width.
+#
+
+# Fields
+%rd        0:5
+%rn        5:5
+%rm       16:5
+%ra       10:5
+%imm12    10:12
+%imm16     5:16
+%hw       21:2
+%cond      0:4
+%imm19     5:s19
+%imm26     0:s26
+%sf       31:1
+%sf30     30:1
+%shift    22:2
+%option   13:3
+%imm9     12:s9
+%imm7     15:s7
+%opc_lo   29:2
+%immr     16:6
+%imms     10:6
+%nbit     22:1
+
+# Argument sets
+&ri        rd imm
+&rri       rd rn imm
+&rri_s     rd rn imm sf
+&rri_sh    rd rn imm sf shift
+&rrr       rd rn rm
+&rrr_s     rd rn rm sf
+&rr_s      rd rn sf
+&ri16      rd imm hw sf
+&pcrel     rd imm
+&branch    imm
+&br        rn
+&bcond     imm cond
+&cb        rn imm sf
+&tb        rn imm sf
+&ldst_imm  rd rn imm sf opc_lo
+&ldst_reg  rd rn rm sf opc_lo option shift
+&ldst_lit  rd imm sf opc_lo
+&ldst_pair rd rn ra imm sf opc_lo
+&logic_imm rd rn immr imms sf nbit
+&rrr_sf    rd rn rm sf
+&rrrr_s    rd rn rm ra sf
+&shift_reg rd rn rm sf shift
+&ext_reg   rd rn rm sf option imm
+&sys       rd imm
+&csel      rd rn rm cond sf
+&empty
+
+# Formats
+@rri_sh    . .. ..... .. ............ ..... .....  &rri_sh    sf=%sf shift=%shift imm=%imm12 %rn %rd
+@ri16      . .. ...... .. ................ .....   &ri16      sf=%sf hw=%hw imm=%imm16 %rd
+@pcrel     . .. ..... ................... .....    &pcrel     %rd
+@branch    . ..... ..........................      &branch
+@br        ....... ..... ..... ..... ..... .....  &br        %rn
+@bcond     ........ ................... . ....     &bcond     imm=%imm19 %cond
+@cb        . ...... . ................... .....    &cb        sf=%sf imm=%imm19 %rn
+@rrr_s     . .. ..... ... ..... ...... ..... .....  &rrr_s     sf=%sf %rm %rn %rd
+@rr_s      . .. ..... ... ..... ...... ..... .....  &rr_s      sf=%sf %rn %rd
+@logic_imm . .. ...... . ...... ...... ..... ..... &logic_imm sf=%sf nbit=%nbit immr=%immr imms=%imms %rn %rd
+@shift_reg . .. ..... .. . ..... ...... ..... ..... &shift_reg sf=%sf shift=%shift %rm %rn %rd
+@ext_reg   . .. ..... .. . ..... ... ... ..... ..... &ext_reg sf=%sf %rm option=%option %rn %rd
+@csel      . .. ..... .. . ..... .... .. ..... ..... &csel    sf=%sf %rm cond=%cond %rn %rd
+@rrrr_s    . .. ..... ... ..... . ..... ..... ..... &rrrr_s   sf=%sf %rm %ra %rn %rd
+
+# *** Data processing - immediate - Add/Sub ***
+ADD_i       . 00 10001 .. ............ ..... .....  @rri_sh
+SUB_i       . 10 10001 .. ............ ..... .....  @rri_sh
+ADDS_i      . 01 10001 .. ............ ..... .....  @rri_sh
+SUBS_i      . 11 10001 .. ............ ..... .....  @rri_sh
+
+# *** Data processing - immediate - Logical ***
+AND_i       . 00 100100 . ...... ...... ..... ..... @logic_imm
+ORR_i       . 01 100100 . ...... ...... ..... ..... @logic_imm
+EOR_i       . 10 100100 . ...... ...... ..... ..... @logic_imm
+ANDS_i      . 11 100100 . ...... ...... ..... ..... @logic_imm
+
+# *** Data processing - immediate - Move wide ***
+MOVN        . 00 100101 .. ................ .....   @ri16
+MOVZ        . 10 100101 .. ................ .....   @ri16
+MOVK        . 11 100101 .. ................ .....   @ri16
+
+# *** Data processing - immediate - PC-rel ***
+ADR         0 .. 10000 ................... .....    @pcrel
+ADRP        1 .. 10000 ................... .....    @pcrel
+
+# *** Data processing - immediate - Bitfield ***
+SBFM        . 00 100110 . ...... ...... ..... ..... @logic_imm
+BFM         . 01 100110 . ...... ...... ..... ..... @logic_imm
+UBFM        . 10 100110 . ...... ...... ..... ..... @logic_imm
+
+# *** Branches ***
+B           0 00101 ..........................     @branch
+BL          1 00101 ..........................     @branch
+BR          1101011 0000 11111 000000 ..... 00000  @br
+BLR         1101011 0001 11111 000000 ..... 00000  @br
+RET         1101011 0010 11111 000000 ..... 00000  @br
+B_cond      01010100 ................... 0 ....    @bcond
+CBZ         . 011010 0 ................... .....   @cb
+CBNZ        . 011010 1 ................... .....   @cb
+
+# *** Test and branch ***
+TBZ         . 011011 0 ..... .............. .....  &tb sf=%sf imm=0 %rn
+TBNZ        . 011011 1 ..... .............. .....  &tb sf=%sf imm=0 %rn
+
+# *** Data processing - register - Add/Sub (shifted) ***
+ADD_r       . 00 01011 .. 0 ..... ...... ..... ..... @shift_reg
+SUB_r       . 10 01011 .. 0 ..... ...... ..... ..... @shift_reg
+ADDS_r      . 01 01011 .. 0 ..... ...... ..... ..... @shift_reg
+SUBS_r      . 11 01011 .. 0 ..... ...... ..... ..... @shift_reg
+
+# *** Data processing - register - Add/Sub (extended) ***
+ADD_ext     . 00 01011 00 1 ..... ... ... ..... ..... @ext_reg
+SUB_ext     . 10 01011 00 1 ..... ... ... ..... ..... @ext_reg
+ADDS_ext    . 01 01011 00 1 ..... ... ... ..... ..... @ext_reg
+SUBS_ext    . 11 01011 00 1 ..... ... ... ..... ..... @ext_reg
+
+# *** Data processing - register - Logical (shifted) ***
+AND_r       . 00 01010 .. 0 ..... ...... ..... ..... @shift_reg
+BIC_r       . 00 01010 .. 1 ..... ...... ..... ..... @shift_reg
+ORR_r       . 01 01010 .. 0 ..... ...... ..... ..... @shift_reg
+ORN_r       . 01 01010 .. 1 ..... ...... ..... ..... @shift_reg
+EOR_r       . 10 01010 .. 0 ..... ...... ..... ..... @shift_reg
+EON_r       . 10 01010 .. 1 ..... ...... ..... ..... @shift_reg
+ANDS_r      . 11 01010 .. 0 ..... ...... ..... ..... @shift_reg
+BICS_r      . 11 01010 .. 1 ..... ...... ..... ..... @shift_reg
+
+# *** Data processing - register - Multiply ***
+MADD        . 00 11011 000 ..... 0 ..... ..... ..... @rrrr_s
+MSUB        . 00 11011 000 ..... 1 ..... ..... ..... @rrrr_s
+
+# *** Data processing - register - Div ***
+UDIV        . 00 11010 110 ..... 00001 0 ..... ..... @rrr_s
+SDIV        . 00 11010 110 ..... 00001 1 ..... ..... @rrr_s
+
+# *** Data processing - register - Shift ***
+LSLV        . 00 11010 110 ..... 0010 00 ..... ..... @rrr_s
+LSRV        . 00 11010 110 ..... 0010 01 ..... ..... @rrr_s
+ASRV        . 00 11010 110 ..... 0010 10 ..... ..... @rrr_s
+RORV        . 00 11010 110 ..... 0010 11 ..... ..... @rrr_s
+
+# *** Bit manipulation ***
+CLZ         . 10 11010 110 00000 00010 0 ..... ..... @rr_s
+RBIT        . 10 11010 110 00000 00000 0 ..... ..... @rr_s
+REV         . 10 11010 110 00000 00001 0 ..... ..... @rr_s
+REV16       . 10 11010 110 00000 00000 1 ..... ..... @rr_s
+REV32       1 10 11010 110 00000 00001 0 ..... .....  @rr_s
+
+# *** Conditional select ***
+CSEL        . 00 11010 100 ..... .... 00 ..... ..... @csel
+CSINC       . 00 11010 100 ..... .... 01 ..... ..... @csel
+CSINV       . 10 11010 100 ..... .... 00 ..... ..... @csel
+CSNEG       . 10 11010 100 ..... .... 01 ..... ..... @csel
+
+# *** Loads - unsigned immediate offset ***
+LDR_i       1 . 11 1001 01 ............ ..... ..... &ldst_imm sf=%sf30 opc_lo=0 imm=%imm12 %rn %rd
+LDRB_i      00 11 1001 01 ............ ..... .....  &ldst_imm sf=0 opc_lo=0 imm=%imm12 %rn %rd
+LDRH_i      01 11 1001 01 ............ ..... .....  &ldst_imm sf=0 opc_lo=1 imm=%imm12 %rn %rd
+LDRSB_i     00 11 1001 1 . ............ ..... ..... &ldst_imm sf=%sf opc_lo=2 imm=%imm12 %rn %rd
+LDRSH_i     01 11 1001 1 . ............ ..... ..... &ldst_imm sf=%sf opc_lo=3 imm=%imm12 %rn %rd
+LDRSW_i     10 11 1001 10 ............ ..... .....  &ldst_imm sf=1 opc_lo=2 imm=%imm12 %rn %rd
+
+# *** Stores - unsigned immediate offset ***
+STR_i       1 . 11 1001 00 ............ ..... ..... &ldst_imm sf=%sf30 opc_lo=0 imm=%imm12 %rn %rd
+STRB_i      00 11 1001 00 ............ ..... .....  &ldst_imm sf=0 opc_lo=0 imm=%imm12 %rn %rd
+STRH_i      01 11 1001 00 ............ ..... .....  &ldst_imm sf=0 opc_lo=1 imm=%imm12 %rn %rd
+
+# *** Loads - register offset ***
+LDR_r       1 . 11 1000 01 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=%sf30 opc_lo=0 %rm option=%option shift=0 %rn %rd
+LDRB_r      00 11 1000 01 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=0 opc_lo=0 %rm option=%option shift=0 %rn %rd
+LDRH_r      01 11 1000 01 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=0 %rn %rd
+
+# *** Stores - register offset ***
+STR_r       1 . 11 1000 00 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=%sf30 opc_lo=0 %rm option=%option shift=0 %rn %rd
+STRB_r      00 11 1000 00 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=0 opc_lo=0 %rm option=%option shift=0 %rn %rd
+STRH_r      01 11 1000 00 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=0 %rn %rd
+
+# *** Loads - PC-relative literal ***
+LDR_lit     . 0 011 000 ................... .....  &ldst_lit sf=%sf opc_lo=0 imm=%imm19 %rd
+LDRSW_lit   10 011 000 ................... .....   &ldst_lit sf=1 opc_lo=2 imm=%imm19 %rd
+
+# *** Load/Store - pre-index ***
+LDR_pre     1 . 11 1000 01 0 ......... 11 ..... ..... \
+            &ldst_imm sf=%sf30 opc_lo=4 imm=%imm9 %rn %rd
+STR_pre     1 . 11 1000 00 0 ......... 11 ..... ..... \
+            &ldst_imm sf=%sf30 opc_lo=4 imm=%imm9 %rn %rd
+
+# *** Load/Store - post-index ***
+LDR_post    1 . 11 1000 01 0 ......... 01 ..... ..... \
+            &ldst_imm sf=%sf30 opc_lo=5 imm=%imm9 %rn %rd
+STR_post    1 . 11 1000 00 0 ......... 01 ..... ..... \
+            &ldst_imm sf=%sf30 opc_lo=5 imm=%imm9 %rn %rd
+
+# *** Load/Store pair - signed offset ***
+LDP         1 . 10 1001 01 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf30 opc_lo=0 imm=%imm7 %ra %rn %rd
+STP         1 . 10 1001 00 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf30 opc_lo=0 imm=%imm7 %ra %rn %rd
+
+# *** Load/Store pair - pre-index ***
+LDP_pre     1 . 10 1001 11 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf30 opc_lo=1 imm=%imm7 %ra %rn %rd
+STP_pre     1 . 10 1001 10 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf30 opc_lo=1 imm=%imm7 %ra %rn %rd
+
+# *** Load/Store pair - post-index ***
+LDP_post    1 . 10 1000 11 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf30 opc_lo=2 imm=%imm7 %ra %rn %rd
+STP_post    1 . 10 1000 10 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf30 opc_lo=2 imm=%imm7 %ra %rn %rd
+
+# *** System ***
+NOP         11010101 0000 0011 0010 0000 000 11111
+SVC         11010100 000 ................ 00001    &sys rd=0 imm=%imm16
+MRS         1101010100 1 1 ............... .....  &sys %rd imm=0
+MSR         1101010100 0 1 ............... .....  &sys %rd imm=0

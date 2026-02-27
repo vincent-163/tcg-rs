@@ -66,16 +66,17 @@ fn elf_to_prot(flags: u32) -> i32 {
     prot
 }
 
-/// Load a static RISC-V 64-bit ELF executable.
+/// Load a static 64-bit ELF executable.
 pub fn load_elf(
     path: &Path,
     space: &mut GuestSpace,
     argv: &[&str],
     envp: &[&str],
+    machine: u16,
 ) -> Result<ElfInfo, LoadError> {
     let data = fs::read(path)?;
     let ehdr = Elf64Ehdr::from_bytes(&data)?;
-    ehdr.validate_riscv64()?;
+    ehdr.validate(machine)?;
     let phdrs = ehdr.program_headers(&data)?;
 
     let mut brk: u64 = 0;
