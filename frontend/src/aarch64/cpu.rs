@@ -4,6 +4,9 @@
 /// X31 is not a GPR — SP is a separate register.
 pub const NUM_XREGS: usize = 31;
 
+/// Number of SIMD/FP registers (V0-V31), stored as lo/hi u64 pairs.
+pub const NUM_VREGS: usize = 32;
+
 /// AArch64 CPU architectural state (user-mode).
 ///
 /// Layout must be `#[repr(C)]` so that TCG global temps can
@@ -26,6 +29,8 @@ pub struct Aarch64Cpu {
     pub fpsr: u64,
     /// Thread pointer (user-mode TLS, TPIDR_EL0).
     pub tpidr_el0: u64,
+    /// SIMD/FP registers V0-V31 as (lo, hi) u64 pairs.
+    pub vregs: [u64; NUM_VREGS * 2],
 }
 
 // Field offsets (bytes) from the start of Aarch64Cpu.
@@ -57,6 +62,19 @@ pub const FPSR_OFFSET: i64 = FPCR_OFFSET + 8; // 288
 /// Byte offset of the `tpidr_el0` field.
 pub const TPIDR_EL0_OFFSET: i64 = FPSR_OFFSET + 8; // 296
 
+/// Byte offset of `vregs[i]` low half: 304 + i*16.
+pub const VREGS_OFFSET: i64 = TPIDR_EL0_OFFSET + 8; // 304
+
+/// Byte offset of vreg i low half.
+pub const fn vreg_lo_offset(i: usize) -> i64 {
+    VREGS_OFFSET + (i as i64) * 16
+}
+
+/// Byte offset of vreg i high half.
+pub const fn vreg_hi_offset(i: usize) -> i64 {
+    VREGS_OFFSET + (i as i64) * 16 + 8
+}
+
 impl Aarch64Cpu {
     pub fn new() -> Self {
         Self {
@@ -68,6 +86,7 @@ impl Aarch64Cpu {
             fpcr: 0,
             fpsr: 0,
             tpidr_el0: 0,
+            vregs: [0u64; NUM_VREGS * 2],
         }
     }
 }

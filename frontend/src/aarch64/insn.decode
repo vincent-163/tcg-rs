@@ -189,8 +189,28 @@ STRH_r      01 11 1000 00 1 ..... ... . 10 ..... ..... \
             &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=0 %rn %rd
 
 # *** Loads - PC-relative literal ***
-LDR_lit     . 0 011 000 ................... .....  &ldst_lit sf=%sf opc_lo=0 imm=%imm19 %rd
+LDR_lit     . . 011 000 ................... .....  &ldst_lit sf=%sf30 opc_lo=0 imm=%imm19 %rd
 LDRSW_lit   10 011 000 ................... .....   &ldst_lit sf=1 opc_lo=2 imm=%imm19 %rd
+
+# *** Load/Store - unscaled immediate (LDUR/STUR) ***
+LDUR        1 . 11 1000 01 0 ......... 00 ..... ..... \
+            &ldst_imm sf=%sf30 opc_lo=6 imm=%imm9 %rn %rd
+STUR        1 . 11 1000 00 0 ......... 00 ..... ..... \
+            &ldst_imm sf=%sf30 opc_lo=6 imm=%imm9 %rn %rd
+LDURB       00 11 1000 01 0 ......... 00 ..... ..... \
+            &ldst_imm sf=0 opc_lo=6 imm=%imm9 %rn %rd
+STURB       00 11 1000 00 0 ......... 00 ..... ..... \
+            &ldst_imm sf=0 opc_lo=6 imm=%imm9 %rn %rd
+LDURH       01 11 1000 01 0 ......... 00 ..... ..... \
+            &ldst_imm sf=0 opc_lo=7 imm=%imm9 %rn %rd
+STURH       01 11 1000 00 0 ......... 00 ..... ..... \
+            &ldst_imm sf=0 opc_lo=7 imm=%imm9 %rn %rd
+LDURSW      10 11 1000 10 0 ......... 00 ..... ..... \
+            &ldst_imm sf=1 opc_lo=8 imm=%imm9 %rn %rd
+LDURSH      01 11 1000 1 . 0 ......... 00 ..... ..... \
+            &ldst_imm sf=%sf opc_lo=9 imm=%imm9 %rn %rd
+LDURSB      00 11 1000 1 . 0 ......... 00 ..... ..... \
+            &ldst_imm sf=%sf opc_lo=10 imm=%imm9 %rn %rd
 
 # *** Load/Store - pre-index ***
 LDR_pre     1 . 11 1000 01 0 ......... 11 ..... ..... \
@@ -205,25 +225,45 @@ STR_post    1 . 11 1000 00 0 ......... 01 ..... ..... \
             &ldst_imm sf=%sf30 opc_lo=5 imm=%imm9 %rn %rd
 
 # *** Load/Store pair - signed offset ***
-LDP         1 . 10 1001 01 ....... ..... ..... ..... \
-            &ldst_pair sf=%sf30 opc_lo=0 imm=%imm7 %ra %rn %rd
-STP         1 . 10 1001 00 ....... ..... ..... ..... \
-            &ldst_pair sf=%sf30 opc_lo=0 imm=%imm7 %ra %rn %rd
+LDP         . . 10 1001 01 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf opc_lo=0 imm=%imm7 %ra %rn %rd
+STP         . . 10 1001 00 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf opc_lo=0 imm=%imm7 %ra %rn %rd
 
 # *** Load/Store pair - pre-index ***
-LDP_pre     1 . 10 1001 11 ....... ..... ..... ..... \
-            &ldst_pair sf=%sf30 opc_lo=1 imm=%imm7 %ra %rn %rd
-STP_pre     1 . 10 1001 10 ....... ..... ..... ..... \
-            &ldst_pair sf=%sf30 opc_lo=1 imm=%imm7 %ra %rn %rd
+LDP_pre     . . 10 1001 11 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf opc_lo=1 imm=%imm7 %ra %rn %rd
+STP_pre     . . 10 1001 10 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf opc_lo=1 imm=%imm7 %ra %rn %rd
 
 # *** Load/Store pair - post-index ***
-LDP_post    1 . 10 1000 11 ....... ..... ..... ..... \
-            &ldst_pair sf=%sf30 opc_lo=2 imm=%imm7 %ra %rn %rd
-STP_post    1 . 10 1000 10 ....... ..... ..... ..... \
-            &ldst_pair sf=%sf30 opc_lo=2 imm=%imm7 %ra %rn %rd
+LDP_post    . . 10 1000 11 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf opc_lo=2 imm=%imm7 %ra %rn %rd
+STP_post    . . 10 1000 10 ....... ..... ..... ..... \
+            &ldst_pair sf=%sf opc_lo=2 imm=%imm7 %ra %rn %rd
 
 # *** System ***
 NOP         11010101 0000 0011 0010 0000 000 11111
 SVC         11010100 000 ................ 00001    &sys rd=0 imm=%imm16
 MRS         1101010100 1 1 ............... .....  &sys %rd imm=0
 MSR         1101010100 0 1 ............... .....  &sys %rd imm=0
+
+# *** Conditional compare ***
+CCMP        . . 11010010 ..... .... 0 . ..... 0 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
+CCMN        . . 11010010 ..... .... 1 . ..... 0 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
+CCMP_i      . . 11010010 ..... .... 0 . ..... 1 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
+CCMN_i      . . 11010010 ..... .... 1 . ..... 1 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
+
+# *** Extract ***
+EXTR        . 00 100111 . 0 ..... ...... ..... ..... &rrr_sf sf=%sf %rm %rn %rd
+
+# *** Load-Acquire / Store-Release ***
+LDAR        1 . 00 1000 11 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=11 imm=0 rn=%rn rd=%rd
+LDAXR       1 . 00 1000 01 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=12 imm=0 rn=%rn rd=%rd
+STLR        1 . 00 1000 10 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=13 imm=0 rn=%rn rd=%rd
+
+# *** Barriers ***
+DMB         11010101 0000 0011 0011 .... 1 01 11111  &sys rd=0 imm=0
+
+# *** BLR ***
+# (already defined above)

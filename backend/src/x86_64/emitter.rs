@@ -1175,6 +1175,8 @@ pub struct X86_64CodeGen {
     pub epilogue_return_zero_offset: usize,
     pub tb_ret_offset: usize,
     pub code_gen_start: usize,
+    /// Byte offset of `guest_base` within the CPU struct.
+    pub guest_base_offset: i32,
     /// Recorded (jmp_offset, reset_offset) for each goto_tb.
     pub(crate) goto_tb_info: Mutex<Vec<(usize, usize)>>,
 }
@@ -1186,6 +1188,7 @@ impl X86_64CodeGen {
             epilogue_return_zero_offset: 0,
             tb_ret_offset: 0,
             code_gen_start: 0,
+            guest_base_offset: 520, // default: RISC-V layout
             goto_tb_info: Mutex::new(Vec::new()),
         }
     }

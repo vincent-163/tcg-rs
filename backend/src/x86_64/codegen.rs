@@ -19,13 +19,13 @@ impl HostCodeGen for X86_64CodeGen {
         }
         // mov TCG_AREG0 (rbp), rdi
         emit_mov_rr(buf, true, Reg::Rbp, CALL_ARG_REGS[0]);
-        // Load guest_base into R14: mov r14, [rbp+520]
+        // Load guest_base into R14: mov r14, [rbp+offset]
         emit_load(
             buf,
             true,
             Reg::R14,
             Reg::Rbp,
-            520, // GUEST_BASE_OFFSET
+            self.guest_base_offset,
         );
         // sub rsp, STACK_ADDEND
         emit_arith_ri(buf, ArithOp::Sub, true, Reg::Rsp, STACK_ADDEND as i32);
