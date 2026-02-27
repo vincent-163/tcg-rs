@@ -9,6 +9,7 @@ use crate::{DisasContextBase, DisasJumpType, TranslatorOps};
 use cpu::{
     xreg_offset, NZCV_OFFSET, NUM_XREGS,
     PC_OFFSET, SP_OFFSET,
+    vreg_lo_offset, vreg_hi_offset,
 };
 use tcg_core::tb::{EXCP_UNDEF, TB_EXIT_IDX0};
 use tcg_core::{Context, TempIdx, Type};

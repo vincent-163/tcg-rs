@@ -708,9 +708,13 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_ADR(
         &mut self, ir: &mut Context, a: &ArgsPcrel,
     ) -> bool {
-        // imm field from decoder is the full signed offset
+        // ADR immediate: immhi = bits[23:5], immlo = bits[30:29]
+        let insn = self.opcode;
+        let immlo = ((insn >> 29) & 0x3) as i64;
+        let immhi = (((insn >> 5) & 0x7ffff) as i32) as i64;
+        let imm = (immhi << 2) | immlo;
         let target =
-            (self.base.pc_next as i64 + a.imm) as u64;
+            (self.base.pc_next as i64 + imm) as u64;
         let c = ir.new_const(Type::I64, target);
         self.write_xreg(ir, a.rd, c);
         true
@@ -719,8 +723,13 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_ADRP(
         &mut self, ir: &mut Context, a: &ArgsPcrel,
     ) -> bool {
+        // ADRP immediate: immhi = bits[23:5], immlo = bits[30:29]
+        let insn = self.opcode;
+        let immlo = ((insn >> 29) & 0x3) as i64;
+        let immhi = (((insn >> 5) & 0x7ffff) as i32) as i64;
+        let imm = (immhi << 2) | immlo;
         let base = self.base.pc_next & !0xfff;
-        let offset = a.imm << 12;
+        let offset = imm << 12;
         let target = (base as i64 + offset) as u64;
         let c = ir.new_const(Type::I64, target);
         self.write_xreg(ir, a.rd, c);
@@ -832,20 +841,27 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Branches --
 
     fn trans_B(
-        &mut self, ir: &mut Context, a: &ArgsBranch,
+        &mut self, ir: &mut Context, _a: &ArgsBranch,
     ) -> bool {
+        // imm26 = bits[25:0], sign-extended, *4
+        let insn = self.opcode;
+        let imm26 = (insn & 0x03ff_ffff) as i32;
+        let imm = ((imm26 << 6) >> 6) as i64; // sign-extend
         let target =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+            (self.base.pc_next as i64 + imm * 4) as u64;
         self.gen_direct_branch(ir, target, 0);
         self.base.is_jmp = DisasJumpType::NoReturn;
         true
     }
 
     fn trans_BL(
-        &mut self, ir: &mut Context, a: &ArgsBranch,
+        &mut self, ir: &mut Context, _a: &ArgsBranch,
     ) -> bool {
+        let insn = self.opcode;
+        let imm26 = (insn & 0x03ff_ffff) as i32;
+        let imm = ((imm26 << 6) >> 6) as i64;
         let target =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+            (self.base.pc_next as i64 + imm * 4) as u64;
         let link = self.base.pc_next + 4;
         let c = ir.new_const(Type::I64, link);
         self.write_xreg(ir, 30, c);
@@ -2244,5 +2260,319 @@ impl Decode<Context> for Aarch64DisasContext {
             return true;
         }
         false
+    }
+
+    // -- Unscaled loads/stores (LDUR/STUR) --
+
+    fn trans_LDUR(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, memop.bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_STUR(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let val = self.read_xreg(ir, a.rd);
+        ir.gen_qemu_st(
+            Type::I64, val, addr, memop.bits() as u32,
+        );
+        true
+    }
+
+    fn trans_LDURB(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, MemOp::ub().bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_STURB(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let val = self.read_xreg(ir, a.rd);
+        ir.gen_qemu_st(
+            Type::I64, val, addr, MemOp::ub().bits() as u32,
+        );
+        true
+    }
+    fn trans_LDURH(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, MemOp::uw().bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_STURH(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let val = self.read_xreg(ir, a.rd);
+        ir.gen_qemu_st(
+            Type::I64, val, addr, MemOp::uw().bits() as u32,
+        );
+        true
+    }
+
+    fn trans_LDURSW(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, MemOp::sl().bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_LDURSH(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, MemOp::sw().bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_LDURSB(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let addr = self.compute_addr_imm(ir, a.rn, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, MemOp::sb().bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    // -- Conditional compare (CCMP/CCMN) --
+
+    fn trans_CCMP(
+        &mut self, ir: &mut Context, a: &ArgsCsel,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
+        let nzcv_imm = (self.opcode & 0xf) as u64;
+        let cond_val = self.eval_cond(ir, a.cond);
+        let zero = ir.new_const(Type::I64, 0);
+        let taken = ir.new_label();
+        let done = ir.new_label();
+        ir.gen_brcond(
+            Type::I64, cond_val, zero, Cond::Ne, taken,
+        );
+        // Condition false: set NZCV to immediate
+        let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
+        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        ir.gen_br(done);
+        // Condition true: do CMP (SUBS discarding result)
+        ir.gen_set_label(taken);
+        let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
+        let b = self.read_xreg(ir, a.rm);
+        let b = Self::trunc32(ir, b, sf);
+        let d = ir.new_temp(ty);
+        ir.gen_sub(ty, d, src, b);
+        self.gen_nzcv_add_sub(ir, src, b, d, sf, true);
+        ir.gen_set_label(done);
+        true
+    }
+
+    fn trans_CCMN(
+        &mut self, ir: &mut Context, a: &ArgsCsel,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
+        let nzcv_imm = (self.opcode & 0xf) as u64;
+        let cond_val = self.eval_cond(ir, a.cond);
+        let zero = ir.new_const(Type::I64, 0);
+        let taken = ir.new_label();
+        let done = ir.new_label();
+        ir.gen_brcond(
+            Type::I64, cond_val, zero, Cond::Ne, taken,
+        );
+        let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
+        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        ir.gen_br(done);
+        ir.gen_set_label(taken);
+        let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
+        let b = self.read_xreg(ir, a.rm);
+        let b = Self::trunc32(ir, b, sf);
+        let d = ir.new_temp(ty);
+        ir.gen_add(ty, d, src, b);
+        self.gen_nzcv_add_sub(ir, src, b, d, sf, false);
+        ir.gen_set_label(done);
+        true
+    }
+
+    fn trans_CCMP_i(
+        &mut self, ir: &mut Context, a: &ArgsCsel,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
+        let nzcv_imm = (self.opcode & 0xf) as u64;
+        let imm5 = a.rm as u64; // rm field holds imm5
+        let cond_val = self.eval_cond(ir, a.cond);
+        let zero = ir.new_const(Type::I64, 0);
+        let taken = ir.new_label();
+        let done = ir.new_label();
+        ir.gen_brcond(
+            Type::I64, cond_val, zero, Cond::Ne, taken,
+        );
+        let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
+        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        ir.gen_br(done);
+        ir.gen_set_label(taken);
+        let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
+        let b = ir.new_const(ty, imm5);
+        let d = ir.new_temp(ty);
+        ir.gen_sub(ty, d, src, b);
+        self.gen_nzcv_add_sub(ir, src, b, d, sf, true);
+        ir.gen_set_label(done);
+        true
+    }
+
+    fn trans_CCMN_i(
+        &mut self, ir: &mut Context, a: &ArgsCsel,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
+        let nzcv_imm = (self.opcode & 0xf) as u64;
+        let imm5 = a.rm as u64;
+        let cond_val = self.eval_cond(ir, a.cond);
+        let zero = ir.new_const(Type::I64, 0);
+        let taken = ir.new_label();
+        let done = ir.new_label();
+        ir.gen_brcond(
+            Type::I64, cond_val, zero, Cond::Ne, taken,
+        );
+        let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
+        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        ir.gen_br(done);
+        ir.gen_set_label(taken);
+        let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
+        let b = ir.new_const(ty, imm5);
+        let d = ir.new_temp(ty);
+        ir.gen_add(ty, d, src, b);
+        self.gen_nzcv_add_sub(ir, src, b, d, sf, false);
+        ir.gen_set_label(done);
+        true
+    }
+
+    // -- Extract (EXTR) --
+
+    fn trans_EXTR(
+        &mut self, ir: &mut Context, a: &ArgsRrrSf,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
+        let imms = ((self.opcode >> 10) & 0x3f) as u64;
+        let src1 = self.read_xreg(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
+        let src2 = self.read_xreg(ir, a.rm);
+        let src2 = Self::trunc32(ir, src2, sf);
+        if a.rn == a.rm {
+            // ROR alias
+            let sh = ir.new_const(ty, imms);
+            let d = ir.new_temp(ty);
+            ir.gen_rotr(ty, d, src1, sh);
+            self.write_xreg_sz(ir, a.rd, d, sf);
+        } else if imms == 0 {
+            self.write_xreg_sz(ir, a.rd, src1, sf);
+        } else {
+            let bits = if sf { 64u64 } else { 32 };
+            let sh_lo = ir.new_const(ty, imms);
+            let sh_hi = ir.new_const(ty, bits - imms);
+            let lo = ir.new_temp(ty);
+            ir.gen_shr(ty, lo, src2, sh_lo);
+            let hi = ir.new_temp(ty);
+            ir.gen_shl(ty, hi, src1, sh_hi);
+            let d = ir.new_temp(ty);
+            ir.gen_or(ty, d, hi, lo);
+            self.write_xreg_sz(ir, a.rd, d, sf);
+        }
+        true
+    }
+
+    // -- Load-Acquire / Store-Release --
+
+    fn trans_LDAR(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
+        let addr = self.read_xreg_sp(ir, a.rn);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, memop.bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_LDAXR(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        // Simplified: treat as regular load (no exclusives)
+        let sf = a.sf != 0;
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
+        let addr = self.read_xreg_sp(ir, a.rn);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_qemu_ld(
+            Type::I64, d, addr, memop.bits() as u32,
+        );
+        self.write_xreg(ir, a.rd, d);
+        true
+    }
+
+    fn trans_STLR(
+        &mut self, ir: &mut Context, a: &ArgsLdstImm,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
+        let addr = self.read_xreg_sp(ir, a.rn);
+        let val = self.read_xreg(ir, a.rd);
+        ir.gen_qemu_st(
+            Type::I64, val, addr, memop.bits() as u32,
+        );
+        true
+    }
+
+    // -- Barriers --
+
+    fn trans_DMB(
+        &mut self, _ir: &mut Context, _a: &ArgsSys,
+    ) -> bool {
+        // Single-threaded: barriers are NOPs
+        true
     }
 }

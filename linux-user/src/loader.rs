@@ -243,7 +243,7 @@ fn setup_stack(
     // Align to 16 bytes
     pos &= !15;
 
-    let auxv: [(u64, u64); 8] = [
+    let auxv: [(u64, u64); 10] = [
         (AT_PHDR, phdr_addr),
         (AT_PHENT, 56), // sizeof(Elf64Phdr)
         (AT_PHNUM, phnum as u64),
@@ -251,6 +251,8 @@ fn setup_stack(
         (AT_ENTRY, entry),
         (AT_RANDOM, random_addr),
         (AT_EXECFN, execfn_addr),
+        (AT_HWCAP, 0),  // no NEON/SVE
+        (AT_HWCAP2, 0),
         (AT_NULL, 0),
     ];
 

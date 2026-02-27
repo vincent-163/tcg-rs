@@ -31,6 +31,8 @@ pub const AT_PHNUM: u64 = 5;
 pub const AT_PAGESZ: u64 = 6;
 pub const AT_ENTRY: u64 = 9;
 pub const AT_RANDOM: u64 = 25;
+pub const AT_HWCAP: u64 = 16;
+pub const AT_HWCAP2: u64 = 26;
 pub const AT_EXECFN: u64 = 31;
 
 #[derive(Debug)]

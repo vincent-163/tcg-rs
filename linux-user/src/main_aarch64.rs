@@ -60,6 +60,8 @@ impl GuestCpu for LinuxCpu {
                 d.xregs[i] = TempIdx(1 + i as u32);
             }
             d.pc = TempIdx(1 + NUM_XREGS as u32);
+            d.sp = TempIdx(2 + NUM_XREGS as u32);
+            d.nzcv = TempIdx(3 + NUM_XREGS as u32);
             Aarch64Translator::tb_start(&mut d, ir);
             loop {
                 Aarch64Translator::insn_start(
@@ -130,8 +132,20 @@ fn main() {
 
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
-    let mut env = ExecEnv::new(X86_64CodeGen::new());
+    let show_trace = env::var("TCG_TRACE").is_ok();
+    let mut codegen = X86_64CodeGen::new();
+    codegen.guest_base_offset =
+        tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
+    let mut env = ExecEnv::new(codegen);
+    let mut icount: u64 = 0;
     loop {
+        if show_trace {
+            eprintln!(
+                "[trace] pc={:#x} sp={:#x} i={}",
+                lcpu.cpu.pc, lcpu.cpu.sp, icount,
+            );
+            icount += 1;
+        }
         let reason =
             unsafe { cpu_exec_loop(&mut env, &mut lcpu) };
         match reason {
