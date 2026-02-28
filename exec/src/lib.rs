@@ -99,6 +99,8 @@ pub trait GuestCpu {
 /// State protected by translate_lock.
 pub struct TranslateGuard {
     pub ir_ctx: Context,
+    #[cfg(feature = "llvm")]
+    pub llvm_jit: Option<tcg_backend::llvm::LlvmJit>,
 }
 
 /// Shared across all vCPU threads.
@@ -168,7 +170,11 @@ impl<B: HostCodeGen> ExecEnv<B> {
             code_buf: UnsafeCell::new(code_buf),
             backend,
             code_gen_start,
-            translate_lock: Mutex::new(TranslateGuard { ir_ctx }),
+            translate_lock: Mutex::new(TranslateGuard {
+                ir_ctx,
+                #[cfg(feature = "llvm")]
+                llvm_jit: None,
+            }),
         });
 
         Self {
@@ -178,5 +184,11 @@ impl<B: HostCodeGen> ExecEnv<B> {
                 stats: ExecStats::default(),
             },
         }
+    }
+
+    #[cfg(feature = "llvm")]
+    pub fn enable_llvm(&self) {
+        let mut guard = self.shared.translate_lock.lock().unwrap();
+        guard.llvm_jit = Some(tcg_backend::llvm::LlvmJit::new());
     }
 }

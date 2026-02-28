@@ -130,13 +130,71 @@ fn main() {
             info.brk,
         ) + 0x1000_0000;
 
+    // Install SIGSEGV handler to dump guest state
+    unsafe {
+        unsafe extern "C" fn sigsegv_handler(
+            _sig: i32,
+            _info: *mut libc::siginfo_t,
+            ctx: *mut libc::c_void,
+        ) {
+            let uc = ctx as *const libc::ucontext_t;
+            let mctx = &(*uc).uc_mcontext;
+            let rbp = mctx.gregs[libc::REG_RBP as usize]
+                as *const u64;
+            eprintln!("=== SIGSEGV in JIT code ===");
+            eprintln!(
+                "RIP={:#x} RBP={:#x}",
+                mctx.gregs[libc::REG_RIP as usize],
+                mctx.gregs[libc::REG_RBP as usize],
+            );
+            for i in 0..8usize {
+                let v = *rbp.add(i);
+                eprint!("x{}={:#018x} ", i, v);
+            }
+            eprintln!();
+            for i in 19..21usize {
+                let v = *rbp.add(i);
+                eprint!("x{}={:#018x} ", i, v);
+            }
+            for i in 29..31usize {
+                let v = *rbp.add(i);
+                eprint!("x{}={:#018x} ", i, v);
+            }
+            eprintln!();
+            let pc = *rbp.add(31); // PC at offset 248/8=31
+            let sp = *rbp.add(32); // SP at offset 256/8=32
+            let nzcv = *rbp.add(34); // NZCV at offset 272/8=34
+            eprintln!(
+                "pc={:#018x} sp={:#018x} nzcv={:#018x}",
+                pc, sp, nzcv,
+            );
+            std::process::exit(139);
+        }
+        let mut sa: libc::sigaction =
+            std::mem::zeroed();
+        sa.sa_sigaction =
+            sigsegv_handler as usize;
+        sa.sa_flags =
+            libc::SA_SIGINFO | libc::SA_NODEFER;
+        libc::sigaction(
+            libc::SIGSEGV, &sa, std::ptr::null_mut(),
+        );
+    }
+
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
+
     let show_trace = env::var("TCG_TRACE").is_ok();
     let mut codegen = X86_64CodeGen::new();
     codegen.guest_base_offset =
         tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
-    let mut env = ExecEnv::new(codegen);
+    let env = ExecEnv::new(codegen);
+    #[cfg(feature = "llvm")]
+    if std::env::var("TCG_LLVM").is_ok() {
+        eprintln!("[tcg] LLVM JIT backend enabled");
+        env.enable_llvm();
+    }
+    let mut env = env;
     let mut icount: u64 = 0;
     loop {
         if show_trace {
@@ -145,6 +203,16 @@ fn main() {
                 lcpu.cpu.pc, lcpu.cpu.sp, icount,
             );
             icount += 1;
+            // Debug: dump stack around sp+64..sp+79 when near crash
+            if lcpu.cpu.pc == 0x4016c4 || lcpu.cpu.pc == 0x4008c8 || lcpu.cpu.pc == 0x400764 || lcpu.cpu.pc == 0x40078c {
+                let sp = lcpu.cpu.sp;
+                let gb = lcpu.cpu.guest_base;
+                for off in [64u64, 72, 80] {
+                    let addr = (gb + sp + off) as *const u64;
+                    let val = unsafe { *addr };
+                    eprintln!("  [sp+{}] = {:#018x}", off, val);
+                }
+            }
         }
         let reason =
             unsafe { cpu_exec_loop(&mut env, &mut lcpu) };

@@ -1,6 +1,8 @@
 pub mod code_buffer;
 pub mod constraint;
 pub mod liveness;
+#[cfg(feature = "llvm")]
+pub mod llvm;
 pub mod optimize;
 pub mod regalloc;
 pub mod translate;

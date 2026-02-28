@@ -3,6 +3,9 @@ name = "tcg-backend"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+llvm = []
+
 [dependencies]
 tcg-core = { path = "../core" }
 libc = "0.2"
