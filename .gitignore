@@ -1,3 +1,9 @@
 /target/
 **/*.rs.bk
 Cargo.lock
+
+# AOT compilation artifacts
+*.o
+*.so
+*.ll
+profile.bin
