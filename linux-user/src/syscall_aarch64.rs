@@ -52,6 +52,11 @@ pub fn handle_syscall_aarch64(
     let a3 = regs[3];  // X3
     #[allow(unused_variables)]
     let a4 = regs[4];  // X4
+    if std::env::var("TCG_SYSCALL").is_ok() {
+        eprintln!(
+            "[syscall] nr={nr} a0={a0:#x} a1={a1:#x} a2={a2:#x} a3={a3:#x}",
+        );
+    }
     match nr {
         SYS_WRITE => {
             let fd = a0 as i32;

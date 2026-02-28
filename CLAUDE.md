@@ -6,7 +6,7 @@
 
 tcg-rs 是 QEMU TCG（Tiny Code Generator）的 Rust 重新实现——一个动态二进制翻译引擎，在运行时将客户架构指令转换为宿主机器码。参考实现位于 `~/qemu/tcg/`、`~/qemu/accel/tcg/` 和 `~/qemu/include/tcg/`。
 
-**当前状态快照（2026-02-13）**：
+**当前状态快照（2026-02-28）**：
 
 - 已有可用 MTTCG 执行路径：`cpu_exec_loop_mt`、共享 `SharedState`、
   每 vCPU `PerCpuState`。
@@ -16,6 +16,10 @@ tcg-rs 是 QEMU TCG（Tiny Code Generator）的 Rust 重新实现——一个动
   `goto_tb` 链路 patch、`exit_target` 原子缓存。
 - IR 优化器已实现：常量折叠、拷贝传播、代数简化、分支常量折叠，
   在 liveness 之前运行（`backend/src/optimize.rs`）。
+- **LLVM JIT 后端**已实现（`backend/src/llvm/`），通过
+  `--features llvm` 启用，运行时 `TCG_LLVM=1` 激活。
+  TCG IR → LLVM IR → OrcV2/LLJIT 编译，riscv64 hello world
+  与 coremark 均通过。
 
 ## 构建与开发命令
 
@@ -29,6 +33,10 @@ cargo clippy -- -D warnings          # Lint 检查
 cargo fmt --check                    # 格式检查
 cargo fmt                            # 自动格式化
 cargo doc --open                     # 生成并打开文档
+
+# LLVM JIT 后端（需系统安装 LLVM 21，libLLVM-21）
+cargo build --bin tcg-riscv64 --features llvm --release
+TCG_LLVM=1 target/release/tcg-riscv64 <elf>   # 启用 LLVM JIT
 ```
 
 ## Git Commit 规范
@@ -82,7 +90,7 @@ Guest Binary → Frontend (decode) → TCG IR → Optimizer → Backend (codegen
 | Crate | 职责 | QEMU 参考 |
 |-------|------|----------|
 | `tcg-core` | IR 定义：opcodes、types、temps、TCGOp、TCGContext、labels、TB 元数据 | `include/tcg/tcg.h`、`tcg/tcg-opc.h` |
-| `tcg-backend` | 活跃性分析、IR 优化器、约束系统、寄存器分配、x86-64 代码生成 | `tcg/tcg.c`（codegen 部分）、`tcg/optimize.c`、`tcg/i386/tcg-target.c.inc` |
+| `tcg-backend` | 活跃性分析、IR 优化器、约束系统、寄存器分配、x86-64 代码生成；LLVM JIT 后端（`llvm/` 子模块，feature-gated） | `tcg/tcg.c`（codegen 部分）、`tcg/optimize.c`、`tcg/i386/tcg-target.c.inc` |
 | `tcg-frontend` | 客户指令解码框架与 RISC-V 翻译器 | `target/riscv/translate.c`、`accel/tcg/translator.c` |
 | `tcg-exec` | MTTCG 执行循环、TB 缓存（jump cache + hash）、TB 链路/失效 | `accel/tcg/cpu-exec.c`、`accel/tcg/translate-all.c`、`accel/tcg/tb-maint.c` |
 | `tcg-linux-user` | 用户态 ELF 加载、地址空间与 syscall 仿真 | `linux-user/main.c`、`linux-user/elfload.c`、`linux-user/syscall.c` |
@@ -166,6 +174,29 @@ x86-64 后端位于 `backend/src/x86_64/`，包含三个文件：
 **已实现的指令类别**：算术（ADD/SUB/AND/OR/XOR/CMP/ADC/SBB）、移位（SHL/SHR/SAR/ROL/ROR/SHLD/SHRD）、数据移动（MOV/MOVZX/MOVSX/BSWAP）、内存（load/store/LEA 含 SIB 寻址）、乘除（MUL/IMUL/DIV/IDIV/CDQ/CQO）、位操作（BSF/BSR/LZCNT/TZCNT/POPCNT/BT*/ANDN）、分支（JMP/Jcc/CALL/SETcc/CMOVcc）、杂项（XCHG/PUSH/POP/INC/DEC/TEST/MFENCE/UD2/NOP）。
 
 **未实现**：SIMD/向量指令（SSE/AVX/AVX512）将作为后续独立工作。
+
+### LLVM JIT 后端
+
+位于 `backend/src/llvm/`，通过 `--features llvm` 编译，运行时
+`TCG_LLVM=1` 环境变量激活。依赖系统 LLVM 21（`libLLVM-21`）。
+
+| 文件 | 职责 |
+|------|------|
+| `ffi.rs` | 最小 LLVM C API FFI 绑定（OrcV2/LLJIT、IR Builder、类型、验证） |
+| `mod.rs` | `LlvmJit` 结构体：管理 LLJIT 实例，per-TB 编译 |
+| `translate.rs` | `TbTranslator`：TCG IR → LLVM IR 翻译，覆盖全部 ~189 opcodes |
+
+**架构**：绕过寄存器分配器，每个 TCG temp 映射为 LLVM alloca，
+依赖 LLVM 的 mem2reg 优化。Global temps 在 BB 边界从
+`[env + offset]` 加载/存储。Guest 内存通过
+`inttoptr(guest_base + addr)` 访问。
+
+**执行流程**：TCG IR → `TbTranslator::translate()` → LLVM module
+→ OrcV2 LLJIT 编译 → 在 CodeBuffer 中发射 x86_64 trampoline
+（桥接 prologue 调用约定到 LLVM 函数签名）→ 跳转到 epilogue。
+
+**限制**：不支持 TB 链路（所有出口使用 `TB_EXIT_NOCHAIN`），
+carry 算术 ops 为 stub 实现。
 
 ### Unsafe 边界
 

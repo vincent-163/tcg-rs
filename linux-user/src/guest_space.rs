@@ -1,11 +1,11 @@
 use std::io;
 use std::ptr;
 
-/// Guest address space size: 1 GiB.
-const GUEST_SPACE_SIZE: usize = 1 << 30;
+/// Guest address space size: 4 GiB.
+const GUEST_SPACE_SIZE: usize = 4 * (1 << 30);
 
 /// Default guest stack top address.
-pub const GUEST_STACK_TOP: u64 = 0x3FFF_0000;
+pub const GUEST_STACK_TOP: u64 = 0xC000_0000;
 
 /// Default guest stack size: 8 MiB.
 pub const GUEST_STACK_SIZE: usize = 8 * 1024 * 1024;

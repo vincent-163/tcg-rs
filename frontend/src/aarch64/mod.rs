@@ -142,7 +142,7 @@ impl TranslatorOps for Aarch64Translator {
 
         let decoded = insn_decode::decode(ctx, ir, insn);
 
-        if !decoded {
+        if !decoded && !ctx.try_neon(ir, insn) {
             let pc_val = ctx.base.pc_next;
             let pc_const = ir.new_const(Type::I64, pc_val);
             ir.gen_mov(Type::I64, ctx.pc, pc_const);

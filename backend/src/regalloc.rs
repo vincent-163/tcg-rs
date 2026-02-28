@@ -106,7 +106,12 @@ fn reg_alloc(
     let forced = required.intersect(state.allocatable);
     let r = forced
         .first()
-        .expect("no candidate register for allocation");
+        .unwrap_or_else(|| {
+            panic!(
+                "no candidate register for allocation: required={:?} allocatable={:?} forbidden={:?}",
+                required, state.allocatable, forbidden
+            )
+        });
     evict_reg(ctx, state, backend, buf, r);
     r
 }
@@ -422,6 +427,12 @@ fn regalloc_op(
         let arg_ct = &ct.args[nb_oargs + i];
         let tidx = op.args[nb_oargs + i];
         let required = arg_ct.regs;
+        if required == RegSet::EMPTY {
+            panic!(
+                "empty constraint regs for input {} of {:?}",
+                i, op.opc
+            );
+        }
         let is_dead = life.is_dead((nb_oargs + i) as u32);
         let temp = ctx.temp(tidx);
         let is_readonly = temp.is_global_or_fixed() || temp.is_const();

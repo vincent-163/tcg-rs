@@ -678,8 +678,8 @@ impl Aarch64DisasContext {
         }
 
         // LDP/STP — SIMD & FP
-        // xx 101 1xx opc imm7 rt2 rn rt
-        if (insn >> 26) & 0x3f == 0b101011 {
+        // opc 101 1xx imm7 rt2 rn rt  (opc=00→S, 01→D, 10→Q)
+        if (insn >> 26) & 0xf == 0b1011 {
             return self.fp_ldst_pair(ir, insn);
         }
 
@@ -1031,6 +1031,10 @@ impl Aarch64DisasContext {
         if insn & 0xffff_fc00 == 0x9e66_0000 {
             return self.neon_fmov_to_gpr(ir, insn);
         }
+        // EXT: 0 Q 10 1110 000 Rm 0 imm4 0 Rn Rd
+        if insn & 0xbfe0_8400 == 0x2e00_0000 {
+            return self.try_neon_ext(ir, insn);
+        }
         // Dispatch 3-same / 2-reg-misc / shift-imm by top bits
         self.try_neon_3same_misc(ir, insn)
     }
@@ -1267,11 +1271,6 @@ impl Aarch64DisasContext {
     }
 
     /// Dispatch NEON 3-same, 2-reg-misc, and shift-immediate.
-    fn neon_3same(&mut self, _ir: &mut Context, _insn: u32) -> bool { false }
-    fn neon_2reg_misc(&mut self, _ir: &mut Context, _insn: u32) -> bool { false }
-    fn neon_shift_imm(&mut self, _ir: &mut Context, _insn: u32) -> bool { false }
-    fn neon_across_lanes(&mut self, _ir: &mut Context, _insn: u32) -> bool { false }
-
     fn try_neon_3same_misc(
         &mut self, ir: &mut Context, insn: u32,
     ) -> bool {
@@ -1453,6 +1452,26 @@ unsafe extern "C" fn helper_addv8(a: u64) -> u64 {
     sum & 0xff
 }
 
+/// Byte-wise shift left.
+unsafe extern "C" fn helper_shl8(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let byte = (a >> (i * 8)) & 0xff;
+        r |= ((byte << shift) & 0xff) << (i * 8);
+    }
+    r
+}
+
+/// XTN: narrow 16→8 (take low byte of each 16-bit element, 4 elements).
+unsafe extern "C" fn helper_xtn8(a: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        let elem = (a >> (i * 16)) & 0xff;
+        r |= elem << (i * 8);
+    }
+    r
+}
+
 // ── NEON 3-same, 2-reg-misc, shift-imm ─────────────────
 
 impl Aarch64DisasContext {
@@ -1563,7 +1582,289 @@ impl Aarch64DisasContext {
         false
     }
 
-    // __CONTINUE_HERE__
+    // BIT/BIF/BSL helpers and pairwise, 2-reg-misc, shift-imm, across, EXT
+
+    fn neon_bit(
+        &mut self, ir: &mut Context, q: u32,
+        rd: usize, rn: usize, rm: usize,
+    ) {
+        let vd = self.read_vreg_lo(ir, rd);
+        let vn = self.read_vreg_lo(ir, rn);
+        let vm = self.read_vreg_lo(ir, rm);
+        let r = ir.new_temp(Type::I64);
+        ir.gen_call(r, helper_bit as u64, &[vd, vn, vm]);
+        self.write_vreg_lo(ir, rd, r);
+        if q != 0 {
+            let vd = self.read_vreg_hi(ir, rd);
+            let vn = self.read_vreg_hi(ir, rn);
+            let vm = self.read_vreg_hi(ir, rm);
+            let r = ir.new_temp(Type::I64);
+            ir.gen_call(r, helper_bit as u64, &[vd, vn, vm]);
+            self.write_vreg_hi(ir, rd, r);
+        }
+    }
+
+    fn neon_bif(
+        &mut self, ir: &mut Context, q: u32,
+        rd: usize, rn: usize, rm: usize,
+    ) {
+        let vd = self.read_vreg_lo(ir, rd);
+        let vn = self.read_vreg_lo(ir, rn);
+        let vm = self.read_vreg_lo(ir, rm);
+        let r = ir.new_temp(Type::I64);
+        ir.gen_call(r, helper_bif as u64, &[vd, vn, vm]);
+        self.write_vreg_lo(ir, rd, r);
+        if q != 0 {
+            let vd = self.read_vreg_hi(ir, rd);
+            let vn = self.read_vreg_hi(ir, rn);
+            let vm = self.read_vreg_hi(ir, rm);
+            let r = ir.new_temp(Type::I64);
+            ir.gen_call(r, helper_bif as u64, &[vd, vn, vm]);
+            self.write_vreg_hi(ir, rd, r);
+        }
+    }
+
+    fn neon_bsl(
+        &mut self, ir: &mut Context, q: u32,
+        rd: usize, rn: usize, rm: usize,
+    ) {
+        let vd = self.read_vreg_lo(ir, rd);
+        let vn = self.read_vreg_lo(ir, rn);
+        let vm = self.read_vreg_lo(ir, rm);
+        let r = ir.new_temp(Type::I64);
+        ir.gen_call(r, helper_bsl as u64, &[vd, vn, vm]);
+        self.write_vreg_lo(ir, rd, r);
+        if q != 0 {
+            let vd = self.read_vreg_hi(ir, rd);
+            let vn = self.read_vreg_hi(ir, rn);
+            let vm = self.read_vreg_hi(ir, rm);
+            let r = ir.new_temp(Type::I64);
+            ir.gen_call(r, helper_bsl as u64, &[vd, vn, vm]);
+            self.write_vreg_hi(ir, rd, r);
+        }
+    }
+
+    fn neon_pairwise(
+        &mut self, ir: &mut Context, q: u32,
+        rd: usize, rn: usize, rm: usize,
+        helper: unsafe extern "C" fn(u64, u64) -> u64,
+    ) {
+        if q != 0 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let n_hi = self.read_vreg_hi(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper as u64, &[n_lo, n_hi]);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let m_hi = self.read_vreg_hi(ir, rm);
+            let d_hi = ir.new_temp(Type::I64);
+            ir.gen_call(d_hi, helper as u64, &[m_lo, m_hi]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            self.write_vreg_hi(ir, rd, d_hi);
+        } else {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper as u64, &[n_lo, m_lo]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            self.clear_vreg_hi(ir, rd);
+        }
+    }
+
+    /// AdvSIMD two-reg misc: 0 Q U 01110 size 10000 opcode 10 Rn Rd
+    fn neon_2reg_misc(
+        &mut self, ir: &mut Context, insn: u32,
+    ) -> bool {
+        let q = (insn >> 30) & 1;
+        let u = (insn >> 29) & 1;
+        let size = (insn >> 22) & 0x3;
+        let opcode = (insn >> 12) & 0x1f;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+
+        match (u, size, opcode) {
+            // CMEQ #0 .8B/.16B: U=0 size=00 opcode=01001
+            (0, 0b00, 0b01001) => {
+                let zero = ir.new_const(Type::I64, 0);
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_cmeq8 as u64, &[lo, zero]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_cmeq8 as u64, &[hi, zero]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else { self.clear_vreg_hi(ir, rd); }
+                true
+            }
+            // CNT .8B/.16B: U=0 size=00 opcode=00101
+            (0, 0b00, 0b00101) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_cnt8 as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_cnt8 as u64, &[hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else { self.clear_vreg_hi(ir, rd); }
+                true
+            }
+            // REV64 .16B: U=0 size=00 opcode=00000
+            (0, 0b00, 0b00000) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_bswap64(Type::I64, d_lo, lo, 0);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_bswap64(Type::I64, d_hi, hi, 0);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else { self.clear_vreg_hi(ir, rd); }
+                true
+            }
+            // XTN .8B: U=0 size=00 opcode=10010 (narrow)
+            (0, 0b00, 0b10010) => {
+                // Narrow 8x16→8x8: take low byte of each 16-bit element
+                let lo = self.read_vreg_lo(ir, rn);
+                let d = ir.new_temp(Type::I64);
+                ir.gen_call(d, helper_xtn8 as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d);
+                self.clear_vreg_hi(ir, rd);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// AdvSIMD shift by immediate: 0 Q U 011110 immh immb opcode 1 Rn Rd
+    fn neon_shift_imm(
+        &mut self, ir: &mut Context, insn: u32,
+    ) -> bool {
+        let q = (insn >> 30) & 1;
+        let u = (insn >> 29) & 1;
+        let immh = (insn >> 19) & 0xf;
+        let immb = (insn >> 16) & 0x7;
+        let opcode = (insn >> 11) & 0x1f;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+        let immhb = (immh << 3) | immb;
+
+        // SHRN: U=0 opcode=10000, narrow shift right (16→8)
+        if u == 0 && opcode == 0b10000 && immh >= 1 && immh < 2 {
+            let shift = 16 - immhb;
+            let lo = self.read_vreg_lo(ir, rn);
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_shrn8 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        // SHL: U=0 opcode=01010 (8-bit)
+        if u == 0 && opcode == 0b01010 && immh >= 1 && immh < 2 {
+            let shift = immhb - 8;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_shl8 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_shl8 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+        false
+    }
+
+    /// AdvSIMD across lanes: 0 Q U 01110 size 11000 opcode 10 Rn Rd
+    fn neon_across_lanes(
+        &mut self, ir: &mut Context, insn: u32,
+    ) -> bool {
+        let q = (insn >> 30) & 1;
+        let u = (insn >> 29) & 1;
+        let size = (insn >> 22) & 0x3;
+        let opcode = (insn >> 12) & 0x1f;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+
+        // ADDV .16B: U=0 size=00 opcode=11011
+        if u == 0 && size == 0b00 && opcode == 0b11011 && q != 0 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let sum_lo = ir.new_temp(Type::I64);
+            ir.gen_call(sum_lo, helper_addv8 as u64, &[lo]);
+            let sum_hi = ir.new_temp(Type::I64);
+            ir.gen_call(sum_hi, helper_addv8 as u64, &[hi]);
+            let total = ir.new_temp(Type::I64);
+            ir.gen_add(Type::I64, total, sum_lo, sum_hi);
+            let mask = ir.new_const(Type::I64, 0xff);
+            let result = ir.new_temp(Type::I64);
+            ir.gen_and(Type::I64, result, total, mask);
+            self.write_vreg_lo(ir, rd, result);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        false
+    }
+}
+
+// ── EXT instruction ─────────────────────────────────────
+
+impl Aarch64DisasContext {
+    /// EXT: 0 Q 10 1110 000 Rm 0 imm4 0 Rn Rd
+    pub(crate) fn try_neon_ext(
+        &mut self, ir: &mut Context, insn: u32,
+    ) -> bool {
+        if insn & 0xbfe0_8400 != 0x2e00_0000 {
+            return false;
+        }
+        let q = (insn >> 30) & 1;
+        let rm = ((insn >> 16) & 0x1f) as usize;
+        let imm4 = ((insn >> 11) & 0xf) as u64;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+
+        let n_lo = self.read_vreg_lo(ir, rn);
+        let n_hi = if q != 0 { self.read_vreg_hi(ir, rn) } else { ir.new_const(Type::I64, 0) };
+        let m_lo = self.read_vreg_lo(ir, rm);
+        let m_hi = if q != 0 { self.read_vreg_hi(ir, rm) } else { ir.new_const(Type::I64, 0) };
+
+        // EXT concatenates Vm:Vn and extracts starting at byte imm4
+        let pos = ir.new_const(Type::I64, imm4);
+        let d_lo = ir.new_temp(Type::I64);
+        if imm4 < 8 {
+            ir.gen_call(d_lo, helper_ext8 as u64, &[n_lo, n_hi, pos]);
+        } else {
+            let adj = ir.new_const(Type::I64, imm4 - 8);
+            ir.gen_call(d_lo, helper_ext8 as u64, &[n_hi, m_lo, adj]);
+        }
+        self.write_vreg_lo(ir, rd, d_lo);
+
+        if q != 0 {
+            let d_hi = ir.new_temp(Type::I64);
+            if imm4 < 8 {
+                let adj = ir.new_const(Type::I64, imm4);
+                ir.gen_call(d_hi, helper_ext8 as u64, &[n_hi, m_lo, adj]);
+            } else {
+                let adj = ir.new_const(Type::I64, imm4 - 8);
+                ir.gen_call(d_hi, helper_ext8 as u64, &[m_lo, m_hi, adj]);
+            }
+            self.write_vreg_hi(ir, rd, d_hi);
+        } else {
+            self.clear_vreg_hi(ir, rd);
+        }
+        true
+    }
+}
+
+impl Decode<Context> for Aarch64DisasContext {
     // -- Add/Sub immediate --
 
     fn trans_ADD_i(

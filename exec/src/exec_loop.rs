@@ -209,10 +209,22 @@ where
     #[cfg(feature = "llvm")]
     let host_offset = {
         let TranslateGuard { ref mut ir_ctx, ref mut llvm_jit } = *guard;
-        if let Some(ref mut jit) = llvm_jit {
+        let use_llvm = if let Some(ref mut _jit) = llvm_jit {
+            // If TCG_LLVM_MAX_PC is set, only JIT TBs with pc <= max_pc
+            match std::env::var("TCG_LLVM_MAX_PC") {
+                Ok(s) => {
+                    let max_pc = u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or(u64::MAX);
+                    pc <= max_pc
+                }
+                Err(_) => true,
+            }
+        } else {
+            false
+        };
+        if use_llvm {
             tcg_backend::translate::translate_llvm(
                 ir_ctx,
-                jit,
+                llvm_jit.as_mut().unwrap(),
                 code_buf_mut,
                 shared.backend.epilogue_offset(),
             )
