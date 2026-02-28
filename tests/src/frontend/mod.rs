@@ -2,6 +2,7 @@
 //! run them through the full frontend→backend pipeline, and verify
 //! the resulting CPU state.
 
+mod aarch64_difftest;
 mod difftest;
 
 use tcg_backend::code_buffer::CodeBuffer;

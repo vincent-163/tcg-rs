@@ -139,10 +139,14 @@ BICS_r      . 11 01010 .. 1 ..... ...... ..... ..... @shift_reg
 MADD        . 00 11011 000 ..... 0 ..... ..... ..... @rrrr_s
 MSUB        . 00 11011 000 ..... 1 ..... ..... ..... @rrrr_s
 SMADDL      1 00 11011 001 ..... 0 ..... ..... ..... @rrrr_s
+SMSUBL      1 00 11011 001 ..... 1 ..... ..... ..... @rrrr_s
 UMADDL      1 00 11011 101 ..... 0 ..... ..... ..... @rrrr_s
 UMSUBL      1 00 11011 101 ..... 1 ..... ..... ..... @rrrr_s
 SMULH       1 00 11011 010 ..... 0 11111 ..... ..... @rrrr_s
 UMULH       1 00 11011 110 ..... 0 11111 ..... ..... @rrrr_s
+
+# *** Data processing - register - Add/Sub (with carry) ***
+SBC         . 10 11010 000 ..... 000000 ..... ..... @rrr_s
 
 # *** Data processing - register - Div ***
 UDIV        . 00 11010 110 ..... 00001 0 ..... ..... @rrr_s
@@ -188,6 +192,12 @@ LDRB_r      00 11 1000 01 1 ..... ... . 10 ..... ..... \
             &ldst_reg sf=0 opc_lo=0 %rm option=%option shift=0 %rn %rd
 LDRH_r      01 11 1000 01 1 ..... ... . 10 ..... ..... \
             &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=0 %rn %rd
+LDRSH_r     01 11 1000 1 . 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=%sf30 opc_lo=3 %rm option=%option shift=0 %rn %rd
+LDRSW_r     10 11 1000 10 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=1 opc_lo=2 %rm option=%option shift=0 %rn %rd
+LDRSB_r     00 11 1000 1 . 1 ..... ... . 10 ..... ..... \
+            &ldst_reg sf=%sf30 opc_lo=2 %rm option=%option shift=0 %rn %rd
 
 # *** Stores - register offset ***
 STR_r       1 . 11 1000 00 1 ..... ... . 10 ..... ..... \
@@ -305,6 +315,9 @@ LDXR        1 . 00 1000 01 0 11111 0 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo
 STLR        1 . 00 1000 10 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=13 imm=0 rn=%rn rd=%rd
 STXR        1 . 00 1000 00 0 ..... 0 11111 ..... ..... &stx sf=%sf30 rs=%rm %rn %rd
 STLXR       1 . 00 1000 00 0 ..... 1 11111 ..... ..... &stx sf=%sf30 rs=%rm %rn %rd
+# Byte/Halfword variants
+LDAR        00 00 1000 11 0 11111 1 11111 ..... ..... &ldst_imm sf=0 opc_lo=29 imm=0 rn=%rn rd=%rd
+LDAR        01 00 1000 11 0 11111 1 11111 ..... ..... &ldst_imm sf=0 opc_lo=30 imm=0 rn=%rn rd=%rd
 
 # *** Barriers ***
 DMB         11010101 0000 0011 0011 .... 1 01 11111  &sys rd=0 imm=0

@@ -14,6 +14,7 @@ pub fn translate(
 ) -> usize {
     optimize(ctx);
     liveness_analysis(ctx);
+
     let tb_start = buf.offset();
     regalloc_and_codegen(ctx, backend, buf);
     tb_start

@@ -18,6 +18,12 @@ pub const EM_RISCV: u16 = 243;
 pub const PT_LOAD: u32 = 1;
 pub const PT_PHDR: u32 = 6;
 
+// Section header types
+pub const SHT_RELA: u32 = 4;
+
+// AArch64 relocation types
+pub const R_AARCH64_IRELATIVE: u32 = 1032;
+
 // Program header flags
 pub const PF_X: u32 = 1;
 pub const PF_W: u32 = 2;
@@ -106,6 +112,35 @@ pub struct Elf64Phdr {
     pub p_align: u64,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Elf64Shdr {
+    pub sh_name: u32,
+    pub sh_type: u32,
+    pub sh_flags: u64,
+    pub sh_addr: u64,
+    pub sh_offset: u64,
+    pub sh_size: u64,
+    pub sh_link: u32,
+    pub sh_info: u32,
+    pub sh_addralign: u64,
+    pub sh_entsize: u64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Elf64Rela {
+    pub r_offset: u64,
+    pub r_info: u64,
+    pub r_addend: i64,
+}
+
+impl Elf64Rela {
+    pub fn r_type(&self) -> u32 {
+        (self.r_info & 0xffff_ffff) as u32
+    }
+}
+
 impl Elf64Ehdr {
     pub fn from_bytes(data: &[u8]) -> Result<&Self, ElfError> {
         if data.len() < mem::size_of::<Self>() {
@@ -171,5 +206,30 @@ impl Elf64Ehdr {
             )
         };
         Ok(phdrs)
+    }
+
+    pub fn section_headers<'a>(
+        &self,
+        data: &'a [u8],
+    ) -> Result<&'a [Elf64Shdr], ElfError> {
+        let off = self.e_shoff as usize;
+        let num = self.e_shnum as usize;
+        let ent = self.e_shentsize as usize;
+        if num == 0 || ent < mem::size_of::<Elf64Shdr>() {
+            return Ok(&[]);
+        }
+        let end = off
+            .checked_add(num.checked_mul(ent).ok_or(ElfError::InvalidPhdr)?)
+            .ok_or(ElfError::InvalidPhdr)?;
+        if end > data.len() {
+            return Ok(&[]);
+        }
+        let shdrs = unsafe {
+            std::slice::from_raw_parts(
+                data[off..].as_ptr() as *const Elf64Shdr,
+                num,
+            )
+        };
+        Ok(shdrs)
     }
 }

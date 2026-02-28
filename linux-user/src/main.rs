@@ -1,5 +1,6 @@
 use std::env;
 use std::process;
+use std::sync::atomic::Ordering;
 
 use tcg_backend::X86_64CodeGen;
 use tcg_core::context::Context;
@@ -7,6 +8,8 @@ use tcg_core::tb::{EXCP_EBREAK, EXCP_ECALL, EXCP_UNDEF};
 use tcg_core::TempIdx;
 use tcg_exec::exec_loop::{cpu_exec_loop, ExitReason};
 use tcg_exec::{ExecEnv, GuestCpu};
+use tcg_exec::profile::{ProfileData, ProfileEntry, DEFAULT_HOT_THRESHOLD,
+    PROF_FLAG_INDIRECT, PROF_FLAG_MULTI_SOURCE, MULTI_SOURCE_THRESHOLD};
 use tcg_frontend::riscv::cpu::{RiscvCpu, NUM_GPRS};
 use tcg_frontend::riscv::ext::RiscvCfg;
 use tcg_frontend::riscv::{RiscvDisasContext, RiscvTranslator};
@@ -70,6 +73,37 @@ impl GuestCpu for LinuxCpu {
     }
 }
 
+fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) {
+    let out = std::env::var("TCG_PROFILE_OUT").unwrap_or_else(|_| "profile.bin".into());
+    let shared = &env.shared;
+    let tb_count = shared.tb_store.len();
+    let profiles = unsafe { &*shared.tb_profiles.get() };
+    let mut entries = Vec::new();
+    for i in 0..tb_count {
+        let tb = shared.tb_store.get(i);
+        let prof = &profiles[i];
+        let exec = prof.exec_count.load(Ordering::Relaxed);
+        if exec < DEFAULT_HOT_THRESHOLD { continue; }
+        let indirect = prof.indirect_count.load(Ordering::Relaxed);
+        let chain_src = prof.chain_source_count.load(Ordering::Relaxed);
+        let mut flags = 0u32;
+        if indirect > 0 { flags |= PROF_FLAG_INDIRECT; }
+        if chain_src >= MULTI_SOURCE_THRESHOLD { flags |= PROF_FLAG_MULTI_SOURCE; }
+        entries.push(ProfileEntry {
+            // Store true file offset so profiles are portable across load addresses
+            file_offset: tb.pc - load_vaddr,
+            exec_count: exec,
+            flags,
+        });
+    }
+    let data = ProfileData { threshold: DEFAULT_HOT_THRESHOLD as u32, entries };
+    if let Err(e) = data.save(std::path::Path::new(&out)) {
+        eprintln!("[tcg] failed to save profile: {e}");
+    } else {
+        eprintln!("[tcg] profile saved to {out} ({} hot TBs)", data.entries.len());
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -108,13 +142,23 @@ fn main() {
 
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
+    let profiling = env::var("TCG_PROFILE").is_ok();
 
-    let env = ExecEnv::new(X86_64CodeGen::new());
+    // Load AOT if specified
+    let aot = env::var("TCG_AOT").ok().and_then(|p| {
+        let t = tcg_exec::AotTable::load(std::path::Path::new(&p), info.load_vaddr);
+        if t.is_some() { eprintln!("[tcg] AOT loaded from {p}"); }
+        else { eprintln!("[tcg] warning: failed to load AOT from {p}"); }
+        t
+    });
+
+    let env = ExecEnv::new_with_opts(X86_64CodeGen::new(), profiling, aot);
     #[cfg(feature = "llvm")]
     if std::env::var("TCG_LLVM").is_ok() {
         eprintln!("[tcg] LLVM JIT backend enabled");
         env.enable_llvm();
     }
+    if profiling { eprintln!("[tcg] profiling enabled"); }
     let mut env = env;
     loop {
         let reason = unsafe { cpu_exec_loop(&mut env, &mut lcpu) };
@@ -132,38 +176,33 @@ fn main() {
                         lcpu.cpu.pc += 4; // skip past ECALL
                     }
                     SyscallResult::Exit(code) => {
-                        if show_stats {
-                            eprint!("{}", env.per_cpu.stats);
-                        }
+                        if show_stats { eprint!("{}", env.per_cpu.stats); }
+                        if profiling { save_profile(&env, info.load_vaddr); }
                         process::exit(code);
                     }
                 }
             }
             ExitReason::Exit(v) if v == EXCP_EBREAK as usize => {
-                if show_stats {
-                    eprint!("{}", env.per_cpu.stats);
-                }
+                if show_stats { eprint!("{}", env.per_cpu.stats); }
+                if profiling { save_profile(&env, info.load_vaddr); }
                 eprintln!("ebreak at pc={:#x}", lcpu.cpu.pc);
                 process::exit(1);
             }
             ExitReason::Exit(v) if v == EXCP_UNDEF as usize => {
-                if show_stats {
-                    eprint!("{}", env.per_cpu.stats);
-                }
+                if show_stats { eprint!("{}", env.per_cpu.stats); }
+                if profiling { save_profile(&env, info.load_vaddr); }
                 eprintln!("illegal instruction at pc={:#x}", lcpu.cpu.pc);
                 process::exit(1);
             }
             ExitReason::Exit(v) => {
-                if show_stats {
-                    eprint!("{}", env.per_cpu.stats);
-                }
+                if show_stats { eprint!("{}", env.per_cpu.stats); }
+                if profiling { save_profile(&env, info.load_vaddr); }
                 eprintln!("unexpected exit {v}");
                 process::exit(1);
             }
             ExitReason::BufferFull => {
-                if show_stats {
-                    eprint!("{}", env.per_cpu.stats);
-                }
+                if show_stats { eprint!("{}", env.per_cpu.stats); }
+                if profiling { save_profile(&env, info.load_vaddr); }
                 eprintln!("code buffer full");
                 process::exit(1);
             }

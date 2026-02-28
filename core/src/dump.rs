@@ -48,7 +48,7 @@ fn fmt_temp(ctx: &Context, idx: crate::temp::TempIdx, buf: &mut String) {
         }
         TempKind::Global => {
             if let Some(name) = t.name {
-                buf.push_str(name);
+                write!(buf, "{name}[{i}]").unwrap();
             } else {
                 write!(buf, "g{i}").unwrap();
             }

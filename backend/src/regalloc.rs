@@ -217,6 +217,7 @@ fn temp_sync(
 /// Sync all live globals back to memory.
 fn sync_globals(
     ctx: &mut Context,
+    _state: &RegAllocState,
     backend: &impl HostCodeGen,
     buf: &mut CodeBuffer,
 ) {
@@ -227,6 +228,38 @@ fn sync_globals(
         if temp.val_type == TempVal::Reg && !temp.mem_coherent {
             temp_sync(ctx, backend, buf, tidx);
             ctx.temp_mut(tidx).mem_coherent = true;
+        }
+    }
+}
+
+/// Invalidate all temps at a label: drop globals and locals from
+/// registers, force reload from memory on next use.  At merge points
+/// the register state from the fall-through path may differ from the
+/// branch path, so ALL cached register values are invalid.
+fn invalidate_all_temps(
+    ctx: &mut Context,
+    state: &mut RegAllocState,
+) {
+    // Clear every register mapping except Fixed temps.
+    for reg in 0..16u8 {
+        if let Some(tidx) = state.reg_to_temp[reg as usize] {
+            let temp = ctx.temp(tidx);
+            if temp.kind == TempKind::Fixed {
+                continue;
+            }
+            state.free_reg(reg);
+            let t = ctx.temp_mut(tidx);
+            if t.val_type == TempVal::Reg {
+                if t.is_global_or_fixed() {
+                    t.val_type = TempVal::Mem;
+                    t.mem_coherent = true;
+                } else if t.kind == TempKind::Const {
+                    t.val_type = TempVal::Const;
+                } else {
+                    t.val_type = TempVal::Dead;
+                }
+                t.reg = None;
+            }
         }
     }
 }
@@ -260,7 +293,7 @@ fn regalloc_call(
 
     // 1. Sync all globals to memory (helper reads
     //    CPU state via env pointer).
-    sync_globals(ctx, backend, buf);
+    sync_globals(ctx, state, backend, buf);
 
     // 2. Spill any live local temps in caller-saved
     //    regs (they will be clobbered by the call).
@@ -351,6 +384,7 @@ fn regalloc_call(
 
     // 7. Assign output to return register (RAX).
     let dst_tidx = op.args[0];
+    free_old_reg(ctx, state, dst_tidx, Some(out_reg));
     state.assign(out_reg, dst_tidx);
     let t = ctx.temp_mut(dst_tidx);
     t.val_type = TempVal::Reg;
@@ -360,6 +394,29 @@ fn regalloc_call(
     // 8. Free dead output.
     if life.is_dead(0) {
         temp_dead(ctx, state, dst_tidx);
+    }
+}
+
+/// Free the old host register of a temp that is about to be
+/// reassigned to a new register.  Without this, `reg_to_temp` keeps
+/// a stale entry for the old register, which can block other temps
+/// from being allocated there and corrupt `sync_globals` output.
+///
+/// `exclude` is a register that must NOT be freed (typically the
+/// source register of a Mov that is still live).
+fn free_old_reg(
+    ctx: &Context,
+    state: &mut RegAllocState,
+    tidx: TempIdx,
+    exclude: Option<u8>,
+) {
+    let temp = ctx.temp(tidx);
+    if temp.val_type == TempVal::Reg {
+        if let Some(old_r) = temp.reg {
+            if exclude.map_or(true, |ex| old_r != ex) {
+                state.free_reg(old_r);
+            }
+        }
     }
 }
 
@@ -551,6 +608,7 @@ fn regalloc_op(
             )
         };
 
+        free_old_reg(ctx, state, dst_tidx, Some(reg));
         state.assign(reg, dst_tidx);
         let t = ctx.temp_mut(dst_tidx);
         t.val_type = TempVal::Reg;
@@ -682,6 +740,7 @@ pub fn regalloc_and_codegen(
                 if life.is_dead(1) {
                     temp_dead(ctx, &mut state, src_idx);
                 }
+                free_old_reg(ctx, &mut state, dst_idx, Some(src_reg));
                 let dst_reg = reg_alloc(
                     ctx,
                     &mut state,
@@ -706,7 +765,8 @@ pub fn regalloc_and_codegen(
 
             Opcode::SetLabel => {
                 let label_id = op.args[0].0;
-                sync_globals(ctx, backend, buf);
+                sync_globals(ctx, &state, backend, buf);
+                invalidate_all_temps(ctx, &mut state);
                 let offset = buf.offset();
                 let label = ctx.label_mut(label_id);
                 label.set_value(offset);
@@ -723,7 +783,7 @@ pub fn regalloc_and_codegen(
 
             Opcode::Br => {
                 let label_id = op.args[0].0;
-                sync_globals(ctx, backend, buf);
+                sync_globals(ctx, &state, backend, buf);
                 let label = ctx.label(label_id);
                 if label.has_value {
                     crate::x86_64::emitter::emit_jmp(buf, label.value);
@@ -737,7 +797,7 @@ pub fn regalloc_and_codegen(
             }
 
             Opcode::ExitTb | Opcode::GotoTb => {
-                sync_globals(ctx, backend, buf);
+                sync_globals(ctx, &state, backend, buf);
                 let nb_cargs = def.nb_cargs as usize;
                 let cstart = (def.nb_oargs + def.nb_iargs) as usize;
                 let cargs: Vec<u32> =
@@ -770,7 +830,7 @@ pub fn regalloc_and_codegen(
                 if life.is_dead(0) {
                     temp_dead(ctx, &mut state, tidx);
                 }
-                sync_globals(ctx, backend, buf);
+                sync_globals(ctx, &state, backend, buf);
                 backend.tcg_out_op(buf, ctx, &op, &[], &[reg], &[]);
             }
 
@@ -818,7 +878,7 @@ pub fn regalloc_and_codegen(
                     }
                 }
 
-                sync_globals(ctx, backend, buf);
+                sync_globals(ctx, &state, backend, buf);
 
                 let label_id = cargs[1];
                 let label = ctx.label(label_id);
@@ -837,7 +897,7 @@ pub fn regalloc_and_codegen(
                 let ct = backend.op_constraint(op.opc);
                 regalloc_op(ctx, &mut state, backend, buf, &op, ct);
                 if flags.contains(OpFlags::BB_END) {
-                    sync_globals(ctx, backend, buf);
+                    sync_globals(ctx, &state, backend, buf);
                 }
             }
         }

@@ -10,5 +10,6 @@ members = [
     "tests",
     "tools/irdump",
     "tools/irbackend",
+    "tools/aot",
 ]
 resolver = "2"

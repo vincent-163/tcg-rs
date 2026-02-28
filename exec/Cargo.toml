@@ -9,3 +9,4 @@ llvm = ["tcg-backend/llvm"]
 [dependencies]
 tcg-core = { path = "../core" }
 tcg-backend = { path = "../backend" }
+libc = "0.2"
