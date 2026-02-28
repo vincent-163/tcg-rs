@@ -189,7 +189,9 @@ x86-64 后端位于 `backend/src/x86_64/`，包含三个文件：
 **架构**：绕过寄存器分配器，每个 TCG temp 映射为 LLVM alloca，
 依赖 LLVM 的 mem2reg 优化。Global temps 在 BB 边界从
 `[env + offset]` 加载/存储。Guest 内存通过
-`inttoptr(guest_base + addr)` 访问。
+`inttoptr(guest_base + addr)` 访问。CPUState 与 guest 内存
+访问通过 TBAA（Type-Based Alias Analysis）元数据标记为 noalias，
+使 LLVM 优化器可跨两个内存域重排和消除冗余访问。
 
 **执行流程**：TCG IR → `TbTranslator::translate()` → LLVM module
 → OrcV2 LLJIT 编译 → 在 CodeBuffer 中发射 x86_64 trampoline

@@ -13,6 +13,10 @@ pub enum LLVMOpaqueValue {}
 pub enum LLVMOpaqueBasicBlock {}
 pub enum LLVMOpaquePassManager {}
 pub enum LLVMOpaqueTargetMachine {}
+pub enum LLVMOpaqueTarget {}
+pub enum LLVMOpaqueTargetData {}
+pub enum LLVMOpaquePassBuilderOptions {}
+pub enum LLVMOpaqueMetadata {}
 
 // OrcV2 opaque types
 pub enum LLVMOrcOpaqueThreadSafeContext {}
@@ -29,6 +33,11 @@ pub type LLVMTypeRef = *mut LLVMOpaqueType;
 pub type LLVMValueRef = *mut LLVMOpaqueValue;
 pub type LLVMBasicBlockRef = *mut LLVMOpaqueBasicBlock;
 pub type LLVMPassManagerRef = *mut LLVMOpaquePassManager;
+pub type LLVMTargetRef = *mut LLVMOpaqueTarget;
+pub type LLVMTargetMachineRef = *mut LLVMOpaqueTargetMachine;
+pub type LLVMTargetDataRef = *mut LLVMOpaqueTargetData;
+pub type LLVMPassBuilderOptionsRef = *mut LLVMOpaquePassBuilderOptions;
+pub type LLVMMetadataRef = *mut LLVMOpaqueMetadata;
 
 pub type LLVMOrcThreadSafeContextRef = *mut LLVMOrcOpaqueThreadSafeContext;
 pub type LLVMOrcThreadSafeModuleRef = *mut LLVMOrcOpaqueThreadSafeModule;
@@ -107,6 +116,7 @@ extern "C" {
 
     // Values
     pub fn LLVMConstInt(ty: LLVMTypeRef, n: u64, sign_extend: i32) -> LLVMValueRef;
+    pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMGetParam(func: LLVMValueRef, idx: u32) -> LLVMValueRef;
     pub fn LLVMSetValueName2(val: LLVMValueRef, name: *const c_char, len: usize);
 
@@ -229,6 +239,12 @@ extern "C" {
         args: *const LLVMValueRef, num_args: u32, name: *const c_char,
     ) -> LLVMValueRef;
     pub fn LLVMBuildUnreachable(b: LLVMBuilderRef) -> LLVMValueRef;
+    pub fn LLVMBuildSwitch(
+        b: LLVMBuilderRef, v: LLVMValueRef, else_bb: LLVMBasicBlockRef, num_cases: u32,
+    ) -> LLVMValueRef;
+    pub fn LLVMAddCase(switch: LLVMValueRef, on_val: LLVMValueRef, dest: LLVMBasicBlockRef);
+    // Tail call kind: 0=None, 1=Tail, 2=MustTail, 3=NoTail
+    pub fn LLVMSetTailCallKind(call: LLVMValueRef, kind: u32);
 
     // Intrinsics
     pub fn LLVMGetIntrinsicDeclaration(
@@ -303,4 +319,70 @@ extern "C" {
     pub fn LLVMCreatePassManager() -> LLVMPassManagerRef;
     pub fn LLVMRunPassManager(pm: LLVMPassManagerRef, m: LLVMModuleRef) -> i32;
     pub fn LLVMDisposePassManager(pm: LLVMPassManagerRef);
+
+    // Target machine for AOT object emission
+    pub fn LLVMGetDefaultTargetTriple() -> *mut c_char;
+    pub fn LLVMGetTargetFromTriple(
+        triple: *const c_char, target: *mut LLVMTargetRef, err: *mut *mut c_char,
+    ) -> i32;
+    pub fn LLVMCreateTargetMachine(
+        target: LLVMTargetRef, triple: *const c_char, cpu: *const c_char,
+        features: *const c_char, level: u32, reloc: u32, code_model: u32,
+    ) -> LLVMTargetMachineRef;
+    pub fn LLVMDisposeTargetMachine(tm: LLVMTargetMachineRef);
+    pub fn LLVMTargetMachineEmitToFile(
+        tm: LLVMTargetMachineRef, m: LLVMModuleRef, filename: *mut c_char,
+        codegen: u32, err: *mut *mut c_char,
+    ) -> i32;
+    pub fn LLVMSetTarget(m: LLVMModuleRef, triple: *const c_char);
+    pub fn LLVMCreateTargetDataLayout(tm: LLVMTargetMachineRef) -> LLVMTargetDataRef;
+    pub fn LLVMCopyStringRepOfTargetData(td: LLVMTargetDataRef) -> *mut c_char;
+    pub fn LLVMDisposeTargetData(td: LLVMTargetDataRef);
+    pub fn LLVMSetLinkage(val: LLVMValueRef, linkage: u32);
+    pub fn LLVMSetVisibility(val: LLVMValueRef, viz: u32);
+    pub fn LLVMAddGlobal(m: LLVMModuleRef, ty: LLVMTypeRef, name: *const c_char) -> LLVMValueRef;
+    pub fn LLVMSetInitializer(global: LLVMValueRef, val: LLVMValueRef);
+    pub fn LLVMSetGlobalConstant(global: LLVMValueRef, is_const: i32);
+    pub fn LLVMConstArray2(elem_ty: LLVMTypeRef, vals: *const LLVMValueRef, len: u64) -> LLVMValueRef;
+    pub fn LLVMArrayType2(elem_ty: LLVMTypeRef, len: u64) -> LLVMTypeRef;
+    pub fn LLVMPrintModuleToFile(m: LLVMModuleRef, filename: *const c_char, err: *mut *mut c_char) -> i32;
+
+    // New pass manager
+    pub fn LLVMRunPasses(
+        m: LLVMModuleRef, passes: *const c_char, tm: LLVMTargetMachineRef,
+        opts: LLVMPassBuilderOptionsRef,
+    ) -> LLVMErrorRef;
+    pub fn LLVMCreatePassBuilderOptions() -> LLVMPassBuilderOptionsRef;
+    pub fn LLVMDisposePassBuilderOptions(opts: LLVMPassBuilderOptionsRef);
+
+    // Module linking & lookup
+    pub fn LLVMGetNamedFunction(m: LLVMModuleRef, name: *const c_char) -> LLVMValueRef;
+    pub fn LLVMLinkModules2(dest: LLVMModuleRef, src: LLVMModuleRef) -> i32;
+
+    // Module flags (for PIC level etc.)
+    // behavior: 0=Error, 1=Warning, 2=Require, 3=Override, 4=Append, 5=AppendUnique, 7=Max
+    pub fn LLVMAddModuleFlag(
+        m: LLVMModuleRef, behavior: u32,
+        key: *const c_char, key_len: usize,
+        val: LLVMMetadataRef,
+    );
+    pub fn LLVMValueAsMetadata(val: LLVMValueRef) -> LLVMMetadataRef;
+
+    // Metadata for TBAA
+    pub fn LLVMMDStringInContext2(
+        c: LLVMContextRef, str: *const c_char, len: usize,
+    ) -> LLVMMetadataRef;
+    pub fn LLVMMDNodeInContext2(
+        c: LLVMContextRef, mds: *const LLVMMetadataRef,
+        count: usize,
+    ) -> LLVMMetadataRef;
+    pub fn LLVMMetadataAsValue(
+        c: LLVMContextRef, md: LLVMMetadataRef,
+    ) -> LLVMValueRef;
+    pub fn LLVMSetMetadata(
+        val: LLVMValueRef, kind_id: u32, node: LLVMValueRef,
+    );
+    pub fn LLVMGetMDKindIDInContext(
+        c: LLVMContextRef, name: *const c_char, len: u32,
+    ) -> u32;
 }

@@ -1,5 +1,6 @@
 //! TCG IR → LLVM IR translator.
 
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::ptr;
 
@@ -35,6 +36,13 @@ pub struct TbTranslator {
     exit_val: LLVMValueRef, // alloca for return value
     // TB index for encoding exits
     tb_idx: u32,
+    // AOT direct linking: peer TB functions in the same module
+    aot_peers: HashMap<u64, LLVMValueRef>, // target_pc → declared function
+    pc_temp: Option<TempIdx>,               // which temp is the PC register
+    last_pc_const: Option<u64>,             // last constant written to PC
+    peer_fty: LLVMTypeRef,                  // fn(ptr, i64) -> i64
+    // AOT dispatch super-function for indirect jumps
+    aot_dispatch: Option<LLVMValueRef>,     // @aot_dispatch declaration
     // Intrinsic IDs cached
     ctlz_i32: LLVMValueRef,
     ctlz_i64: LLVMValueRef,
@@ -45,12 +53,61 @@ pub struct TbTranslator {
     bswap_i16: LLVMValueRef,
     bswap_i32: LLVMValueRef,
     bswap_i64: LLVMValueRef,
+    // TBAA metadata for alias analysis
+    tbaa_kind: u32,           // metadata kind ID for "tbaa"
+    tbaa_cpu: LLVMValueRef,   // TBAA access tag for CPUState
+    tbaa_guest: LLVMValueRef, // TBAA access tag for guest mem
 }
 
 fn get_intrinsic(m: LLVMModuleRef, name: &str, tys: &[LLVMTypeRef]) -> LLVMValueRef {
     unsafe {
         let id = LLVMLookupIntrinsicID(name.as_ptr() as *const i8, name.len());
         LLVMGetIntrinsicDeclaration(m, id, tys.as_ptr(), tys.len())
+    }
+}
+
+/// Build TBAA metadata tree with two disjoint access types.
+/// Returns (tbaa_kind_id, cpu_access_tag, guest_access_tag).
+fn build_tbaa(ctx: LLVMContextRef) -> (u32, LLVMValueRef, LLVMValueRef) {
+    unsafe {
+        let kind = LLVMGetMDKindIDInContext(
+            ctx, c"tbaa".as_ptr(), 4,
+        );
+        // Root node: !{!"tcg-rs tbaa"}
+        let root_str = LLVMMDStringInContext2(
+            ctx, c"tcg-rs tbaa".as_ptr(), 11,
+        );
+        let root = LLVMMDNodeInContext2(
+            ctx, [root_str].as_ptr(), 1,
+        );
+        // Type descriptors under root (disjoint siblings)
+        // CPUState: !{!"cpustate", root, i64 0}
+        let cpu_str = LLVMMDStringInContext2(
+            ctx, c"cpustate".as_ptr(), 8,
+        );
+        let zero = LLVMValueAsMetadata(
+            LLVMConstInt(LLVMInt64TypeInContext(ctx), 0, 0),
+        );
+        let cpu_ty = LLVMMDNodeInContext2(
+            ctx, [cpu_str, root, zero].as_ptr(), 3,
+        );
+        // Guest mem: !{!"guest", root, i64 0}
+        let guest_str = LLVMMDStringInContext2(
+            ctx, c"guest".as_ptr(), 5,
+        );
+        let guest_ty = LLVMMDNodeInContext2(
+            ctx, [guest_str, root, zero].as_ptr(), 3,
+        );
+        // Access tags: !{type, type, i64 0}
+        let cpu_tag = LLVMMDNodeInContext2(
+            ctx, [cpu_ty, cpu_ty, zero].as_ptr(), 3,
+        );
+        let guest_tag = LLVMMDNodeInContext2(
+            ctx, [guest_ty, guest_ty, zero].as_ptr(), 3,
+        );
+        let cpu_val = LLVMMetadataAsValue(ctx, cpu_tag);
+        let guest_val = LLVMMetadataAsValue(ctx, guest_tag);
+        (kind, cpu_val, guest_val)
     }
 }
 
@@ -127,17 +184,62 @@ impl TbTranslator {
             let bswap_i32 = get_intrinsic(module, "llvm.bswap.i32", &[i32t]);
             let bswap_i64 = get_intrinsic(module, "llvm.bswap.i64", &[i64t]);
 
+            // TBAA metadata for CPUState vs guest memory
+            let (tbaa_kind, tbaa_cpu, tbaa_guest) =
+                build_tbaa(llvm_ctx);
+
             Self {
                 ctx_ref: llvm_ctx, module, builder, func,
                 i1, i8t, i16t, i32t, i64t, i128t, ptr,
                 env, guest_base, temps, labels,
                 exit_bb, exit_val,
                 tb_idx: ir.tb_idx,
+                aot_peers: HashMap::new(),
+                pc_temp: None,
+                last_pc_const: None,
+                peer_fty: fty,
+                aot_dispatch: None,
                 ctlz_i32, ctlz_i64, cttz_i32, cttz_i64,
                 ctpop_i32, ctpop_i64,
                 bswap_i16, bswap_i32, bswap_i64,
+                tbaa_kind, tbaa_cpu, tbaa_guest,
             }
         }
+    }
+
+    /// Create a translator with AOT peer functions for musttail direct linking.
+    /// `peer_pcs` lists all PCs being AOT'd; `pc_temp` identifies the PC register temp.
+    pub fn new_with_peers(
+        llvm_ctx: LLVMContextRef,
+        ir: &Context,
+        func_name: &str,
+        peer_pcs: &std::collections::HashSet<u64>,
+        pc_temp: TempIdx,
+    ) -> Self {
+        let mut s = Self::new(llvm_ctx, ir, func_name);
+        s.pc_temp = Some(pc_temp);
+
+        // Declare all peer TB functions in this module
+        for &pc in peer_pcs {
+            let name = format!("tb_{pc:x}");
+            let cname = CString::new(name).unwrap();
+            unsafe {
+                // Check if already defined (our own function)
+                let existing = LLVMGetNamedFunction(s.module, cname.as_ptr());
+                if !existing.is_null() {
+                    s.aot_peers.insert(pc, existing);
+                } else {
+                    let f = LLVMAddFunction(s.module, cname.as_ptr(), s.peer_fty);
+                    s.aot_peers.insert(pc, f);
+                }
+            }
+        }
+        // Declare aot_dispatch super-function for indirect jump resolution
+        unsafe {
+            let f = LLVMAddFunction(s.module, c"aot_dispatch".as_ptr(), s.peer_fty);
+            s.aot_dispatch = Some(f);
+        }
+        s
     }
 
     fn llvm_ty(&self, ty: Type) -> LLVMTypeRef {
@@ -150,6 +252,11 @@ impl TbTranslator {
 
     fn ci(&self, ty: LLVMTypeRef, val: u64) -> LLVMValueRef {
         unsafe { LLVMConstInt(ty, val, 0) }
+    }
+
+    /// Tag a load or store with TBAA metadata.
+    fn set_tbaa(&self, inst: LLVMValueRef, tag: LLVMValueRef) {
+        unsafe { LLVMSetMetadata(inst, self.tbaa_kind, tag); }
     }
 
     /// Load a TCG temp's current value.
@@ -165,7 +272,9 @@ impl TbTranslator {
                     // Load from [env + offset]
                     let off = self.ci(self.i64t, temp.mem_offset as u64);
                     let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                    LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E)
+                    let ld = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E);
+                    self.set_tbaa(ld, self.tbaa_cpu);
+                    ld
                 }
                 TempKind::Fixed => {
                     // Fixed temps (env pointer) - return env as i64
@@ -188,7 +297,8 @@ impl TbTranslator {
                 TempKind::Global => {
                     let off = self.ci(self.i64t, temp.mem_offset as u64);
                     let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                    LLVMBuildStore(b, val, p);
+                    let st = LLVMBuildStore(b, val, p);
+                    self.set_tbaa(st, self.tbaa_cpu);
                 }
                 TempKind::Const | TempKind::Fixed => {}
                 _ => {
@@ -335,6 +445,18 @@ impl TbTranslator {
                 Opcode::Mov => {
                     let v = ival!(0);
                     store_out!(0, v);
+                    // Track constant writes to PC for AOT direct linking
+                    if let Some(pc_t) = self.pc_temp {
+                        if oarg!(0) == pc_t {
+                            let src = iarg!(0);
+                            let temp = ir.temp(src);
+                            if temp.kind == TempKind::Const {
+                                self.last_pc_const = Some(temp.val);
+                            } else {
+                                self.last_pc_const = None;
+                            }
+                        }
+                    }
                 }
 
                 // -- Arithmetic --
@@ -470,7 +592,8 @@ impl TbTranslator {
                             let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
                             let off = self.ci(self.i64t, temp.mem_offset as u64);
                             let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            LLVMBuildStore(b, v, p);
+                            let st = LLVMBuildStore(b, v, p);
+                            self.set_tbaa(st, self.tbaa_cpu);
                         }
                     }
                 }
@@ -608,6 +731,7 @@ impl TbTranslator {
                     _ => (self.llvm_ty(op.op_type), false),
                 };
                 let raw = LLVMBuildLoad2(b, load_ty, p, E);
+                self.set_tbaa(raw, self.tbaa_cpu);
                 let dst_ty = self.llvm_ty(ir.temp(oarg!(0)).ty);
                 let v = if load_ty == dst_ty { raw }
                     else if sext { LLVMBuildSExt(b, raw, dst_ty, E) }
@@ -627,7 +751,8 @@ impl TbTranslator {
                     Opcode::St32 => LLVMBuildTrunc(b, val, self.i32t, E),
                     _ => val,
                 };
-                LLVMBuildStore(b, store_val, p);
+                let st = LLVMBuildStore(b, store_val, p);
+                self.set_tbaa(st, self.tbaa_cpu);
             }
 
             _ => { self.translate_op_part4(ir, op, terminated); }
@@ -669,7 +794,8 @@ impl TbTranslator {
                             let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
                             let off = self.ci(self.i64t, temp.mem_offset as u64);
                             let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            LLVMBuildStore(b, v, p);
+                            let st = LLVMBuildStore(b, v, p);
+                            self.set_tbaa(st, self.tbaa_cpu);
                         }
                     }
                 }
@@ -694,6 +820,7 @@ impl TbTranslator {
                     _ => (self.i64t, false),
                 };
                 let raw = LLVMBuildLoad2(b, load_ty, p, E);
+                self.set_tbaa(raw, self.tbaa_guest);
                 let dst_ty = self.llvm_ty(ir.temp(oarg!(0)).ty);
                 let v = if load_ty == dst_ty { raw }
                     else if sext { LLVMBuildSExt(b, raw, dst_ty, E) }
@@ -712,7 +839,8 @@ impl TbTranslator {
                     2 => LLVMBuildTrunc(b, val, self.i32t, E),
                     _ => val,
                 };
-                LLVMBuildStore(b, store_val, p);
+                let st = LLVMBuildStore(b, store_val, p);
+                self.set_tbaa(st, self.tbaa_guest);
             }
 
             _ => { self.translate_op_part5(ir, op, terminated); }
@@ -754,7 +882,8 @@ impl TbTranslator {
                             let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
                             let off = self.ci(self.i64t, temp.mem_offset as u64);
                             let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            LLVMBuildStore(b, v, p);
+                            let st = LLVMBuildStore(b, v, p);
+                            self.set_tbaa(st, self.tbaa_cpu);
                         }
                     }
                 }
@@ -827,14 +956,37 @@ impl TbTranslator {
                 *terminated = true;
             }
             Opcode::GotoTb => {
-                // No chaining in LLVM backend; use NOCHAIN exit
                 flush_globals!();
-                self.do_exit(tcg_core::tb::TB_EXIT_NOCHAIN);
+                // AOT direct linking: musttail call to peer if target PC is known
+                let peer = self.last_pc_const
+                    .and_then(|pc| self.aot_peers.get(&pc).copied());
+                if let Some(peer_fn) = peer {
+                    let mut args = [self.env, self.guest_base];
+                    let call = LLVMBuildCall2(
+                        b, self.peer_fty, peer_fn,
+                        args.as_mut_ptr(), 2, E,
+                    );
+                    LLVMSetTailCallKind(call, 2); // MustTail
+                    LLVMBuildRet(b, call);
+                } else {
+                    self.do_exit(tcg_core::tb::TB_EXIT_NOCHAIN);
+                }
                 *terminated = true;
             }
             Opcode::GotoPtr => {
                 flush_globals!();
-                self.do_exit(tcg_core::tb::TB_EXIT_NOCHAIN);
+                if let Some(dispatch_fn) = self.aot_dispatch {
+                    // musttail call aot_dispatch — it will switch on PC
+                    let mut args = [self.env, self.guest_base];
+                    let call = LLVMBuildCall2(
+                        b, self.peer_fty, dispatch_fn,
+                        args.as_mut_ptr(), 2, E,
+                    );
+                    LLVMSetTailCallKind(call, 2); // MustTail
+                    LLVMBuildRet(b, call);
+                } else {
+                    self.do_exit(tcg_core::tb::TB_EXIT_NOCHAIN);
+                }
                 *terminated = true;
             }
 
