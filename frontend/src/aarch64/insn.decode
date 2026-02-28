@@ -13,12 +13,14 @@
 %imm16     5:16
 %hw       21:2
 %cond      0:4
+%cond12   12:4
 %imm19     5:s19
 %imm26     0:s26
 %sf       31:1
 %sf30     30:1
 %shift    22:2
 %option   13:3
+%imm3     10:3
 %imm9     12:s9
 %imm7     15:s7
 %opc_lo   29:2
@@ -45,6 +47,7 @@
 &ldst_reg  rd rn rm sf opc_lo option shift
 &ldst_lit  rd imm sf opc_lo
 &ldst_pair rd rn ra imm sf opc_lo
+&stx       rd rn rs sf
 &logic_imm rd rn immr imms sf nbit
 &rrr_sf    rd rn rm sf
 &rrrr_s    rd rn rm ra sf
@@ -61,13 +64,13 @@
 @branch    . ..... ..........................      &branch
 @br        ....... ..... ..... ..... ..... .....  &br        %rn
 @bcond     ........ ................... . ....     &bcond     imm=%imm19 %cond
-@cb        . ...... . ................... .....    &cb        sf=%sf imm=%imm19 %rn
+@cb        . ...... . ................... .....    &cb        sf=%sf imm=%imm19 rn=%rd
 @rrr_s     . .. ..... ... ..... ...... ..... .....  &rrr_s     sf=%sf %rm %rn %rd
 @rr_s      . .. ..... ... ..... ...... ..... .....  &rr_s      sf=%sf %rn %rd
 @logic_imm . .. ...... . ...... ...... ..... ..... &logic_imm sf=%sf nbit=%nbit immr=%immr imms=%imms %rn %rd
 @shift_reg . .. ..... .. . ..... ...... ..... ..... &shift_reg sf=%sf shift=%shift %rm %rn %rd
-@ext_reg   . .. ..... .. . ..... ... ... ..... ..... &ext_reg sf=%sf %rm option=%option %rn %rd
-@csel      . .. ..... .. . ..... .... .. ..... ..... &csel    sf=%sf %rm cond=%cond %rn %rd
+@ext_reg   . .. ..... .. . ..... ... ... ..... ..... &ext_reg sf=%sf %rm option=%option imm=%imm3 %rn %rd
+@csel      . .. ..... .. . ..... .... .. ..... ..... &csel    sf=%sf %rm cond=%cond12 %rn %rd
 @rrrr_s    . .. ..... ... ..... . ..... ..... ..... &rrrr_s   sf=%sf %rm %ra %rn %rd
 
 # *** Data processing - immediate - Add/Sub ***
@@ -107,8 +110,8 @@ CBZ         . 011010 0 ................... .....   @cb
 CBNZ        . 011010 1 ................... .....   @cb
 
 # *** Test and branch ***
-TBZ         . 011011 0 ..... .............. .....  &tb sf=%sf imm=0 %rn
-TBNZ        . 011011 1 ..... .............. .....  &tb sf=%sf imm=0 %rn
+TBZ         . 011011 0 ..... .............. .....  &tb sf=%sf imm=0 rn=%rd
+TBNZ        . 011011 1 ..... .............. .....  &tb sf=%sf imm=0 rn=%rd
 
 # *** Data processing - register - Add/Sub (shifted) ***
 ADD_r       . 00 01011 .. 0 ..... ...... ..... ..... @shift_reg
@@ -135,6 +138,11 @@ BICS_r      . 11 01010 .. 1 ..... ...... ..... ..... @shift_reg
 # *** Data processing - register - Multiply ***
 MADD        . 00 11011 000 ..... 0 ..... ..... ..... @rrrr_s
 MSUB        . 00 11011 000 ..... 1 ..... ..... ..... @rrrr_s
+SMADDL      1 00 11011 001 ..... 0 ..... ..... ..... @rrrr_s
+UMADDL      1 00 11011 101 ..... 0 ..... ..... ..... @rrrr_s
+UMSUBL      1 00 11011 101 ..... 1 ..... ..... ..... @rrrr_s
+SMULH       1 00 11011 010 ..... 0 11111 ..... ..... @rrrr_s
+UMULH       1 00 11011 110 ..... 0 11111 ..... ..... @rrrr_s
 
 # *** Data processing - register - Div ***
 UDIV        . 00 11010 110 ..... 00001 0 ..... ..... @rrr_s
@@ -149,7 +157,8 @@ RORV        . 00 11010 110 ..... 0010 11 ..... ..... @rrr_s
 # *** Bit manipulation ***
 CLZ         . 10 11010 110 00000 00010 0 ..... ..... @rr_s
 RBIT        . 10 11010 110 00000 00000 0 ..... ..... @rr_s
-REV         . 10 11010 110 00000 00001 0 ..... ..... @rr_s
+REV         0 10 11010 110 00000 00001 0 ..... ..... @rr_s
+REV         1 10 11010 110 00000 00001 1 ..... ..... @rr_s
 REV16       . 10 11010 110 00000 00000 1 ..... ..... @rr_s
 REV32       1 10 11010 110 00000 00001 0 ..... .....  @rr_s
 
@@ -224,6 +233,38 @@ LDR_post    1 . 11 1000 01 0 ......... 01 ..... ..... \
 STR_post    1 . 11 1000 00 0 ......... 01 ..... ..... \
             &ldst_imm sf=%sf30 opc_lo=5 imm=%imm9 %rn %rd
 
+# *** Byte/Halfword Load/Store - pre-index ***
+LDRB_pre    00 11 1000 01 0 ......... 11 ..... ..... \
+            &ldst_imm sf=0 opc_lo=15 imm=%imm9 %rn %rd
+STRB_pre    00 11 1000 00 0 ......... 11 ..... ..... \
+            &ldst_imm sf=0 opc_lo=16 imm=%imm9 %rn %rd
+LDRH_pre    01 11 1000 01 0 ......... 11 ..... ..... \
+            &ldst_imm sf=0 opc_lo=17 imm=%imm9 %rn %rd
+STRH_pre    01 11 1000 00 0 ......... 11 ..... ..... \
+            &ldst_imm sf=0 opc_lo=18 imm=%imm9 %rn %rd
+LDRSB_pre   00 11 1000 1 . 0 ......... 11 ..... ..... \
+            &ldst_imm sf=%sf opc_lo=19 imm=%imm9 %rn %rd
+LDRSH_pre   01 11 1000 1 . 0 ......... 11 ..... ..... \
+            &ldst_imm sf=%sf opc_lo=20 imm=%imm9 %rn %rd
+
+# *** Byte/Halfword Load/Store - post-index ***
+LDRB_post   00 11 1000 01 0 ......... 01 ..... ..... \
+            &ldst_imm sf=0 opc_lo=21 imm=%imm9 %rn %rd
+STRB_post   00 11 1000 00 0 ......... 01 ..... ..... \
+            &ldst_imm sf=0 opc_lo=22 imm=%imm9 %rn %rd
+LDRH_post   01 11 1000 01 0 ......... 01 ..... ..... \
+            &ldst_imm sf=0 opc_lo=23 imm=%imm9 %rn %rd
+STRH_post   01 11 1000 00 0 ......... 01 ..... ..... \
+            &ldst_imm sf=0 opc_lo=24 imm=%imm9 %rn %rd
+LDRSB_post  00 11 1000 1 . 0 ......... 01 ..... ..... \
+            &ldst_imm sf=%sf opc_lo=25 imm=%imm9 %rn %rd
+LDRSH_post  01 11 1000 1 . 0 ......... 01 ..... ..... \
+            &ldst_imm sf=%sf opc_lo=26 imm=%imm9 %rn %rd
+LDRSW_pre   10 11 1000 10 0 ......... 11 ..... ..... \
+            &ldst_imm sf=1 opc_lo=27 imm=%imm9 %rn %rd
+LDRSW_post  10 11 1000 10 0 ......... 01 ..... ..... \
+            &ldst_imm sf=1 opc_lo=28 imm=%imm9 %rn %rd
+
 # *** Load/Store pair - signed offset ***
 LDP         . . 10 1001 01 ....... ..... ..... ..... \
             &ldst_pair sf=%sf opc_lo=0 imm=%imm7 %ra %rn %rd
@@ -243,16 +284,16 @@ STP_post    . . 10 1000 10 ....... ..... ..... ..... \
             &ldst_pair sf=%sf opc_lo=2 imm=%imm7 %ra %rn %rd
 
 # *** System ***
-NOP         11010101 0000 0011 0010 0000 000 11111
+NOP         11010101 0000 0011 0010 .... ... 11111
 SVC         11010100 000 ................ 00001    &sys rd=0 imm=%imm16
 MRS         1101010100 1 1 ............... .....  &sys %rd imm=0
 MSR         1101010100 0 1 ............... .....  &sys %rd imm=0
 
 # *** Conditional compare ***
-CCMP        . . 11010010 ..... .... 0 . ..... 0 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
-CCMN        . . 11010010 ..... .... 1 . ..... 0 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
-CCMP_i      . . 11010010 ..... .... 0 . ..... 1 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
-CCMN_i      . . 11010010 ..... .... 1 . ..... 1 ....  &csel sf=%sf %rm cond=%cond %rn rd=0
+CCMP        . 11 11010010 ..... .... 0 0 ..... 0 ....  &csel sf=%sf %rm cond=%cond12 %rn rd=0
+CCMN        . 01 11010010 ..... .... 0 0 ..... 0 ....  &csel sf=%sf %rm cond=%cond12 %rn rd=0
+CCMP_i      . 11 11010010 ..... .... 1 0 ..... 0 ....  &csel sf=%sf %rm cond=%cond12 %rn rd=0
+CCMN_i      . 01 11010010 ..... .... 1 0 ..... 0 ....  &csel sf=%sf %rm cond=%cond12 %rn rd=0
 
 # *** Extract ***
 EXTR        . 00 100111 . 0 ..... ...... ..... ..... &rrr_sf sf=%sf %rm %rn %rd
@@ -260,10 +301,14 @@ EXTR        . 00 100111 . 0 ..... ...... ..... ..... &rrr_sf sf=%sf %rm %rn %rd
 # *** Load-Acquire / Store-Release ***
 LDAR        1 . 00 1000 11 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=11 imm=0 rn=%rn rd=%rd
 LDAXR       1 . 00 1000 01 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=12 imm=0 rn=%rn rd=%rd
+LDXR        1 . 00 1000 01 0 11111 0 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=14 imm=0 rn=%rn rd=%rd
 STLR        1 . 00 1000 10 0 11111 1 11111 ..... ..... &ldst_imm sf=%sf30 opc_lo=13 imm=0 rn=%rn rd=%rd
+STXR        1 . 00 1000 00 0 ..... 0 11111 ..... ..... &stx sf=%sf30 rs=%rm %rn %rd
+STLXR       1 . 00 1000 00 0 ..... 1 11111 ..... ..... &stx sf=%sf30 rs=%rm %rn %rd
 
 # *** Barriers ***
 DMB         11010101 0000 0011 0011 .... 1 01 11111  &sys rd=0 imm=0
 
 # *** BLR ***
 # (already defined above)
+# NEON/FP/SVE instructions are handled by try_neon() in mod.rs

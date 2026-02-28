@@ -305,11 +305,16 @@ impl HostCodeGen for X86_64CodeGen {
                 let s = Reg::from_u8(iregs[0]);
                 emit_movsx(buf, OPC_MOVSLQ, d, s);
             }
-            Opcode::ExtUI32I64 | Opcode::ExtrlI64I32 => {
+            Opcode::ExtUI32I64 => {
                 let d = Reg::from_u8(oregs[0]);
                 let s = Reg::from_u8(iregs[0]);
                 // MOV r32, r32 zero-extends to 64 bits
-                // (also works as truncate: just ignore high bits)
+                // Must always emit even when d==s to clear upper 32 bits
+                emit_mov_rr(buf, false, d, s);
+            }
+            Opcode::ExtrlI64I32 => {
+                let d = Reg::from_u8(oregs[0]);
+                let s = Reg::from_u8(iregs[0]);
                 if d != s {
                     emit_mov_rr(buf, false, d, s);
                 }
