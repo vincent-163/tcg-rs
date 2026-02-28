@@ -108,7 +108,14 @@ fn main() {
 
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
-    let mut env = ExecEnv::new(X86_64CodeGen::new());
+
+    let env = ExecEnv::new(X86_64CodeGen::new());
+    #[cfg(feature = "llvm")]
+    if std::env::var("TCG_LLVM").is_ok() {
+        eprintln!("[tcg] LLVM JIT backend enabled");
+        env.enable_llvm();
+    }
+    let mut env = env;
     loop {
         let reason = unsafe { cpu_exec_loop(&mut env, &mut lcpu) };
         match reason {

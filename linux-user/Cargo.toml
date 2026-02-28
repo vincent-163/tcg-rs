@@ -11,6 +11,9 @@ path = "src/main.rs"
 name = "tcg-aarch64"
 path = "src/main_aarch64.rs"
 
+[features]
+llvm = ["tcg-backend/llvm", "tcg-exec/llvm"]
+
 [dependencies]
 libc = "0.2"
 tcg-core = { path = "../core" }

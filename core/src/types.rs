@@ -129,6 +129,10 @@ impl Cond {
     pub const fn is_tst(self) -> bool {
         matches!(self, Cond::TstEq | Cond::TstNe)
     }
+
+    pub fn from_u8(v: u8) -> Cond {
+        unsafe { std::mem::transmute(v) }
+    }
 }
 
 /// Memory operation descriptor — encodes size, signedness,

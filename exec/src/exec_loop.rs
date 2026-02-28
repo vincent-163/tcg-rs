@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
-    ExecEnv, GuestCpu, PerCpuState, SharedState, MIN_CODE_BUF_REMAINING,
+    ExecEnv, GuestCpu, PerCpuState, SharedState, TranslateGuard, MIN_CODE_BUF_REMAINING,
 };
 use tcg_backend::translate::translate;
 use tcg_backend::HostCodeGen;
@@ -205,6 +205,22 @@ where
     // SAFETY: translate_lock guarantees exclusive access to
     // code_buf's write cursor.
     let code_buf_mut = unsafe { shared.code_buf_mut() };
+
+    #[cfg(feature = "llvm")]
+    let host_offset = {
+        let TranslateGuard { ref mut ir_ctx, ref mut llvm_jit } = *guard;
+        if let Some(ref mut jit) = llvm_jit {
+            tcg_backend::translate::translate_llvm(
+                ir_ctx,
+                jit,
+                code_buf_mut,
+                shared.backend.epilogue_offset(),
+            )
+        } else {
+            translate(ir_ctx, &shared.backend, code_buf_mut)
+        }
+    };
+    #[cfg(not(feature = "llvm"))]
     let host_offset =
         translate(&mut guard.ir_ctx, &shared.backend, code_buf_mut);
     let host_size = shared.code_buf().offset() - host_offset;
