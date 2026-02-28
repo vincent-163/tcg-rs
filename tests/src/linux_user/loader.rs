@@ -132,7 +132,7 @@ fn test_load_minimal_elf() {
     let path = tmpfile.path();
 
     let mut space = GuestSpace::new().expect("guest space");
-    let info = load_elf(path, &mut space, &["./test"], &["HOME=/tmp"])
+    let info = load_elf(path, &mut space, &["./test"], &["HOME=/tmp"], EM_RISCV)
         .expect("load_elf");
 
     assert_eq!(info.entry, 0x10000);
@@ -154,7 +154,7 @@ fn test_stack_layout() {
     let path = tmpfile.path();
 
     let mut space = GuestSpace::new().expect("guest space");
-    let info = load_elf(path, &mut space, &["./prog", "arg1"], &["K=V"])
+    let info = load_elf(path, &mut space, &["./prog", "arg1"], &["K=V"], EM_RISCV)
         .expect("load_elf");
 
     let sp = info.sp;

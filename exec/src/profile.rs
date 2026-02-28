@@ -1,0 +1,97 @@
+//! TB execution profiling and AOT profile data.
+
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::Path;
+use std::sync::atomic::AtomicU64;
+
+pub struct TbProfile {
+    pub exec_count: AtomicU64,
+    pub indirect_count: AtomicU64,
+    pub chain_source_count: AtomicU64,
+}
+
+impl TbProfile {
+    pub fn new() -> Self {
+        Self {
+            exec_count: AtomicU64::new(0),
+            indirect_count: AtomicU64::new(0),
+            chain_source_count: AtomicU64::new(0),
+        }
+    }
+}
+
+pub const PROF_FLAG_INDIRECT: u32 = 1;
+pub const PROF_FLAG_MULTI_SOURCE: u32 = 2;
+pub const DEFAULT_HOT_THRESHOLD: u64 = 10;
+pub const MULTI_SOURCE_THRESHOLD: u64 = 10;
+
+const MAGIC: &[u8; 8] = b"TCGPROF\0";
+const VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProfileEntry {
+    pub file_offset: u64,
+    pub exec_count: u64,
+    pub flags: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProfileData {
+    pub threshold: u32,
+    pub entries: Vec<ProfileEntry>,
+}
+
+impl ProfileData {
+    pub fn save(&self, path: &Path) -> io::Result<()> {
+        let mut f = File::create(path)?;
+        f.write_all(MAGIC)?;
+        f.write_all(&VERSION.to_le_bytes())?;
+        f.write_all(&self.threshold.to_le_bytes())?;
+        f.write_all(&(self.entries.len() as u64).to_le_bytes())?;
+        for e in &self.entries {
+            f.write_all(&e.file_offset.to_le_bytes())?;
+            f.write_all(&e.exec_count.to_le_bytes())?;
+            f.write_all(&e.flags.to_le_bytes())?;
+            f.write_all(&0u32.to_le_bytes())?;
+        }
+        Ok(())
+    }
+
+    pub fn load(path: &Path) -> io::Result<Self> {
+        let mut f = File::open(path)?;
+        let mut m = [0u8; 8];
+        f.read_exact(&mut m)?;
+        if &m != MAGIC { return Err(io::Error::new(io::ErrorKind::InvalidData, "bad magic")); }
+        let mut b4 = [0u8; 4];
+        let mut b8 = [0u8; 8];
+        f.read_exact(&mut b4)?;
+        if u32::from_le_bytes(b4) != VERSION {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "bad version"));
+        }
+        f.read_exact(&mut b4)?;
+        let threshold = u32::from_le_bytes(b4);
+        f.read_exact(&mut b8)?;
+        let count = u64::from_le_bytes(b8) as usize;
+        let mut entries = Vec::with_capacity(count);
+        for _ in 0..count {
+            f.read_exact(&mut b8)?;
+            let file_offset = u64::from_le_bytes(b8);
+            f.read_exact(&mut b8)?;
+            let exec_count = u64::from_le_bytes(b8);
+            f.read_exact(&mut b4)?;
+            let flags = u32::from_le_bytes(b4);
+            f.read_exact(&mut b4)?; // pad
+            entries.push(ProfileEntry { file_offset, exec_count, flags });
+        }
+        Ok(Self { threshold, entries })
+    }
+
+    pub fn hot_offsets(&self) -> std::collections::HashSet<u64> {
+        self.entries.iter().map(|e| e.file_offset).collect()
+    }
+
+    pub fn should_export(e: &ProfileEntry) -> bool {
+        (e.flags & PROF_FLAG_INDIRECT) != 0 || (e.flags & PROF_FLAG_MULTI_SOURCE) != 0
+    }
+}

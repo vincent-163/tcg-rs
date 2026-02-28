@@ -952,7 +952,23 @@ impl TbTranslator {
             Opcode::ExitTb => {
                 let val = carg!(0) as u64;
                 flush_globals!();
-                self.do_exit(val);
+                // For NOCHAIN exits (jalr / indirect jumps), try aot_dispatch
+                // to stay within the AOT .so instead of returning to exec loop.
+                if val == tcg_core::tb::TB_EXIT_NOCHAIN {
+                    if let Some(dispatch_fn) = self.aot_dispatch {
+                        let mut args = [self.env, self.guest_base];
+                        let call = LLVMBuildCall2(
+                            b, self.peer_fty, dispatch_fn,
+                            args.as_mut_ptr(), 2, E,
+                        );
+                        LLVMSetTailCallKind(call, 2); // MustTail
+                        LLVMBuildRet(b, call);
+                    } else {
+                        self.do_exit(val);
+                    }
+                } else {
+                    self.do_exit(val);
+                }
                 *terminated = true;
             }
             Opcode::GotoTb => {

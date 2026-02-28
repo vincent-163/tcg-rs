@@ -633,6 +633,7 @@ fn emit_decode_trait(
     width: u32,
 ) -> std::io::Result<()> {
     let trait_name = if width <= 16 { "Decode16" } else { "Decode" };
+    writeln!(w, "#[allow(non_snake_case)]")?;
     writeln!(w, "pub trait {trait_name}<Ir> {{")?;
     let mut seen = std::collections::HashSet::new();
     for p in patterns {

@@ -1,0 +1,18 @@
+[package]
+name = "tcg-aot"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tcg-aot"
+path = "src/main.rs"
+
+[features]
+llvm = ["tcg-backend/llvm"]
+
+[dependencies]
+tcg-core = { path = "../../core" }
+tcg-backend = { path = "../../backend" }
+tcg-frontend = { path = "../../frontend" }
+tcg-exec = { path = "../../exec" }
+libc = "0.2"

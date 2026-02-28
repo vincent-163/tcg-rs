@@ -49,6 +49,11 @@ pub struct ElfInfo {
     pub phnum: u16,
     pub sp: u64,
     pub brk: u64,
+    /// IRELATIVE relocations: (got_offset, resolver_addr)
+    pub irelatives: Vec<(u64, u64)>,
+    /// Guest virtual address where the executable PT_LOAD segment is mapped.
+    /// Used to convert guest PC ↔ ELF file offset: file_offset = pc - load_vaddr.
+    pub load_vaddr: u64,
 }
 
 /// Convert ELF p_flags to mmap prot flags.
@@ -82,8 +87,10 @@ pub fn load_elf(
     let mut brk: u64 = 0;
     let mut has_load = false;
     let mut phdr_addr: u64 = 0;
+    let mut load_vaddr: u64 = 0;
 
-    // Find phdr_addr from PT_PHDR or first PT_LOAD
+    // Find phdr_addr from PT_PHDR or first PT_LOAD,
+    // and the vaddr of the first executable PT_LOAD segment.
     let mut first_load_vaddr: Option<u64> = None;
     for ph in phdrs {
         if ph.p_type == PT_PHDR {
@@ -91,6 +98,9 @@ pub fn load_elf(
         }
         if ph.p_type == PT_LOAD && first_load_vaddr.is_none() {
             first_load_vaddr = Some(ph.p_vaddr);
+        }
+        if ph.p_type == PT_LOAD && (ph.p_flags & PF_X) != 0 && load_vaddr == 0 {
+            load_vaddr = ph.p_vaddr;
         }
     }
     if phdr_addr == 0 {
@@ -152,6 +162,38 @@ pub fn load_elf(
 
     space.set_brk(brk);
 
+    // Extract IRELATIVE relocations from section headers
+    let mut irelatives = Vec::new();
+    if let Ok(shdrs) = ehdr.section_headers(&data) {
+        for sh in shdrs {
+            if sh.sh_type != SHT_RELA {
+                continue;
+            }
+            let off = sh.sh_offset as usize;
+            let size = sh.sh_size as usize;
+            let ent = sh.sh_entsize as usize;
+            if ent < std::mem::size_of::<Elf64Rela>() || ent == 0 {
+                continue;
+            }
+            let count = size / ent;
+            for i in 0..count {
+                let roff = off + i * ent;
+                if roff + std::mem::size_of::<Elf64Rela>() > data.len() {
+                    break;
+                }
+                let rela = unsafe {
+                    &*(data[roff..].as_ptr() as *const Elf64Rela)
+                };
+                if rela.r_type() == R_AARCH64_IRELATIVE {
+                    irelatives.push((
+                        rela.r_offset,
+                        rela.r_addend as u64,
+                    ));
+                }
+            }
+        }
+    }
+
     let execfn = path.to_string_lossy();
     let sp = setup_stack(
         space,
@@ -169,6 +211,8 @@ pub fn load_elf(
         phnum: ehdr.e_phnum,
         sp,
         brk,
+        irelatives,
+        load_vaddr,
     })
 }
 

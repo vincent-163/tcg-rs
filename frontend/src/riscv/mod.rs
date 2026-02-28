@@ -5,6 +5,7 @@ pub mod ext;
 mod fpu;
 #[allow(dead_code)]
 mod insn_decode;
+#[allow(function_casts_as_integer)]
 mod trans;
 
 use crate::{DisasContextBase, DisasJumpType, TranslatorOps};

@@ -3,10 +3,17 @@ use crate::syscall::SyscallResult;
 
 // AArch64 Linux syscall numbers (asm-generic)
 const SYS_IOCTL: u64 = 29;
+const SYS_FACCESSAT: u64 = 48;
+const SYS_OPENAT: u64 = 56;
 const SYS_CLOSE: u64 = 57;
+const SYS_LSEEK: u64 = 62;
+const SYS_READ: u64 = 63;
 const SYS_WRITE: u64 = 64;
+const SYS_READV: u64 = 65;
 const SYS_WRITEV: u64 = 66;
 const SYS_READLINKAT: u64 = 78;
+const SYS_FSTATFS: u64 = 44;
+const SYS_NEWFSTATAT: u64 = 79;
 const SYS_FSTAT: u64 = 80;
 const SYS_EXIT: u64 = 93;
 const SYS_EXIT_GROUP: u64 = 94;
@@ -41,7 +48,7 @@ const ENOENT: u64 = (-2i64) as u64;
 pub fn handle_syscall_aarch64(
     space: &mut GuestSpace,
     regs: &mut [u64; 31],
-    sp: &mut u64,
+    _sp: &mut u64,
     mmap_next: &mut u64,
     elf_path: &str,
 ) -> SyscallResult {
@@ -95,7 +102,7 @@ pub fn handle_syscall_aarch64(
         }
         SYS_MUNMAP | SYS_SET_ROBUST_LIST
         | SYS_RT_SIGACTION | SYS_RT_SIGPROCMASK
-        | SYS_MADVISE | SYS_CLOSE => {
+        | SYS_MADVISE => {
             SyscallResult::Continue(0)
         }
         SYS_SET_TID_ADDRESS => SyscallResult::Continue(1),
@@ -121,8 +128,16 @@ pub fn handle_syscall_aarch64(
             }
         }
         SYS_WRITEV => do_writev(space, a0, a1, a2),
-        SYS_IOCTL => SyscallResult::Continue(ENOTTY),
+        SYS_READV => do_readv(space, a0, a1, a2),
+        SYS_IOCTL => do_ioctl(a0, a1, a2),
         SYS_FSTAT => do_fstat(space, a0, a1),
+        SYS_FSTATFS => do_fstatfs(space, a0, a1),
+        SYS_NEWFSTATAT => do_newfstatat(space, a0, a1, a2, a3),
+        SYS_OPENAT => do_openat(space, a0, a1, a2, a3),
+        SYS_CLOSE => do_close(a0),
+        SYS_READ => do_read(space, a0, a1, a2),
+        SYS_LSEEK => do_lseek(a0, a1, a2),
+        SYS_FACCESSAT => do_faccessat(space, a0, a1, a2),
         SYS_PRLIMIT64 => {
             do_prlimit64(space, a0, a1, a2, a3)
         }
@@ -418,4 +433,244 @@ fn do_futex(
         FUTEX_WAKE => SyscallResult::Continue(0),
         _ => SyscallResult::Continue(ENOSYS),
     }
+}
+
+// ---------------------------------------------------------------
+// openat(dirfd, pathname, flags, mode)
+// ---------------------------------------------------------------
+
+fn do_openat(
+    space: &mut GuestSpace,
+    dirfd: u64,
+    path_addr: u64,
+    flags: u64,
+    mode: u64,
+) -> SyscallResult {
+    let host_path = space.g2h(path_addr);
+    let path = unsafe {
+        std::ffi::CStr::from_ptr(host_path as *const i8)
+    };
+    let fd = unsafe {
+        libc::openat(
+            dirfd as i32,
+            path.as_ptr(),
+            flags as i32,
+            mode as libc::mode_t,
+        )
+    };
+    if fd < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(fd as u64)
+    }
+}
+
+// ---------------------------------------------------------------
+// close(fd)
+// ---------------------------------------------------------------
+
+fn do_close(fd: u64) -> SyscallResult {
+    let fd = fd as i32;
+    // Don't close stdio
+    if fd <= 2 {
+        return SyscallResult::Continue(0);
+    }
+    let ret = unsafe { libc::close(fd) };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(0)
+    }
+}
+
+// ---------------------------------------------------------------
+// read(fd, buf, count)
+// ---------------------------------------------------------------
+
+fn do_read(
+    space: &mut GuestSpace,
+    fd: u64,
+    buf_addr: u64,
+    count: u64,
+) -> SyscallResult {
+    let fd = fd as i32;
+    let len = count as usize;
+    let host_buf = space.g2h(buf_addr);
+    let ret = unsafe {
+        libc::read(fd, host_buf as *mut libc::c_void, len)
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(ret as u64)
+    }
+}
+
+// ---------------------------------------------------------------
+// readv(fd, iov, iovcnt)
+// ---------------------------------------------------------------
+
+fn do_readv(
+    space: &mut GuestSpace,
+    fd: u64,
+    iov_addr: u64,
+    iovcnt: u64,
+) -> SyscallResult {
+    let fd = fd as i32;
+    let cnt = iovcnt as usize;
+    let mut total: usize = 0;
+    for i in 0..cnt {
+        let entry = iov_addr + (i as u64) * 16;
+        let base =
+            unsafe { *(space.g2h(entry) as *const u64) };
+        let len = unsafe {
+            *(space.g2h(entry + 8) as *const u64)
+        } as usize;
+        if len == 0 { continue; }
+        let host = space.g2h(base);
+        let ret = unsafe {
+            libc::read(fd, host as *mut libc::c_void, len)
+        };
+        if ret < 0 {
+            return SyscallResult::Continue(errno_ret());
+        }
+        total += ret as usize;
+        if (ret as usize) < len { break; }
+    }
+    SyscallResult::Continue(total as u64)
+}
+
+// ---------------------------------------------------------------
+// lseek(fd, offset, whence)
+// ---------------------------------------------------------------
+
+fn do_lseek(fd: u64, offset: u64, whence: u64) -> SyscallResult {
+    let ret = unsafe {
+        libc::lseek(fd as i32, offset as i64, whence as i32)
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(ret as u64)
+    }
+}
+
+// ---------------------------------------------------------------
+// newfstatat / fstatat64(dirfd, pathname, statbuf, flags)
+// ---------------------------------------------------------------
+
+fn do_newfstatat(
+    space: &mut GuestSpace,
+    dirfd: u64,
+    path_addr: u64,
+    buf_addr: u64,
+    flags: u64,
+) -> SyscallResult {
+    let host_path = space.g2h(path_addr);
+    let path = unsafe {
+        std::ffi::CStr::from_ptr(host_path as *const i8)
+    };
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    let ret = unsafe {
+        libc::fstatat(
+            dirfd as i32,
+            path.as_ptr(),
+            &mut st,
+            flags as i32,
+        )
+    };
+    if ret < 0 {
+        return SyscallResult::Continue(errno_ret());
+    }
+    let p = space.g2h(buf_addr);
+    unsafe {
+        std::ptr::write_bytes(p, 0, 128);
+        *(p as *mut u64) = st.st_dev;
+        *(p.add(8) as *mut u64) = st.st_ino;
+        *(p.add(16) as *mut u32) = st.st_mode;
+        *(p.add(20) as *mut u32) = st.st_nlink as u32;
+        *(p.add(24) as *mut u32) = st.st_uid;
+        *(p.add(28) as *mut u32) = st.st_gid;
+        *(p.add(32) as *mut u64) = st.st_rdev;
+        *(p.add(48) as *mut i64) = st.st_size;
+        *(p.add(56) as *mut i32) = st.st_blksize as i32;
+        *(p.add(64) as *mut i64) = st.st_blocks;
+        *(p.add(72) as *mut i64) = st.st_atime;
+        *(p.add(80) as *mut i64) = st.st_atime_nsec;
+        *(p.add(88) as *mut i64) = st.st_mtime;
+        *(p.add(96) as *mut i64) = st.st_mtime_nsec;
+        *(p.add(104) as *mut i64) = st.st_ctime;
+        *(p.add(112) as *mut i64) = st.st_ctime_nsec;
+    }
+    SyscallResult::Continue(0)
+}
+
+// ---------------------------------------------------------------
+// fstatfs(fd, buf)
+// ---------------------------------------------------------------
+
+fn do_fstatfs(
+    space: &mut GuestSpace,
+    fd: u64,
+    buf_addr: u64,
+) -> SyscallResult {
+    let mut st: libc::statfs = unsafe { std::mem::zeroed() };
+    let ret = unsafe { libc::fstatfs(fd as i32, &mut st) };
+    if ret < 0 {
+        return SyscallResult::Continue(errno_ret());
+    }
+    // AArch64 struct statfs64 layout (120 bytes)
+    let p = space.g2h(buf_addr);
+    unsafe {
+        std::ptr::write_bytes(p, 0, 120);
+        *(p as *mut i64) = st.f_type;
+        *(p.add(8) as *mut i64) = st.f_bsize;
+        *(p.add(16) as *mut i64) = st.f_blocks as i64;
+        *(p.add(24) as *mut i64) = st.f_bfree as i64;
+        *(p.add(32) as *mut i64) = st.f_bavail as i64;
+        *(p.add(40) as *mut i64) = st.f_files as i64;
+        *(p.add(48) as *mut i64) = st.f_ffree as i64;
+        // f_fsid at 56 (8 bytes), f_namelen at 64, f_frsize at 72
+        *(p.add(64) as *mut i64) = st.f_namelen;
+        *(p.add(72) as *mut i64) = st.f_frsize;
+    }
+    SyscallResult::Continue(0)
+}
+
+// ---------------------------------------------------------------
+// faccessat(dirfd, pathname, mode)
+// ---------------------------------------------------------------
+
+fn do_faccessat(
+    space: &mut GuestSpace,
+    dirfd: u64,
+    path_addr: u64,
+    mode: u64,
+) -> SyscallResult {
+    let host_path = space.g2h(path_addr);
+    let path = unsafe {
+        std::ffi::CStr::from_ptr(host_path as *const i8)
+    };
+    let ret = unsafe {
+        libc::faccessat(dirfd as i32, path.as_ptr(), mode as i32, 0)
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(0)
+    }
+}
+
+// ---------------------------------------------------------------
+// ioctl(fd, cmd, arg)
+// ---------------------------------------------------------------
+
+fn do_ioctl(fd: u64, _cmd: u64, _arg: u64) -> SyscallResult {
+    let fd = fd as i32;
+    // TCGETS/TIOCGWINSZ on non-tty → ENOTTY
+    if fd > 2 {
+        return SyscallResult::Continue(ENOTTY);
+    }
+    // For stdio, also return ENOTTY (we're not a terminal)
+    SyscallResult::Continue(ENOTTY)
 }
