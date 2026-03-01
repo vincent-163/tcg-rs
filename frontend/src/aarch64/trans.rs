@@ -264,13 +264,7 @@ impl Aarch64DisasContext {
         ir.gen_or(Type::I64, tmp, c_s, v_s);
         ir.gen_or(Type::I64, nzcv, nzcv, tmp);
         ir.gen_mov(Type::I64, self.nzcv, nzcv);
-        self.nzcv_src = NzcvSource::AddSub {
-            a,
-            b,
-            result,
-            ty,
-            is_sub,
-        };
+        self.nzcv_src = NzcvSource::Unknown;
     }
 
     // -- NZCV for logical (C=0, V=0) --
@@ -301,7 +295,7 @@ impl Aarch64DisasContext {
         let nzcv = ir.new_temp(Type::I64);
         ir.gen_or(Type::I64, nzcv, n_s, z_s);
         ir.gen_mov(Type::I64, self.nzcv, nzcv);
-        self.nzcv_src = NzcvSource::Logic { result, ty };
+        self.nzcv_src = NzcvSource::Unknown;
     }
 
     fn set_nzcv_packed(&mut self, ir: &mut Context, val: TempIdx) {
@@ -1580,6 +1574,27 @@ impl Aarch64DisasContext {
         // AdvSIMD scalar three same: 01 U 11110 size 1 Rm opcode 1 Rn Rd
         if insn & 0xdf20_0400 == 0x5e20_0400 {
             return self.neon_scalar_3same(ir, insn);
+        }
+        // AdvSIMD scalar shift by immediate (observed in glibc):
+        // USHR Dd, Dn, #imm
+        if insn & 0xff80_fc00 == 0x7f00_0400 {
+            let immh = ((insn >> 19) & 0xf) as u32;
+            let immb = ((insn >> 16) & 0x7) as u32;
+            let immhb = (immh << 3) | immb;
+            if immh >= 8 {
+                let shift = 128u32 - immhb;
+                if (1..=64).contains(&shift) {
+                    let rn = ((insn >> 5) & 0x1f) as usize;
+                    let rd = (insn & 0x1f) as usize;
+                    let src = self.read_vreg_lo(ir, rn);
+                    let sh = ir.new_const(Type::I64, shift as u64);
+                    let d = ir.new_temp(Type::I64);
+                    ir.gen_shr(Type::I64, d, src, sh);
+                    self.write_vreg_lo(ir, rd, d);
+                    self.clear_vreg_hi(ir, rd);
+                    return true;
+                }
+            }
         }
         // FADDP scalar: 01 1 11110 sz 1 10000 01101 10 Rn Rd (mask 0xff3e0c00 == 0x7e300800)
         if insn & 0xff3e_0c00 == 0x7e30_0800 {
@@ -7477,47 +7492,60 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Add/Sub extended register --
 
     fn trans_ADD_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let _sf = a.sf != 0;
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_add(Type::I64, d, src1, ext);
-        self.write_xreg_sp(ir, a.rd, d);
+        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext64, sf);
+        let d = ir.new_temp(ty);
+        ir.gen_add(ty, d, src1, ext);
+        self.write_xreg_sp_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_SUB_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_sub(Type::I64, d, src1, ext);
-        self.write_xreg_sp(ir, a.rd, d);
+        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext64, sf);
+        let d = ir.new_temp(ty);
+        ir.gen_sub(ty, d, src1, ext);
+        self.write_xreg_sp_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_ADDS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let _sf = a.sf != 0;
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_add(Type::I64, d, src1, ext);
-        self.gen_nzcv_add_sub(ir, src1, ext, d, true, false);
-        self.write_xreg(ir, a.rd, d);
+        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext64, sf);
+        let d = ir.new_temp(ty);
+        ir.gen_add(ty, d, src1, ext);
+        self.gen_nzcv_add_sub(ir, src1, ext, d, sf, false);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_SUBS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let _sf = a.sf != 0;
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_sub(Type::I64, d, src1, ext);
-        self.gen_nzcv_add_sub(ir, src1, ext, d, true, true);
-        self.write_xreg(ir, a.rd, d);
+        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext64, sf);
+        let d = ir.new_temp(ty);
+        ir.gen_sub(ty, d, src1, ext);
+        self.gen_nzcv_add_sub(ir, src1, ext, d, sf, true);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
@@ -8726,6 +8754,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_set_label(done);
         // Resulting NZCV is path-dependent; keep only architectural source.
         self.nzcv_src = NzcvSource::Unknown;
+        // Keep CCMP isolated to avoid cross-instruction NZCV hazards.
+        self.base.is_jmp = DisasJumpType::TooMany;
         true
     }
 
@@ -8752,6 +8782,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_set_label(done);
         // Resulting NZCV is path-dependent; keep only architectural source.
         self.nzcv_src = NzcvSource::Unknown;
+        // Keep CCMN isolated to avoid cross-instruction NZCV hazards.
+        self.base.is_jmp = DisasJumpType::TooMany;
         true
     }
 
@@ -8778,6 +8810,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_set_label(done);
         // Resulting NZCV is path-dependent; keep only architectural source.
         self.nzcv_src = NzcvSource::Unknown;
+        // Keep CCMP isolated to avoid cross-instruction NZCV hazards.
+        self.base.is_jmp = DisasJumpType::TooMany;
         true
     }
 
@@ -8804,6 +8838,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_set_label(done);
         // Resulting NZCV is path-dependent; keep only architectural source.
         self.nzcv_src = NzcvSource::Unknown;
+        // Keep CCMN isolated to avoid cross-instruction NZCV hazards.
+        self.base.is_jmp = DisasJumpType::TooMany;
         true
     }
 

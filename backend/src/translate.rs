@@ -14,7 +14,9 @@ pub fn translate(
     buf: &mut CodeBuffer,
     profile_counter: Option<u64>,
 ) -> usize {
-    optimize(ctx);
+    if std::env::var_os("TCG_DISABLE_OPT").is_none() {
+        optimize(ctx);
+    }
     liveness_analysis(ctx);
 
     let tb_start = buf.offset();
@@ -47,7 +49,9 @@ pub fn translate_llvm(
     epilogue_offset: usize,
     profile_counter: Option<u64>,
 ) -> usize {
-    optimize(ctx);
+    if std::env::var_os("TCG_DISABLE_OPT").is_none() {
+        optimize(ctx);
+    }
 
     let func_name = jit.next_tb_name();
     let translator = crate::llvm::translate::TbTranslator::new(

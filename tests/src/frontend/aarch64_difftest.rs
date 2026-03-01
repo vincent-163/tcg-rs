@@ -123,6 +123,29 @@ fn a64_sdiv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
         | (0b000011 << 10) | (rn << 5) | rd
 }
 
+// Unsigned high multiply
+fn a64_umulh(rd: u32, rn: u32, rm: u32) -> u32 {
+    0x9bc0_0000 | (rm << 16) | (31 << 10) | (rn << 5) | rd
+}
+
+fn a64_ubfm(sf: u32, rd: u32, rn: u32, immr: u32, imms: u32) -> u32 {
+    let n = sf;
+    (sf << 31) | (0b10 << 29) | (0b100110 << 23) | (n << 22)
+        | (immr << 16) | (imms << 10) | (rn << 5) | rd
+}
+
+fn a64_sbfm(sf: u32, rd: u32, rn: u32, immr: u32, imms: u32) -> u32 {
+    let n = sf;
+    (sf << 31) | (0b00 << 29) | (0b100110 << 23) | (n << 22)
+        | (immr << 16) | (imms << 10) | (rn << 5) | rd
+}
+
+fn a64_bfm(sf: u32, rd: u32, rn: u32, immr: u32, imms: u32) -> u32 {
+    let n = sf;
+    (sf << 31) | (0b01 << 29) | (0b100110 << 23) | (n << 22)
+        | (immr << 16) | (imms << 10) | (rn << 5) | rd
+}
+
 // Move wide
 fn a64_movz(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
     (sf << 31) | (0b10100101 << 23) | (hw << 21)
@@ -399,7 +422,9 @@ fn run_tcgrs(
 ) -> Aarch64Cpu {
     let code: Vec<u8> =
         insns.iter().flat_map(|i| i.to_le_bytes()).collect();
-    let guest_base = code.as_ptr();
+    let mut mem = vec![0u8; 4096];
+    mem[..code.len()].copy_from_slice(&code);
+    let guest_base = mem.as_ptr();
 
     let mut backend = X86_64CodeGen::new();
     let mut buf = CodeBuffer::new(4096).unwrap();
@@ -471,6 +496,96 @@ fn difftest_branch(test: &BranchTest) {
          qemu_taken={}",
         test.name, tcgrs_taken, cpu.pc, qemu_taken
     );
+}
+
+/// Run an arbitrary instruction sequence through both backends and compare.
+fn difftest_sequence(
+    name: &str,
+    init: &[(usize, u64)],
+    insns: &[u32],
+    asm_body: &str,
+    check_regs: &[usize],
+    check_nzcv: bool,
+) {
+    let mut asm = String::from(
+        ".global _start\n_start:\n    adrp x3, save_area\n\
+         \x20   add x3, x3, :lo12:save_area\n",
+    );
+    for &(reg, val) in init {
+        assert!(reg != 3, "x3 reserved for save area");
+        asm.push_str(&format!(
+            "    mov {}, #0x{:x}\n",
+            XREG_NAME[reg],
+            val & 0xFFFF
+        ));
+        if (val >> 16) & 0xFFFF != 0 {
+            asm.push_str(&format!(
+                "    movk {}, #0x{:x}, lsl #16\n",
+                XREG_NAME[reg],
+                (val >> 16) & 0xFFFF
+            ));
+        }
+        if (val >> 32) & 0xFFFF != 0 {
+            asm.push_str(&format!(
+                "    movk {}, #0x{:x}, lsl #32\n",
+                XREG_NAME[reg],
+                (val >> 32) & 0xFFFF
+            ));
+        }
+        if (val >> 48) & 0xFFFF != 0 {
+            asm.push_str(&format!(
+                "    movk {}, #0x{:x}, lsl #48\n",
+                XREG_NAME[reg],
+                (val >> 48) & 0xFFFF
+            ));
+        }
+    }
+    asm.push_str(asm_body);
+    if !asm_body.ends_with('\n') {
+        asm.push('\n');
+    }
+    if check_nzcv {
+        asm.push_str("    mrs x4, nzcv\n");
+    }
+    for i in 0..31 {
+        asm.push_str(&format!(
+            "    str {}, [x3, #{}]\n",
+            XREG_NAME[i],
+            i * 8
+        ));
+    }
+    asm.push_str(
+        "    mov x8, #64\n\
+         \x20   mov x0, #1\n\
+         \x20   mov x1, x3\n\
+         \x20   mov x2, #248\n\
+         \x20   svc #0\n\
+         \x20   mov x8, #93\n\
+         \x20   mov x0, #0\n\
+         \x20   svc #0\n\
+         .bss\n\
+         .align 3\n\
+         save_area: .space 248\n",
+    );
+
+    let qemu_regs = run_qemu(&asm);
+    let cpu = run_tcgrs(init, insns);
+    for &r in check_regs {
+        let tcg_v = if r < 31 { cpu.xregs[r] } else { 0 };
+        assert_eq!(
+            tcg_v, qemu_regs[r],
+            "DIFFTEST FAIL [{name}]: x{r} tcg-rs={:#x} qemu={:#x}",
+            tcg_v, qemu_regs[r]
+        );
+    }
+    if check_nzcv {
+        let qemu_nzcv = qemu_regs[4];
+        assert_eq!(
+            cpu.nzcv, qemu_nzcv,
+            "DIFFTEST FAIL [{name}]: nzcv tcg-rs={:#x} qemu={:#x}",
+            cpu.nzcv, qemu_nzcv
+        );
+    }
 }
 
 // ── Edge-case values ─────────────────────────────────────
@@ -744,6 +859,142 @@ fn a64_difftest_udiv() {
         ));
     }
 }
+
+#[test]
+fn a64_difftest_umulh() {
+    let cases: Vec<(u64, u64)> = vec![
+        (0, 0),
+        (1, 1),
+        (VNEG1, VNEG1),
+        (VMAX, VMAX),
+        (0x1234_5678_9abc_def0, 0xfedc_ba98_7654_3210),
+    ];
+    for (a, b) in cases {
+        difftest_alu(&AluTest {
+            name: "umulh",
+            asm: "umulh x0, x1, x2".to_string(),
+            insn: a64_umulh(0, 1, 2),
+            init: vec![(1, a), (2, b)],
+            check_reg: 0,
+            check_nzcv: false,
+        });
+    }
+}
+
+#[test]
+fn a64_difftest_logical_imm_masks() {
+    let and_cases: Vec<u64> = vec![
+        0,
+        1,
+        7,
+        8,
+        0x1234_5678_9abc_def0,
+        VNEG1,
+    ];
+    for v in and_cases {
+        difftest_alu(&AluTest {
+            name: "and_imm_fff8",
+            asm: "and x25, x25, #0xfffffffffffffff8".to_string(),
+            insn: 0x927d_f339, // and x25, x25, #0xfffffffffffffff8
+            init: vec![(25, v)],
+            check_reg: 25,
+            check_nzcv: false,
+        });
+    }
+    difftest_alu(&AluTest {
+        name: "mov_log_imm_fc000000",
+        asm: "mov x0, #0xfffffffffc000000".to_string(),
+        insn: 0xb266_97e0,
+        init: vec![],
+        check_reg: 0,
+        check_nzcv: false,
+    });
+}
+
+#[test]
+fn a64_difftest_bitfield_ubfm() {
+    let vals = [V0, VNEG1, VPATTERN, VMAX, VMIN];
+    let imm_pairs = [(0, 7), (8, 15), (16, 31), (4, 3), (60, 3)];
+    for &v in &vals {
+        for &(immr, imms) in &imm_pairs {
+            difftest_alu(&AluTest {
+                name: "ubfm",
+                asm: format!("ubfm x0, x1, #{immr}, #{imms}"),
+                insn: a64_ubfm(1, 0, 1, immr, imms),
+                init: vec![(1, v)],
+                check_reg: 0,
+                check_nzcv: false,
+            });
+        }
+    }
+}
+
+#[test]
+fn a64_difftest_bitfield_sbfm() {
+    let vals = [V0, VNEG1, VPATTERN, VMAX, VMIN];
+    let imm_pairs = [(0, 7), (8, 15), (16, 31), (4, 3), (60, 3)];
+    for &v in &vals {
+        for &(immr, imms) in &imm_pairs {
+            difftest_alu(&AluTest {
+                name: "sbfm",
+                asm: format!("sbfm x0, x1, #{immr}, #{imms}"),
+                insn: a64_sbfm(1, 0, 1, immr, imms),
+                init: vec![(1, v)],
+                check_reg: 0,
+                check_nzcv: false,
+            });
+        }
+    }
+}
+
+#[test]
+fn a64_difftest_bitfield_bfm() {
+    let src_vals = [V0, VNEG1, VPATTERN, VMAX, VMIN];
+    let dst_vals = [0u64, 0x0123_4567_89ab_cdef, VNEG1];
+    let imm_pairs = [(0, 7), (8, 15), (16, 31), (4, 3), (60, 3)];
+    for &dst in &dst_vals {
+        for &src in &src_vals {
+            for &(immr, imms) in &imm_pairs {
+                difftest_alu(&AluTest {
+                    name: "bfm",
+                    asm: format!("bfm x0, x1, #{immr}, #{imms}"),
+                    insn: a64_bfm(1, 0, 1, immr, imms),
+                    init: vec![(0, dst), (1, src)],
+                    check_reg: 0,
+                    check_nzcv: false,
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn a64_difftest_ccmp_nzcv_seq() {
+    // Sequence seen in glibc __calloc:
+    //   cmp  x23, x26
+    //   ccmp x25, x2, #2, eq
+    // Compare NZCV against QEMU.
+    let seq = [a64_subs_r(1, 31, 23, 26), 0xfa42_0322];
+    let cases: Vec<(u64, u64, u64, u64)> = vec![
+        (0, 0, 5, 7),
+        (1, 2, 0x100, 0x80),
+        (2, 2, 0x80, 0x100),
+        (VNEG1, VNEG1, VMAX, VMIN),
+        (0x1000, 0x800, 0x40, 0x40),
+    ];
+    for (x23, x26, x25, x2) in cases {
+        difftest_sequence(
+            "ccmp_nzcv_seq",
+            &[(23, x23), (26, x26), (25, x25), (2, x2)],
+            &seq,
+            "    cmp x23, x26\n    ccmp x25, x2, #2, eq\n",
+            &[],
+            true,
+        );
+    }
+}
+
+
 
 #[test]
 #[ignore] // BUG: helper_sdiv64 panics on i64::MIN / -1 (Rust overflow)
@@ -1206,4 +1457,3 @@ fn a64_difftest_bcond() {
     );
     assert_eq!(cpu.pc, 8, "b.lt not taken: pc={:#x}", cpu.pc);
 }
-

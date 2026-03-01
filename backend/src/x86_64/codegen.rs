@@ -171,6 +171,12 @@ impl HostCodeGen for X86_64CodeGen {
                 let b = Reg::from_u8(iregs[1]);
                 emit_arith_rr(buf, ArithOp::Xor, rexw, d, b);
             }
+            Opcode::Eqv => {
+                let d = Reg::from_u8(oregs[0]);
+                let b = Reg::from_u8(iregs[1]);
+                emit_arith_rr(buf, ArithOp::Xor, rexw, d, b);
+                emit_not(buf, rexw, d);
+            }
             Opcode::Neg => {
                 emit_neg(buf, rexw, Reg::from_u8(oregs[0]));
             }
