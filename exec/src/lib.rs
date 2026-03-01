@@ -18,6 +18,7 @@ use tcg_core::tb::JumpCache;
 use tcg_core::Context;
 
 use profile::TbProfile;
+use tb_store::MAX_TBS;
 
 #[derive(Default)]
 pub struct ExecStats {
@@ -31,6 +32,8 @@ pub struct ExecStats {
     pub chain_patched: u64,
     pub chain_already: u64,
     pub hint_used: u64,
+    pub exit_target_hit: u64,
+    pub exit_target_miss: u64,
 }
 
 impl fmt::Display for ExecStats {
@@ -52,6 +55,9 @@ impl fmt::Display for ExecStats {
         writeln!(f, "  already:     {}", self.chain_already)?;
         writeln!(f, "--- Hint ---")?;
         writeln!(f, "  hint used:   {}", self.hint_used)?;
+        writeln!(f, "--- Exit Target Cache ---")?;
+        writeln!(f, "  hit:         {}", self.exit_target_hit)?;
+        writeln!(f, "  miss:        {}", self.exit_target_miss)?;
         Ok(())
     }
 }
@@ -128,7 +134,8 @@ pub struct SharedState<B: HostCodeGen> {
     pub backend: B,
     pub code_gen_start: usize,
     pub translate_lock: Mutex<TranslateGuard>,
-    /// Per-TB profiling data (indexed by tb_idx). Grows under translate_lock.
+    /// Per-TB profiling data (indexed by tb_idx). Pre-allocated to MAX_TBS
+    /// capacity so addresses remain stable when JIT code embeds counter pointers.
     pub tb_profiles: UnsafeCell<Vec<TbProfile>>,
     pub profiling: bool,
     pub aot_table: Option<AotTable>,
@@ -151,9 +158,17 @@ impl<B: HostCodeGen> SharedState<B> {
         unsafe { &(&*self.tb_profiles.get())[idx] }
     }
 
-    /// # Safety: caller must hold translate_lock.
+    /// # Safety: caller must hold translate_lock. Vec is pre-allocated
+    /// to avoid reallocation (addresses are embedded in JIT code).
     pub unsafe fn alloc_profile(&self) {
-        (&mut *self.tb_profiles.get()).push(TbProfile::new());
+        let profiles = &mut *self.tb_profiles.get();
+        assert!(
+            profiles.len() < profiles.capacity(),
+            "profile store full ({} entries, cap {})",
+            profiles.len(),
+            profiles.capacity(),
+        );
+        profiles.push(TbProfile::new());
     }
 }
 
@@ -188,7 +203,7 @@ impl<B: HostCodeGen> ExecEnv<B> {
                 #[cfg(feature = "llvm")]
                 llvm_jit: None,
             }),
-            tb_profiles: UnsafeCell::new(Vec::new()),
+            tb_profiles: UnsafeCell::new(Vec::with_capacity(MAX_TBS)),
             profiling,
             aot_table: aot,
         });
