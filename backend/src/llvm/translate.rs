@@ -356,7 +356,7 @@ impl TbTranslator {
     fn do_exit(&self, exit_code: u64) {
         let encoded = tcg_core::tb::encode_tb_exit(self.tb_ptr, exit_code);
         unsafe {
-            LLVMBuildStore(self.builder, self.ci(self.i64t, encoded), self.exit_val);
+            LLVMBuildStore(self.builder, self.ci(self.i64t, encoded as u64), self.exit_val);
             LLVMBuildBr(self.builder, self.exit_bb);
         }
     }

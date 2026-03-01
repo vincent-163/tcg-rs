@@ -3,6 +3,8 @@ use std::sync::atomic::Ordering;
 use crate::{
     ExecEnv, GuestCpu, PerCpuState, SharedState, MIN_CODE_BUF_REMAINING,
 };
+#[cfg(feature = "llvm")]
+use crate::TranslateGuard;
 use tcg_backend::translate::translate;
 use tcg_backend::HostCodeGen;
 use tcg_core::tb::{decode_tb_exit, TranslationBlock, TB_EXIT_NOCHAIN};
@@ -13,12 +15,17 @@ pub enum ExitReason {
     BufferFull,
 }
 
+/// # Safety
+/// Caller must ensure `env` contains valid code buffer and CPU state.
 pub unsafe fn cpu_exec_loop<B, C>(env: &mut ExecEnv<B>, cpu: &mut C) -> ExitReason
 where B: HostCodeGen, C: GuestCpu,
 {
     cpu_exec_loop_mt(&env.shared, &mut env.per_cpu, cpu)
 }
 
+/// # Safety
+/// Caller must ensure `shared` contains valid code buffer and CPU state,
+/// and that `cpu` is properly initialised.
 pub unsafe fn cpu_exec_loop_mt<B, C>(
     shared: &SharedState<B>, per_cpu: &mut PerCpuState, cpu: &mut C,
 ) -> ExitReason
@@ -178,10 +185,12 @@ where B: HostCodeGen, C: GuestCpu,
         code_buf_mut.emit_bytes(&[0x48, 0xb8]);        // movabs rax,
         code_buf_mut.emit_u64(func_addr);
         code_buf_mut.emit_bytes(&[0xff, 0xd0]);        // call rax
-        // Re-encode: if rax > 7 (chainable exit), replace TB-ptr part.
-        // Check rax > 7: use cmp rax, 7 then jbe skip
-        code_buf_mut.emit_bytes(&[0x48, 0x83, 0xf8, 0x07]); // cmp rax, 7
-        code_buf_mut.emit_bytes(&[0x76, 0x10]);              // jbe +16 (skip re-encode)
+        // AOT returns bare slot (0/1/2) because tb_ptr=0 at compile time.
+        // Real exits (ECALL=3, EBREAK=4, UNDEF=5...) are > TB_EXIT_NOCHAIN(2).
+        // Re-encode slot exits (rax <= 2): rax = tb_ptr | (rax & 7).
+        // Pass real exits (rax >= 3) through unchanged.
+        code_buf_mut.emit_bytes(&[0x48, 0x83, 0xf8, 0x02]); // cmp rax, 2
+        code_buf_mut.emit_bytes(&[0x77, 0x11]);              // ja +17 (skip re-encode)
         // Re-encode: rax = (tb_ptr as usize) | (rax & 7)
         code_buf_mut.emit_bytes(&[0x48, 0x83, 0xe0, 0x07]); // and rax, 7
         code_buf_mut.emit_bytes(&[0x48, 0xb9]);              // movabs rcx,
@@ -204,8 +213,7 @@ where B: HostCodeGen, C: GuestCpu,
             };
             if use_llvm {
                 let prof_addr = if shared.profiling {
-                    use std::sync::atomic::Ordering;
-                    std::ptr::addr_of!((*tb_ptr).exec_count) as u64
+                    unsafe { std::ptr::addr_of!((*tb_ptr).exec_count) as u64 }
                 } else {
                     0
                 };
@@ -215,7 +223,7 @@ where B: HostCodeGen, C: GuestCpu,
                 )
             } else {
                 let prof_addr = if shared.profiling {
-                    std::ptr::addr_of!((*tb_ptr).exec_count) as u64
+                    unsafe { std::ptr::addr_of!((*tb_ptr).exec_count) as u64 }
                 } else {
                     0
                 };
@@ -251,7 +259,8 @@ where B: HostCodeGen, C: GuestCpu,
         }
     }
 
-    shared.tb_store.insert(tb_ptr);
+    // SAFETY: tb_ptr was just returned by tb_store.alloc() above and has not been freed.
+    unsafe { shared.tb_store.insert(tb_ptr); }
     per_cpu.jump_cache.insert(pc, tb_ptr);
     Some(tb_ptr)
 }
