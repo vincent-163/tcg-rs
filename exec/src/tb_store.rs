@@ -1,126 +1,127 @@
-use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use tcg_backend::code_buffer::CodeBuffer;
 use tcg_backend::HostCodeGen;
 use tcg_core::tb::{TranslationBlock, TB_HASH_SIZE};
 
-pub const MAX_TBS: usize = 65536;
-
 /// Thread-safe storage and hash-table lookup for TBs.
 ///
-/// Uses `UnsafeCell<Vec>` + `AtomicUsize` for lock-free reads
-/// and a `Mutex` for hash table mutations.
+/// Each TB is heap-allocated via `Box` and owned by this store.
+/// TBs are identified and referenced by their stable raw pointer
+/// (`*mut TranslationBlock`) rather than a Vec index.  The hash table
+/// chains use the `hash_next` field (stored as a raw pointer value,
+/// 0 = end of chain) to avoid a separate allocation.
+///
+/// Ownership model:
+/// - `alloc` boxes a new TB and returns its raw pointer.
+/// - All other operations borrow via raw pointers.
+/// - `flush` / `Drop` free every owned box.
 pub struct TbStore {
-    tbs: UnsafeCell<Vec<TranslationBlock>>,
-    len: AtomicUsize,
-    hash: Mutex<Vec<Option<usize>>>,
+    /// All owned TBs (for drop bookkeeping and iteration).
+    /// Protected by the hash mutex (same single mutex used for all mutations).
+    owned: Mutex<(Vec<*mut TranslationBlock>, Vec<Option<usize>>)>,
+    // (vec of owned ptrs, hash buckets)
 }
 
-// SAFETY:
-// - tbs Vec is pre-allocated (no realloc). New entries are
-//   appended under translate_lock, then len is published
-//   with Release. Readers use Acquire on len.
-// - hash is protected by its own Mutex.
+// SAFETY: TbStore owns all the TranslationBlock pointers and
+// controls all access to them through its API + mandatory locking.
 unsafe impl Sync for TbStore {}
 unsafe impl Send for TbStore {}
 
 impl TbStore {
     pub fn new() -> Self {
-        let mut v = Vec::with_capacity(MAX_TBS);
-        // Ensure capacity is reserved upfront.
-        assert!(v.capacity() >= MAX_TBS);
-        v.clear();
+        let buckets = vec![None; TB_HASH_SIZE];
         Self {
-            tbs: UnsafeCell::new(v),
-            len: AtomicUsize::new(0),
-            hash: Mutex::new(vec![None; TB_HASH_SIZE]),
+            owned: Mutex::new((Vec::new(), buckets)),
         }
     }
 
-    /// Allocate a new TB. Must be called under translate_lock.
+    /// Allocate a new TB on the heap.
     ///
-    /// # Safety
-    /// Caller must hold the translate_lock to ensure exclusive
-    /// write access to the tbs Vec.
-    pub unsafe fn alloc(&self, pc: u64, flags: u32, cflags: u32) -> usize {
-        let tbs = &mut *self.tbs.get();
-        let idx = tbs.len();
-        assert!(idx < MAX_TBS, "TB store full");
-        tbs.push(TranslationBlock::new(pc, flags, cflags));
-        // Publish the new length so readers can see it.
-        self.len.store(tbs.len(), Ordering::Release);
-        idx
+    /// Returns a stable `*mut TranslationBlock`.  The pointer remains
+    /// valid until `flush` is called.  Caller must hold `translate_lock`
+    /// for the immutable-field write phase that follows.
+    pub fn alloc(&self, pc: u64, flags: u32, cflags: u32) -> *mut TranslationBlock {
+        let tb = Box::new(TranslationBlock::new(pc, flags, cflags));
+        let ptr = Box::into_raw(tb);
+        self.owned.lock().unwrap().0.push(ptr);
+        ptr
     }
 
-    /// Get a shared reference to a TB by index.
-    pub fn get(&self, idx: usize) -> &TranslationBlock {
-        let len = self.len.load(Ordering::Acquire);
-        assert!(idx < len, "TB index out of bounds");
-        // SAFETY: idx < len, and the entry at idx is fully
-        // initialized (written before len was published).
-        unsafe { &(&*self.tbs.get())[idx] }
-    }
-
-    /// Get a mutable reference to a TB by index.
+    /// Get a shared reference to a TB from its pointer.
     ///
     /// # Safety
-    /// Caller must ensure exclusive access (e.g. under
-    /// translate_lock for immutable fields, or per-TB jmp lock
-    /// for chaining fields).
+    /// `tb` must be a pointer previously returned by `alloc` and not yet
+    /// freed by `flush`.
+    #[inline]
+    pub unsafe fn get<'a>(&self, tb: *mut TranslationBlock) -> &'a TranslationBlock {
+        &*tb
+    }
+
+    /// Get a mutable reference to a TB from its pointer.
+    ///
+    /// # Safety
+    /// Caller must ensure exclusive access (e.g. under translate_lock for
+    /// immutable fields, or per-TB jmp lock for chaining fields).
     #[allow(clippy::mut_from_ref)]
-    pub unsafe fn get_mut(&self, idx: usize) -> &mut TranslationBlock {
-        let len = self.len.load(Ordering::Acquire);
-        assert!(idx < len, "TB index out of bounds");
-        &mut (&mut *self.tbs.get())[idx]
+    #[inline]
+    pub unsafe fn get_mut<'a>(&self, tb: *mut TranslationBlock) -> &'a mut TranslationBlock {
+        &mut *tb
     }
 
     /// Lookup a valid TB by (pc, flags) in the hash table.
     /// Only returns TBs that have been translated (host_size > 0).
-    pub fn lookup(&self, pc: u64, flags: u32) -> Option<usize> {
-        let hash = self.hash.lock().unwrap();
+    pub fn lookup(&self, pc: u64, flags: u32) -> Option<*mut TranslationBlock> {
+        let guard = self.owned.lock().unwrap();
+        let buckets = &guard.1;
+        // buckets store (raw usize cast of *mut TB) as Option<usize>, 0 = none
         let bucket = TranslationBlock::hash(pc, flags);
-        let mut cur = hash[bucket];
-        while let Some(idx) = cur {
-            let tb = self.get(idx);
+        let mut cur = match buckets[bucket] {
+            Some(raw) => raw as *mut TranslationBlock,
+            None => return None,
+        };
+        loop {
+            let tb = unsafe { &*cur };
+            use std::sync::atomic::Ordering;
             if !tb.invalid.load(Ordering::Acquire)
                 && tb.pc == pc
                 && tb.flags == flags
                 && tb.host_size > 0
             {
-                return Some(idx);
+                return Some(cur);
             }
-            cur = tb.hash_next;
+            let next_raw = tb.hash_next;
+            if next_raw == 0 {
+                return None;
+            }
+            cur = next_raw as *mut TranslationBlock;
         }
-        None
     }
 
     /// Insert a TB into the hash table (prepend to bucket).
-    pub fn insert(&self, tb_idx: usize) {
-        let tb = self.get(tb_idx);
-        let pc = tb.pc;
-        let flags = tb.flags;
-        let bucket = TranslationBlock::hash(pc, flags);
-        let mut hash = self.hash.lock().unwrap();
-        // SAFETY: we need to set hash_next on the TB. This is
-        // only called under translate_lock.
-        unsafe {
-            let tb_mut = self.get_mut(tb_idx);
-            tb_mut.hash_next = hash[bucket];
-        }
-        hash[bucket] = Some(tb_idx);
+    ///
+    /// Must be called after the TB's `pc`, `flags`, and `host_size` are set.
+    pub fn insert(&self, tb_ptr: *mut TranslationBlock) {
+        let mut guard = self.owned.lock().unwrap();
+        let tb = unsafe { &mut *tb_ptr };
+        let bucket = TranslationBlock::hash(tb.pc, tb.flags);
+        let buckets = &mut guard.1;
+        // Prepend: new node's next = old head.
+        let old_head = buckets[bucket].unwrap_or(0);
+        tb.hash_next = old_head;
+        buckets[bucket] = Some(tb_ptr as usize);
     }
 
-    /// Mark a TB as invalid, unlink all chained jumps, and
-    /// remove it from the hash chain.
+    /// Mark a TB as invalid, unlink all chained jumps, and remove it from
+    /// the hash chain.
     pub fn invalidate<B: HostCodeGen>(
         &self,
-        tb_idx: usize,
+        tb_ptr: *mut TranslationBlock,
         code_buf: &CodeBuffer,
         backend: &B,
     ) {
-        let tb = self.get(tb_idx);
+        use std::sync::atomic::Ordering;
+        let tb = unsafe { &*tb_ptr };
         tb.invalid.store(true, Ordering::Release);
 
         // 1. Unlink incoming edges.
@@ -128,17 +129,17 @@ impl TbStore {
             let mut jmp = tb.jmp.lock().unwrap();
             std::mem::take(&mut jmp.jmp_list)
         };
-        for (src, slot) in jmp_list {
-            Self::reset_jump(self.get(src), code_buf, backend, slot);
-            let src_tb = self.get(src);
-            let mut src_jmp = src_tb.jmp.lock().unwrap();
+        for (src_ptr, slot) in jmp_list {
+            Self::reset_jump(unsafe { &*src_ptr }, code_buf, backend, slot);
+            let mut src_jmp = unsafe { &*src_ptr }.jmp.lock().unwrap();
             src_jmp.jmp_dest[slot] = None;
         }
 
         // 2. Unlink outgoing edges.
         let outgoing = {
             let mut jmp = tb.jmp.lock().unwrap();
-            let mut out = [(0usize, 0usize); 2];
+            let mut out: [(usize, *mut TranslationBlock); 2] =
+                [(0, std::ptr::null_mut()); 2];
             let mut count = 0;
             for slot in 0..2 {
                 if let Some(dst) = jmp.jmp_dest[slot].take() {
@@ -149,38 +150,42 @@ impl TbStore {
             (out, count)
         };
         let (out, count) = outgoing;
-        for &(_slot, dst) in out.iter().take(count) {
-            let dst_tb = self.get(dst);
-            let mut dst_jmp = dst_tb.jmp.lock().unwrap();
+        for &(slot, dst) in out.iter().take(count) {
+            let mut dst_jmp = unsafe { &*dst }.jmp.lock().unwrap();
             dst_jmp
                 .jmp_list
-                .retain(|&(s, n)| !(s == tb_idx && n == _slot));
+                .retain(|&(s, n)| !(s == tb_ptr && n == slot));
         }
 
         // 3. Remove from hash chain.
         let pc = tb.pc;
         let flags = tb.flags;
         let bucket = TranslationBlock::hash(pc, flags);
-        let mut hash = self.hash.lock().unwrap();
-        let mut prev: Option<usize> = None;
-        let mut cur = hash[bucket];
-        while let Some(idx) = cur {
-            if idx == tb_idx {
-                let next = self.get(idx).hash_next;
-                if let Some(p) = prev {
-                    unsafe {
-                        self.get_mut(p).hash_next = next;
-                    }
+        let mut guard = self.owned.lock().unwrap();
+        let buckets = &mut guard.1;
+        let mut prev_raw: Option<*mut TranslationBlock> = None;
+        let mut cur_raw = match buckets[bucket] {
+            Some(r) => r as *mut TranslationBlock,
+            None => return,
+        };
+        loop {
+            let cur_tb = unsafe { &mut *cur_raw };
+            if cur_raw == tb_ptr {
+                let next = cur_tb.hash_next;
+                if let Some(p) = prev_raw {
+                    unsafe { &mut *p }.hash_next = next;
                 } else {
-                    hash[bucket] = next;
+                    buckets[bucket] = if next == 0 { None } else { Some(next) };
                 }
-                unsafe {
-                    self.get_mut(idx).hash_next = None;
-                }
+                cur_tb.hash_next = 0;
                 return;
             }
-            prev = cur;
-            cur = self.get(idx).hash_next;
+            let next_raw = cur_tb.hash_next;
+            if next_raw == 0 {
+                return;
+            }
+            prev_raw = Some(cur_raw);
+            cur_raw = next_raw as *mut TranslationBlock;
         }
     }
 
@@ -203,14 +208,25 @@ impl TbStore {
     /// # Safety
     /// Caller must ensure no other threads are accessing TBs.
     pub unsafe fn flush(&self) {
-        let tbs = &mut *self.tbs.get();
-        tbs.clear();
-        self.len.store(0, Ordering::Release);
-        self.hash.lock().unwrap().fill(None);
+        let mut guard = self.owned.lock().unwrap();
+        let (owned, buckets) = &mut *guard;
+        // Free all TB boxes.
+        for ptr in owned.drain(..) {
+            drop(Box::from_raw(ptr));
+        }
+        // Clear hash buckets.
+        for b in buckets.iter_mut() {
+            *b = None;
+        }
+    }
+
+    /// Iterate over all (possibly invalid) owned TB pointers.
+    pub fn iter_all(&self) -> Vec<*mut TranslationBlock> {
+        self.owned.lock().unwrap().0.clone()
     }
 
     pub fn len(&self) -> usize {
-        self.len.load(Ordering::Acquire)
+        self.owned.lock().unwrap().0.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -221,5 +237,11 @@ impl TbStore {
 impl Default for TbStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for TbStore {
+    fn drop(&mut self) {
+        unsafe { self.flush() };
     }
 }

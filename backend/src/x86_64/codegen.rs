@@ -321,8 +321,8 @@ impl HostCodeGen for X86_64CodeGen {
             }
             Opcode::ExitTb => {
                 let val = cargs[0] as u64;
-                let encoded = tcg_core::tb::encode_tb_exit(ctx.tb_idx, val);
-                self.emit_exit_tb(buf, encoded);
+                let encoded = tcg_core::tb::encode_tb_exit(ctx.tb_ptr, val);
+                self.emit_exit_tb(buf, encoded as u64);
             }
             Opcode::GotoTb => {
                 let (jmp, reset) = self.emit_goto_tb(buf);

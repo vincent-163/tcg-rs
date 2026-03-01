@@ -5,7 +5,7 @@ use crate::{
 };
 use tcg_backend::translate::translate;
 use tcg_backend::HostCodeGen;
-use tcg_core::tb::{decode_tb_exit, EXIT_TARGET_NONE, TB_EXIT_NOCHAIN};
+use tcg_core::tb::{decode_tb_exit, TranslationBlock, TB_EXIT_NOCHAIN};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitReason {
@@ -24,7 +24,7 @@ pub unsafe fn cpu_exec_loop_mt<B, C>(
 ) -> ExitReason
 where B: HostCodeGen, C: GuestCpu,
 {
-    let mut next_tb_hint: Option<usize> = None;
+    let mut next_tb_hint: Option<*mut TranslationBlock> = None;
     let tb_limit: u64 = std::env::var("TCG_TB_LIMIT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -49,24 +49,21 @@ where B: HostCodeGen, C: GuestCpu,
             }
         }
 
-        let tb_idx = match next_tb_hint.take() {
-            Some(idx) => { per_cpu.stats.hint_used += 1; idx }
+        let tb_ptr = match next_tb_hint.take() {
+            Some(ptr) => { per_cpu.stats.hint_used += 1; ptr }
             None => {
                 let pc = cpu.get_pc();
                 let flags = cpu.get_flags();
                 match tb_find(shared, per_cpu, cpu, pc, flags) {
-                    Some(idx) => idx,
+                    Some(ptr) => ptr,
                     None => return ExitReason::BufferFull,
                 }
             }
         };
 
-        // Profiling counter is now incremented inside the JIT code at TB start
-        // to ensure it's counted even when TBs chain to each other
-
-        let raw_exit = cpu_tb_exec(shared, cpu, tb_idx);
+        let raw_exit = cpu_tb_exec(shared, cpu, tb_ptr);
         let (last_tb, exit_code) = decode_tb_exit(raw_exit);
-        let src_tb = last_tb.unwrap_or(tb_idx);
+        let src_tb = last_tb.unwrap_or(tb_ptr);
 
         match exit_code {
             v @ 0..=1 => {
@@ -74,7 +71,7 @@ where B: HostCodeGen, C: GuestCpu,
                 let pc = cpu.get_pc();
                 let flags = cpu.get_flags();
                 let dst = match tb_find(shared, per_cpu, cpu, pc, flags) {
-                    Some(idx) => idx,
+                    Some(ptr) => ptr,
                     None => return ExitReason::BufferFull,
                 };
                 if tb_limit == 0 {
@@ -87,14 +84,15 @@ where B: HostCodeGen, C: GuestCpu,
                 let pc = cpu.get_pc();
                 let flags = cpu.get_flags();
 
-                let stb = shared.tb_store.get(src_tb);
-                let cached = stb.exit_target.load(Ordering::Relaxed);
-                if cached != EXIT_TARGET_NONE {
-                    let tb = shared.tb_store.get(cached);
-                    if !tb.invalid.load(Ordering::Acquire)
-                        && tb.pc == pc
-                        && tb.flags == flags
-                        && tb.host_size > 0
+                let stb = &*src_tb;
+                let cached_raw = stb.exit_target.load(Ordering::Relaxed);
+                if cached_raw != 0 {
+                    let cached = cached_raw as *mut TranslationBlock;
+                    let cached_tb = &*cached;
+                    if !cached_tb.invalid.load(Ordering::Acquire)
+                        && cached_tb.pc == pc
+                        && cached_tb.flags == flags
+                        && cached_tb.host_size > 0
                     {
                         per_cpu.stats.exit_target_hit += 1;
                         next_tb_hint = Some(cached);
@@ -104,10 +102,10 @@ where B: HostCodeGen, C: GuestCpu,
                 }
 
                 let dst = match tb_find(shared, per_cpu, cpu, pc, flags) {
-                    Some(idx) => idx,
+                    Some(ptr) => ptr,
                     None => return ExitReason::BufferFull,
                 };
-                stb.exit_target.store(dst, Ordering::Relaxed);
+                stb.exit_target.store(dst as usize, Ordering::Relaxed);
                 next_tb_hint = Some(dst);
             }
             _ => {
@@ -120,24 +118,24 @@ where B: HostCodeGen, C: GuestCpu,
 
 fn tb_find<B, C>(
     shared: &SharedState<B>, per_cpu: &mut PerCpuState, cpu: &mut C, pc: u64, flags: u32,
-) -> Option<usize>
+) -> Option<*mut TranslationBlock>
 where B: HostCodeGen, C: GuestCpu,
 {
-    if let Some(idx) = per_cpu.jump_cache.lookup(pc) {
-        let tb = shared.tb_store.get(idx);
+    if let Some(ptr) = per_cpu.jump_cache.lookup(pc) {
+        let tb = unsafe { &*ptr };
         if !tb.invalid.load(Ordering::Acquire)
             && tb.pc == pc
             && tb.flags == flags
             && tb.host_size > 0
         {
             per_cpu.stats.jc_hit += 1;
-            return Some(idx);
+            return Some(ptr);
         }
     }
-    if let Some(idx) = shared.tb_store.lookup(pc, flags) {
-        per_cpu.jump_cache.insert(pc, idx);
+    if let Some(ptr) = shared.tb_store.lookup(pc, flags) {
+        per_cpu.jump_cache.insert(pc, ptr);
         per_cpu.stats.ht_hit += 1;
-        return Some(idx);
+        return Some(ptr);
     }
     per_cpu.stats.translate += 1;
     tb_gen_code(shared, per_cpu, cpu, pc, flags)
@@ -145,25 +143,24 @@ where B: HostCodeGen, C: GuestCpu,
 
 fn tb_gen_code<B, C>(
     shared: &SharedState<B>, per_cpu: &mut PerCpuState, cpu: &mut C, pc: u64, flags: u32,
-) -> Option<usize>
+) -> Option<*mut TranslationBlock>
 where B: HostCodeGen, C: GuestCpu,
 {
     if shared.code_buf().remaining() < MIN_CODE_BUF_REMAINING { return None; }
 
     let mut guard = shared.translate_lock.lock().unwrap();
 
-    if let Some(idx) = shared.tb_store.lookup(pc, flags) {
-        per_cpu.jump_cache.insert(pc, idx);
-        return Some(idx);
+    if let Some(ptr) = shared.tb_store.lookup(pc, flags) {
+        per_cpu.jump_cache.insert(pc, ptr);
+        return Some(ptr);
     }
 
-    let tb_idx = unsafe { shared.tb_store.alloc(pc, flags, 0) };
-    if shared.profiling { unsafe { shared.alloc_profile(); } }
+    let tb_ptr = shared.tb_store.alloc(pc, flags, 0);
 
     guard.ir_ctx.reset();
-    guard.ir_ctx.tb_idx = tb_idx as u32;
+    guard.ir_ctx.tb_ptr = tb_ptr as usize;
     let guest_size = cpu.gen_code(&mut guard.ir_ctx, pc, tcg_core::tb::TranslationBlock::max_insns(0));
-    unsafe { shared.tb_store.get_mut(tb_idx).size = guest_size; }
+    unsafe { shared.tb_store.get_mut(tb_ptr).size = guest_size; }
 
     shared.backend.clear_goto_tb_offsets();
     let code_buf_mut = unsafe { shared.code_buf_mut() };
@@ -172,25 +169,23 @@ where B: HostCodeGen, C: GuestCpu,
     let aot_addr = shared.aot_table.as_ref().and_then(|t| t.lookup(pc));
 
     let host_offset = if let Some(func_addr) = aot_addr {
-        // Emit trampoline to AOT function
-        // AOT functions have tb_idx=0 in their exit encoding, so we need to
-        // re-encode with the correct tb_idx after the call.
+        // Emit trampoline to AOT function.
+        // AOT functions use tb_ptr=0 in their exit encoding, so we re-encode
+        // with the correct tb_ptr after the call.
         let tb_start = code_buf_mut.offset();
         code_buf_mut.emit_bytes(&[0x48, 0x89, 0xef]); // mov rdi, rbp
         code_buf_mut.emit_bytes(&[0x4c, 0x89, 0xf6]); // mov rsi, r14
         code_buf_mut.emit_bytes(&[0x48, 0xb8]);        // movabs rax,
         code_buf_mut.emit_u64(func_addr);
         code_buf_mut.emit_bytes(&[0xff, 0xd0]);        // call rax
-        // Re-encode: if upper 32 bits != 0 (TB exit), replace tb_idx
-        // test eax's upper half: check if rax >> 32 != 0
-        code_buf_mut.emit_bytes(&[0x48, 0x89, 0xc1]); // mov rcx, rax
-        code_buf_mut.emit_bytes(&[0x48, 0xc1, 0xe9, 0x20]); // shr rcx, 32
-        code_buf_mut.emit_bytes(&[0x48, 0x85, 0xc9]); // test rcx, rcx
-        code_buf_mut.emit_bytes(&[0x74, 0x0e]);        // jz +14 (skip re-encode)
-        // Re-encode: rax = ((tb_idx+1) << 32) | (rax & 0x3)
-        code_buf_mut.emit_bytes(&[0x48, 0x83, 0xe0, 0x03]); // and rax, 3
+        // Re-encode: if rax > 7 (chainable exit), replace TB-ptr part.
+        // Check rax > 7: use cmp rax, 7 then jbe skip
+        code_buf_mut.emit_bytes(&[0x48, 0x83, 0xf8, 0x07]); // cmp rax, 7
+        code_buf_mut.emit_bytes(&[0x76, 0x10]);              // jbe +16 (skip re-encode)
+        // Re-encode: rax = (tb_ptr as usize) | (rax & 7)
+        code_buf_mut.emit_bytes(&[0x48, 0x83, 0xe0, 0x07]); // and rax, 7
         code_buf_mut.emit_bytes(&[0x48, 0xb9]);              // movabs rcx,
-        code_buf_mut.emit_u64(((tb_idx as u64) + 1) << 32);
+        code_buf_mut.emit_u64(tb_ptr as u64);
         code_buf_mut.emit_bytes(&[0x48, 0x09, 0xc8]);        // or rax, rcx
         // jmp epilogue
         code_buf_mut.emit_u8(0xe9);                    // jmp rel32
@@ -209,8 +204,8 @@ where B: HostCodeGen, C: GuestCpu,
             };
             if use_llvm {
                 let prof_addr = if shared.profiling {
-                    let tb_profile = shared.tb_profile(tb_idx);
-                    std::ptr::addr_of!((*tb_profile).exec_count) as u64
+                    use std::sync::atomic::Ordering;
+                    std::ptr::addr_of!((*tb_ptr).exec_count) as u64
                 } else {
                     0
                 };
@@ -220,8 +215,7 @@ where B: HostCodeGen, C: GuestCpu,
                 )
             } else {
                 let prof_addr = if shared.profiling {
-                    let tb_profile = shared.tb_profile(tb_idx);
-                    std::ptr::addr_of!((*tb_profile).exec_count) as u64
+                    std::ptr::addr_of!((*tb_ptr).exec_count) as u64
                 } else {
                     0
                 };
@@ -231,8 +225,7 @@ where B: HostCodeGen, C: GuestCpu,
         #[cfg(not(feature = "llvm"))]
         {
             let prof_addr = if shared.profiling {
-                let tb_profile = shared.tb_profile(tb_idx);
-                std::ptr::addr_of!((*tb_profile).exec_count) as u64
+                unsafe { std::ptr::addr_of!((*tb_ptr).exec_count) as u64 }
             } else {
                 0
             };
@@ -242,7 +235,7 @@ where B: HostCodeGen, C: GuestCpu,
 
     let host_size = shared.code_buf().offset() - host_offset;
     unsafe {
-        let tb = shared.tb_store.get_mut(tb_idx);
+        let tb = shared.tb_store.get_mut(tb_ptr);
         tb.host_offset = host_offset;
         tb.host_size = host_size;
     }
@@ -250,7 +243,7 @@ where B: HostCodeGen, C: GuestCpu,
     if aot_addr.is_none() {
         let offsets = shared.backend.goto_tb_offsets();
         unsafe {
-            let tb = shared.tb_store.get_mut(tb_idx);
+            let tb = shared.tb_store.get_mut(tb_ptr);
             for (i, &(jmp, reset)) in offsets.iter().enumerate().take(2) {
                 tb.set_jmp_insn_offset(i, jmp as u32);
                 tb.set_jmp_reset_offset(i, reset as u32);
@@ -258,31 +251,32 @@ where B: HostCodeGen, C: GuestCpu,
         }
     }
 
-    shared.tb_store.insert(tb_idx);
-    per_cpu.jump_cache.insert(pc, tb_idx);
-    Some(tb_idx)
+    shared.tb_store.insert(tb_ptr);
+    per_cpu.jump_cache.insert(pc, tb_ptr);
+    Some(tb_ptr)
 }
 
-unsafe fn cpu_tb_exec<B, C>(shared: &SharedState<B>, cpu: &mut C, tb_idx: usize) -> usize
+unsafe fn cpu_tb_exec<B, C>(shared: &SharedState<B>, cpu: &mut C, tb_ptr: *mut TranslationBlock) -> usize
 where B: HostCodeGen, C: GuestCpu,
 {
-    let tb = shared.tb_store.get(tb_idx);
-    let tb_ptr = shared.code_buf().ptr_at(tb.host_offset);
+    let tb = &*tb_ptr;
+    let tb_code_ptr = shared.code_buf().ptr_at(tb.host_offset);
     let env_ptr = cpu.env_ptr();
     let prologue_fn: unsafe extern "C" fn(*mut u8, *const u8) -> usize =
         core::mem::transmute(shared.code_buf().base_ptr());
-    prologue_fn(env_ptr, tb_ptr)
+    prologue_fn(env_ptr, tb_code_ptr)
 }
 
 fn tb_add_jump<B: HostCodeGen>(
-    shared: &SharedState<B>, per_cpu: &mut PerCpuState, src: usize, slot: usize, dst: usize,
+    shared: &SharedState<B>, per_cpu: &mut PerCpuState,
+    src: *mut TranslationBlock, slot: usize, dst: *mut TranslationBlock,
 ) {
-    let src_tb = shared.tb_store.get(src);
+    let src_tb = unsafe { &*src };
     let jmp_off = match src_tb.jmp_insn_offset[slot] {
         Some(off) => off as usize,
         None => return,
     };
-    if shared.tb_store.get(dst).invalid.load(Ordering::Acquire) { return; }
+    if unsafe { &*dst }.invalid.load(Ordering::Acquire) { return; }
 
     let mut src_jmp = src_tb.jmp.lock().unwrap();
     if src_jmp.jmp_dest[slot] == Some(dst) {
@@ -290,12 +284,12 @@ fn tb_add_jump<B: HostCodeGen>(
         return;
     }
 
-    let abs_dst = shared.tb_store.get(dst).host_offset;
+    let abs_dst = unsafe { &*dst }.host_offset;
     shared.backend.patch_jump(shared.code_buf(), jmp_off, abs_dst);
     src_jmp.jmp_dest[slot] = Some(dst);
     drop(src_jmp);
 
-    let dst_tb = shared.tb_store.get(dst);
+    let dst_tb = unsafe { &*dst };
     let mut dst_jmp = dst_tb.jmp.lock().unwrap();
     dst_jmp.jmp_list.push((src, slot));
 

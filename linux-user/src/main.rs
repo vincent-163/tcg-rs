@@ -76,8 +76,6 @@ fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) 
     let out = std::env::var("TCG_PROFILE_OUT").unwrap_or_else(|_| "profile.bin".into());
     let path = std::path::Path::new(&out);
     let shared = &env.shared;
-    let tb_count = shared.tb_store.len();
-    let profiles = unsafe { &*shared.tb_profiles.get() };
 
     // Load existing profile entries (accumulate entry addresses only, not counts)
     let mut accumulated: std::collections::HashMap<u64, ProfileEntry> =
@@ -89,10 +87,9 @@ fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) 
                 .collect()
         }).unwrap_or_default();
 
-    for i in 0..tb_count {
-        let tb = shared.tb_store.get(i);
-        let prof = &profiles[i];
-        let exec = prof.exec_count.load(Ordering::Relaxed);
+    for tb_ptr in shared.tb_store.iter_all() {
+        let tb = unsafe { &*tb_ptr };
+        let exec = tb.exec_count.load(Ordering::Relaxed);
         let file_offset = tb.pc - load_vaddr;
 
         // Add to profile if this TB was hot in this run (exec >= threshold)
