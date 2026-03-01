@@ -57,6 +57,8 @@ pub struct TbTranslator {
     tbaa_kind: u32,           // metadata kind ID for "tbaa"
     tbaa_cpu: LLVMValueRef,   // TBAA access tag for CPUState
     tbaa_guest: LLVMValueRef, // TBAA access tag for guest mem
+    // Profiling counter address (optional)
+    profile_counter: Option<u64>,
 }
 
 fn get_intrinsic(m: LLVMModuleRef, name: &str, tys: &[LLVMTypeRef]) -> LLVMValueRef {
@@ -116,6 +118,7 @@ impl TbTranslator {
         llvm_ctx: LLVMContextRef,
         ir: &Context,
         func_name: &str,
+        profile_counter: Option<u64>,
     ) -> Self {
         unsafe {
             let cname = CString::new(func_name).unwrap();
@@ -139,6 +142,21 @@ impl TbTranslator {
             // Entry block with allocas
             let entry_bb = LLVMAppendBasicBlockInContext(llvm_ctx, func, c"entry".as_ptr());
             LLVMPositionBuilderAtEnd(builder, entry_bb);
+
+            // Emit profiling counter increment if requested
+            if let Some(counter_addr) = profile_counter {
+                // Create constant for counter address
+                let counter_val = LLVMConstInt(i64t, counter_addr, 0);
+                // Cast to pointer
+                let counter_ptr = LLVMBuildIntToPtr(builder, counter_val, ptr, c"prof_ctr".as_ptr());
+                // Load current value
+                let cur_val = LLVMBuildLoad2(builder, i64t, counter_ptr, c"cur_count".as_ptr());
+                // Increment
+                let one = LLVMConstInt(i64t, 1, 0);
+                let new_val = LLVMBuildAdd(builder, cur_val, one, c"new_count".as_ptr());
+                // Store back
+                LLVMBuildStore(builder, new_val, counter_ptr);
+            }
 
             let env = LLVMGetParam(func, 0);
             let guest_base = LLVMGetParam(func, 1);
@@ -203,34 +221,40 @@ impl TbTranslator {
                 ctpop_i32, ctpop_i64,
                 bswap_i16, bswap_i32, bswap_i64,
                 tbaa_kind, tbaa_cpu, tbaa_guest,
+                profile_counter,
             }
         }
     }
 
     /// Create a translator with AOT peer functions for musttail direct linking.
-    /// `peer_pcs` lists all PCs being AOT'd; `pc_temp` identifies the PC register temp.
+    /// `peer_va_to_offset` maps guest VA → file offset for all AOT'd TBs.
+    /// Functions are named by file offset (`tb_{offset:x}`) but looked up at
+    /// GotoTb time by guest VA (the constant written to the PC temp).
+    /// `pc_temp` identifies the PC register temp.
     pub fn new_with_peers(
         llvm_ctx: LLVMContextRef,
         ir: &Context,
         func_name: &str,
-        peer_pcs: &std::collections::HashSet<u64>,
+        peer_va_to_offset: &std::collections::HashMap<u64, u64>,
         pc_temp: TempIdx,
     ) -> Self {
-        let mut s = Self::new(llvm_ctx, ir, func_name);
+        let mut s = Self::new(llvm_ctx, ir, func_name, None);
         s.pc_temp = Some(pc_temp);
 
-        // Declare all peer TB functions in this module
-        for &pc in peer_pcs {
-            let name = format!("tb_{pc:x}");
+        // Declare all peer TB functions in this module.
+        // Key aot_peers by guest VA so GotoTb lookup (which uses last_pc_const,
+        // a guest VA) can find the matching function (named by file offset).
+        for (&guest_va, &file_offset) in peer_va_to_offset {
+            let name = format!("tb_{file_offset:x}");
             let cname = CString::new(name).unwrap();
             unsafe {
                 // Check if already defined (our own function)
                 let existing = LLVMGetNamedFunction(s.module, cname.as_ptr());
                 if !existing.is_null() {
-                    s.aot_peers.insert(pc, existing);
+                    s.aot_peers.insert(guest_va, existing);
                 } else {
                     let f = LLVMAddFunction(s.module, cname.as_ptr(), s.peer_fty);
-                    s.aot_peers.insert(pc, f);
+                    s.aot_peers.insert(guest_va, f);
                 }
             }
         }
@@ -973,13 +997,25 @@ impl TbTranslator {
             }
             Opcode::GotoTb => {
                 flush_globals!();
-                // AOT direct linking: musttail call to peer if target PC is known
+                // AOT direct linking: musttail call to peer if target PC is known.
+                // Falls back to aot_dispatch (loads PC + load_bias from env,
+                // computes file_offset = pc - load_bias, switches) so static
+                // branches between AOT TBs never return to the exec loop.
                 let peer = self.last_pc_const
                     .and_then(|pc| self.aot_peers.get(&pc).copied());
                 if let Some(peer_fn) = peer {
                     let mut args = [self.env, self.guest_base];
                     let call = LLVMBuildCall2(
                         b, self.peer_fty, peer_fn,
+                        args.as_mut_ptr(), 2, E,
+                    );
+                    LLVMSetTailCallKind(call, 2); // MustTail
+                    LLVMBuildRet(b, call);
+                } else if let Some(dispatch_fn) = self.aot_dispatch {
+                    // Target not a declared local peer; aot_dispatch will find it.
+                    let mut args = [self.env, self.guest_base];
+                    let call = LLVMBuildCall2(
+                        b, self.peer_fty, dispatch_fn,
                         args.as_mut_ptr(), 2, E,
                     );
                     LLVMSetTailCallKind(call, 2); // MustTail

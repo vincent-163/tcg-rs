@@ -146,6 +146,7 @@ SMULH       1 00 11011 010 ..... 0 11111 ..... ..... @rrrr_s
 UMULH       1 00 11011 110 ..... 0 11111 ..... ..... @rrrr_s
 
 # *** Data processing - register - Add/Sub (with carry) ***
+ADC         . 00 11010 000 ..... 000000 ..... ..... @rrr_s
 SBC         . 10 11010 000 ..... 000000 ..... ..... @rrr_s
 
 # *** Data processing - register - Div ***

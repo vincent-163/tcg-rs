@@ -1233,3 +1233,18 @@ impl Default for X86_64CodeGen {
         Self::new()
     }
 }
+
+/// Emit instruction to increment a 64-bit counter at absolute address.
+/// Uses R11 as a scratch register (which is caller-saved in x86-64 ABI).
+/// Emits: movabs r11, addr; inc qword ptr [r11]
+pub fn emit_inc_abs(buf: &mut CodeBuffer, addr: u64) {
+    // movabs r11, addr (49 BB <8 bytes>)
+    buf.emit_u8(0x49);
+    buf.emit_u8(0xBB);
+    buf.emit_u64(addr);
+    // inc qword ptr [r11] (49 FF 03)
+    // Note: lock prefix not needed for single-threaded counters
+    buf.emit_u8(0x49);
+    buf.emit_u8(0xFF);
+    buf.emit_u8(0x03);
+}

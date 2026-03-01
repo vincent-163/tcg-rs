@@ -46,6 +46,10 @@ pub struct RiscvCpu {
     pub utval: u64,
     /// User interrupt pending (uip).
     pub uip: u64,
+    /// Load bias: guest VA of the executable PT_LOAD segment (= load_vaddr).
+    /// Stored in env so AOT dispatch can compute file_offset = pc - load_bias
+    /// without changing the AOT function signature fn(ptr, i64) -> i64.
+    pub load_bias: u64,
 }
 
 // Field offsets (bytes) from the start of RiscvCpu.
@@ -94,6 +98,9 @@ pub const UTVAL_OFFSET: i64 = UCAUSE_OFFSET + 8; // 608
 /// Byte offset of `uip`.
 pub const UIP_OFFSET: i64 = UTVAL_OFFSET + 8; // 616
 
+/// Byte offset of `load_bias` (= load_vaddr, used by AOT dispatch).
+pub const LOAD_BIAS_OFFSET: i64 = UIP_OFFSET + 8; // 624
+
 /// USTATUS FS bits mask.
 pub const USTATUS_FS_MASK: u64 = 0x0000_6000;
 /// USTATUS FS = Dirty.
@@ -118,6 +125,7 @@ impl RiscvCpu {
             ucause: 0,
             utval: 0,
             uip: 0,
+            load_bias: 0,
         }
     }
 }

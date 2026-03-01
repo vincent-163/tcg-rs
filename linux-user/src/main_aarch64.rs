@@ -1,12 +1,16 @@
 use std::env;
 use std::process;
+use std::sync::atomic::Ordering;
 
 use tcg_backend::X86_64CodeGen;
 use tcg_core::context::Context;
 use tcg_core::tb::{EXCP_ECALL, EXCP_UNDEF};
 use tcg_core::TempIdx;
 use tcg_exec::exec_loop::{cpu_exec_loop, ExitReason};
-use tcg_exec::{ExecEnv, GuestCpu};
+use tcg_exec::profile::{
+    ProfileData, ProfileEntry, DEFAULT_HOT_THRESHOLD,
+};
+use tcg_exec::{AotTable, ExecEnv, GuestCpu};
 use tcg_frontend::aarch64::cpu::{
     Aarch64Cpu, NUM_XREGS,
 };
@@ -388,6 +392,74 @@ fn decode_bitmask_64(insn: u32) -> Option<u64> {
     Some(mask)
 }
 
+fn save_profile<B: tcg_backend::HostCodeGen>(
+    env: &ExecEnv<B>,
+    load_vaddr: u64,
+) {
+    let out = std::env::var("TCG_PROFILE_OUT")
+        .unwrap_or_else(|_| "profile.bin".into());
+    let path = std::path::Path::new(&out);
+    let shared = &env.shared;
+    let tb_count = shared.tb_store.len();
+    let profiles =
+        unsafe { &*shared.tb_profiles.get() };
+
+    // Load existing profile entries and accumulate
+    let mut accumulated: std::collections::HashMap<
+        u64,
+        ProfileEntry,
+    > = ProfileData::load(path)
+        .map(|existing| {
+            eprintln!(
+                "[tcg] accumulating with existing \
+                 profile ({} entries)",
+                existing.entries.len()
+            );
+            existing
+                .entries
+                .into_iter()
+                .map(|e| (e.file_offset, e))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for i in 0..tb_count {
+        let tb = shared.tb_store.get(i);
+        let prof = &profiles[i];
+        let exec =
+            prof.exec_count.load(Ordering::Relaxed);
+        let file_offset = tb.pc - load_vaddr;
+
+        if exec >= DEFAULT_HOT_THRESHOLD {
+            let entry = accumulated
+                .entry(file_offset)
+                .or_insert(ProfileEntry {
+                    file_offset,
+                    exec_count: exec,
+                });
+            if exec > entry.exec_count {
+                entry.exec_count = exec;
+            }
+        }
+    }
+
+    let entries: Vec<ProfileEntry> =
+        accumulated.into_values().collect();
+    let data = ProfileData {
+        threshold: DEFAULT_HOT_THRESHOLD as u32,
+        entries,
+    };
+    if let Err(e) = data.save(path) {
+        eprintln!("[tcg] failed to save profile: {e}");
+    } else {
+        eprintln!(
+            "[tcg] profile saved to {out} \
+             ({} hot TBs)",
+            data.entries.len()
+        );
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -422,6 +494,8 @@ fn main() {
     lcpu.cpu.pc = info.entry;
     lcpu.cpu.sp = info.sp;
     lcpu.cpu.guest_base = space.guest_base() as u64;
+    // Store load bias for AOT dispatch (file_offset = pc - load_bias)
+    lcpu.cpu.load_bias = info.load_vaddr;
     eprintln!("[tcg] guest_base={:#x}", lcpu.cpu.guest_base);
 
     // mmap_next starts after brk
@@ -482,16 +556,38 @@ fn main() {
 
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
-
+    let profiling = env::var("TCG_PROFILE").is_ok();
     let show_trace = env::var("TCG_TRACE").is_ok();
+
+    // Load AOT if specified
+    let aot = env::var("TCG_AOT").ok().and_then(|p| {
+        let t = AotTable::load(
+            std::path::Path::new(&p),
+            info.load_vaddr,
+        );
+        if t.is_some() {
+            eprintln!("[tcg] AOT loaded from {p}");
+        } else {
+            eprintln!(
+                "[tcg] warning: failed to load AOT \
+                 from {p}"
+            );
+        }
+        t
+    });
+
     let mut codegen = X86_64CodeGen::new();
     codegen.guest_base_offset =
         tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
-    let env = ExecEnv::new(codegen);
+    let env =
+        ExecEnv::new_with_opts(codegen, profiling, aot);
     #[cfg(feature = "llvm")]
     if std::env::var("TCG_LLVM").is_ok() {
         eprintln!("[tcg] LLVM JIT backend enabled");
         env.enable_llvm();
+    }
+    if profiling {
+        eprintln!("[tcg] profiling enabled");
     }
     let mut env = env;
 
@@ -552,6 +648,12 @@ fn main() {
                                 env.per_cpu.stats
                             );
                         }
+                        if profiling {
+                            save_profile(
+                                &env,
+                                info.load_vaddr,
+                            );
+                        }
                         process::exit(code);
                     }
                 }
@@ -561,6 +663,9 @@ fn main() {
             {
                 if show_stats {
                     eprint!("{}", env.per_cpu.stats);
+                }
+                if profiling {
+                    save_profile(&env, info.load_vaddr);
                 }
                 eprintln!(
                     "illegal instruction at pc={:#x}",
@@ -572,12 +677,18 @@ fn main() {
                 if show_stats {
                     eprint!("{}", env.per_cpu.stats);
                 }
+                if profiling {
+                    save_profile(&env, info.load_vaddr);
+                }
                 eprintln!("unexpected exit {v}");
                 process::exit(1);
             }
             ExitReason::BufferFull => {
                 if show_stats {
                     eprint!("{}", env.per_cpu.stats);
+                }
+                if profiling {
+                    save_profile(&env, info.load_vaddr);
                 }
                 eprintln!("code buffer full");
                 process::exit(1);

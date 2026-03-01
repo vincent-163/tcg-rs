@@ -7,15 +7,23 @@ use tcg_core::Context;
 
 /// Full translation pipeline: optimize → liveness → regalloc+codegen.
 /// Returns the offset where TB code starts in the buffer.
+/// If `profile_counter` is provided, emits code to increment the counter at TB start.
 pub fn translate(
     ctx: &mut Context,
     backend: &impl HostCodeGen,
     buf: &mut CodeBuffer,
+    profile_counter: Option<u64>,
 ) -> usize {
     optimize(ctx);
     liveness_analysis(ctx);
 
     let tb_start = buf.offset();
+
+    // Emit profiling counter increment if requested (at TB start)
+    if let Some(counter_addr) = profile_counter {
+        backend.emit_profile_inc(buf, counter_addr);
+    }
+
     regalloc_and_codegen(ctx, backend, buf);
     tb_start
 }
@@ -27,6 +35,9 @@ pub fn translate(
 /// (env in RBP, guest_base in R14) to the LLVM function signature
 /// `fn(env: *mut u8, guest_base: u64) -> u64`.
 ///
+/// If `profile_counter` is provided, emits code to increment the counter
+/// at the start of the trampoline.
+///
 /// Returns the offset where the trampoline starts in the buffer.
 #[cfg(feature = "llvm")]
 pub fn translate_llvm(
@@ -34,12 +45,13 @@ pub fn translate_llvm(
     jit: &mut crate::llvm::LlvmJit,
     buf: &mut CodeBuffer,
     epilogue_offset: usize,
+    profile_counter: Option<u64>,
 ) -> usize {
     optimize(ctx);
 
     let func_name = jit.next_tb_name();
     let translator = crate::llvm::translate::TbTranslator::new(
-        jit.context(), ctx, &func_name,
+        jit.context(), ctx, &func_name, profile_counter,
     );
     let module = translator.translate(ctx);
 
@@ -100,7 +112,7 @@ pub unsafe fn translate_and_execute(
     env: *mut u8,
 ) -> usize {
     // Buffer is RWX, no permission switch needed.
-    let tb_start = translate(ctx, backend, buf);
+    let tb_start = translate(ctx, backend, buf, None);
 
     // Prologue signature:
     //   fn(env: *mut u8, tb_ptr: *const u8) -> usize

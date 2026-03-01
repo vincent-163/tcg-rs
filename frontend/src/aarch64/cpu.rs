@@ -21,6 +21,11 @@ pub struct Aarch64Cpu {
     pub sp: u64,
     /// Guest memory base pointer (host address).
     pub guest_base: u64,
+    /// Load bias: guest VA of the executable PT_LOAD segment.
+    /// Stored in env so AOT dispatch can compute
+    /// file_offset = pc - load_bias without changing the AOT
+    /// function signature fn(ptr, i64) -> i64.
+    pub load_bias: u64,
     /// Condition flags (N, Z, C, V).
     pub nzcv: u64,
     /// Floating-point control register.
@@ -50,20 +55,23 @@ pub const SP_OFFSET: i64 = PC_OFFSET + 8; // 256
 /// Byte offset of the `guest_base` field.
 pub const GUEST_BASE_OFFSET: i64 = SP_OFFSET + 8; // 264
 
+/// Byte offset of the `load_bias` field.
+pub const LOAD_BIAS_OFFSET: i64 = GUEST_BASE_OFFSET + 8; // 272
+
 /// Byte offset of the `nzcv` field.
-pub const NZCV_OFFSET: i64 = GUEST_BASE_OFFSET + 8; // 272
+pub const NZCV_OFFSET: i64 = LOAD_BIAS_OFFSET + 8; // 280
 
 /// Byte offset of the `fpcr` field.
-pub const FPCR_OFFSET: i64 = NZCV_OFFSET + 8; // 280
+pub const FPCR_OFFSET: i64 = NZCV_OFFSET + 8; // 288
 
 /// Byte offset of the `fpsr` field.
-pub const FPSR_OFFSET: i64 = FPCR_OFFSET + 8; // 288
+pub const FPSR_OFFSET: i64 = FPCR_OFFSET + 8; // 296
 
 /// Byte offset of the `tpidr_el0` field.
-pub const TPIDR_EL0_OFFSET: i64 = FPSR_OFFSET + 8; // 296
+pub const TPIDR_EL0_OFFSET: i64 = FPSR_OFFSET + 8; // 304
 
-/// Byte offset of `vregs[i]` low half: 304 + i*16.
-pub const VREGS_OFFSET: i64 = TPIDR_EL0_OFFSET + 8; // 304
+/// Byte offset of `vregs[i]` low half: 312 + i*16.
+pub const VREGS_OFFSET: i64 = TPIDR_EL0_OFFSET + 8; // 312
 
 /// Byte offset of vreg i low half.
 pub const fn vreg_lo_offset(i: usize) -> i64 {
@@ -82,6 +90,7 @@ impl Aarch64Cpu {
             pc: 0,
             sp: 0,
             guest_base: 0,
+            load_bias: 0,
             nzcv: 0,
             fpcr: 0,
             fpsr: 0,

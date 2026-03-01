@@ -109,4 +109,9 @@ pub trait HostCodeGen {
 
     /// Clear recorded goto_tb offsets before a new codegen pass.
     fn clear_goto_tb_offsets(&self);
+
+    /// Emit code to increment a profiling counter at TB start.
+    /// `counter_addr` is the address of the u64 counter to increment.
+    /// This is called before the TB code is emitted.
+    fn emit_profile_inc(&self, buf: &mut CodeBuffer, counter_addr: u64);
 }

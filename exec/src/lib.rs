@@ -95,20 +95,25 @@ impl AotTable {
             let mut funcs = HashMap::new();
             let mut i = 0;
             loop {
-                // Read true file offset from tb_index
                 let file_offset = *idx_ptr.add(i);
-                if file_offset == 0 && i > 0 { break; } // Watch out for offset 0 as sentinel
-
-                let sym = CString::new(format!("tb_{file_offset:x}")).unwrap();
-                let fptr = libc::dlsym(handle, sym.as_ptr()) as u64;
-                if fptr != 0 {
-                    // Key the hash map by guest virtual address (guest PC)
-                    funcs.insert(file_offset + load_vaddr, fptr);
+                // Sentinel: u64::MAX marks end of array
+                if file_offset == u64::MAX {
+                    break;
                 }
 
-                // If it was the true sentinel (0), and since we process it in case a
-                // valid block was at beginning of file, we break if fptr was 0 and pc was 0
-                if file_offset == 0 && fptr == 0 { break; }
+                let sym = CString::new(
+                    format!("tb_{file_offset:x}"),
+                )
+                .unwrap();
+                let fptr = libc::dlsym(
+                    handle, sym.as_ptr(),
+                ) as u64;
+                if fptr != 0 {
+                    funcs.insert(
+                        file_offset + load_vaddr,
+                        fptr,
+                    );
+                }
 
                 i += 1;
             }
