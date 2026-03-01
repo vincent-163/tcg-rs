@@ -8,8 +8,7 @@ use tcg_core::tb::{EXCP_EBREAK, EXCP_ECALL, EXCP_UNDEF};
 use tcg_core::TempIdx;
 use tcg_exec::exec_loop::{cpu_exec_loop, ExitReason};
 use tcg_exec::{ExecEnv, GuestCpu};
-use tcg_exec::profile::{ProfileData, ProfileEntry, DEFAULT_HOT_THRESHOLD,
-    PROF_FLAG_INDIRECT, PROF_FLAG_MULTI_SOURCE, MULTI_SOURCE_THRESHOLD};
+use tcg_exec::profile::{ProfileData, ProfileEntry, DEFAULT_HOT_THRESHOLD};
 use tcg_frontend::riscv::cpu::{RiscvCpu, NUM_GPRS};
 use tcg_frontend::riscv::ext::RiscvCfg;
 use tcg_frontend::riscv::{RiscvDisasContext, RiscvTranslator};
@@ -75,29 +74,45 @@ impl GuestCpu for LinuxCpu {
 
 fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) {
     let out = std::env::var("TCG_PROFILE_OUT").unwrap_or_else(|_| "profile.bin".into());
+    let path = std::path::Path::new(&out);
     let shared = &env.shared;
     let tb_count = shared.tb_store.len();
     let profiles = unsafe { &*shared.tb_profiles.get() };
-    let mut entries = Vec::new();
+
+    // Load existing profile entries (accumulate entry addresses only, not counts)
+    let mut accumulated: std::collections::HashMap<u64, ProfileEntry> =
+        ProfileData::load(path).map(|existing| {
+            eprintln!("[tcg] accumulating with existing profile ({} entries)",
+                existing.entries.len());
+            existing.entries.into_iter()
+                .map(|e| (e.file_offset, e))
+                .collect()
+        }).unwrap_or_default();
+
     for i in 0..tb_count {
         let tb = shared.tb_store.get(i);
         let prof = &profiles[i];
         let exec = prof.exec_count.load(Ordering::Relaxed);
-        if exec < DEFAULT_HOT_THRESHOLD { continue; }
-        let indirect = prof.indirect_count.load(Ordering::Relaxed);
-        let chain_src = prof.chain_source_count.load(Ordering::Relaxed);
-        let mut flags = 0u32;
-        if indirect > 0 { flags |= PROF_FLAG_INDIRECT; }
-        if chain_src >= MULTI_SOURCE_THRESHOLD { flags |= PROF_FLAG_MULTI_SOURCE; }
-        entries.push(ProfileEntry {
-            // Store true file offset so profiles are portable across load addresses
-            file_offset: tb.pc - load_vaddr,
-            exec_count: exec,
-            flags,
-        });
+        let file_offset = tb.pc - load_vaddr;
+
+        // Add to profile if this TB was hot in this run (exec >= threshold)
+        // Don't sum counts across runs - each run must independently show the TB is hot
+        if exec >= DEFAULT_HOT_THRESHOLD {
+            let entry = accumulated.entry(file_offset).or_insert(ProfileEntry {
+                file_offset,
+                exec_count: exec,  // Use this run's count, don't sum
+            });
+            // Keep the max exec count seen in any single run
+            if exec > entry.exec_count {
+                entry.exec_count = exec;
+            }
+        }
     }
+
+    let entries: Vec<ProfileEntry> = accumulated.into_values().collect();
+
     let data = ProfileData { threshold: DEFAULT_HOT_THRESHOLD as u32, entries };
-    if let Err(e) = data.save(std::path::Path::new(&out)) {
+    if let Err(e) = data.save(path) {
         eprintln!("[tcg] failed to save profile: {e}");
     } else {
         eprintln!("[tcg] profile saved to {out} ({} hot TBs)", data.entries.len());
@@ -135,6 +150,7 @@ fn main() {
     lcpu.cpu.pc = info.entry;
     lcpu.cpu.gpr[2] = info.sp; // SP = x2
     lcpu.cpu.guest_base = space.guest_base() as u64;
+    lcpu.cpu.load_bias = info.load_vaddr; // for AOT dispatch: file_offset = pc - load_bias
 
     // mmap_next starts after brk
     let mut mmap_next =
