@@ -38,25 +38,36 @@ cargo doc --open                     # 生成并打开文档
 cargo build --bin tcg-riscv64 --features llvm --release
 TCG_LLVM=1 target/release/tcg-riscv64 <elf>   # 启用 LLVM JIT
 
-# AOT (Ahead-of-Time) pipeline — profile-guided compilation of hot TBs via LLVM
+# AOT (Ahead-of-Time) pipeline — compile TBs via LLVM O2
 # Step 1: build tools
 cargo build --release -p tcg-aot --features llvm
-cargo build --release -p tcg-linux-user
 
-# Step 2: profile run — collect hot TBs (file offsets stored in profile.bin)
+# ── Static AOT (single-step, no profiling) ──────────────────────────────────
+# Discovers all TBs via linear sweep + recursive descent from ELF entry point.
+# Guest arch is auto-detected from ELF e_machine (riscv64 or aarch64).
+
+# Step 1: AOT compile static (no profile needed)
+target/release/tcg-aot <elf> -o /tmp/aot.o
+cc -shared -o /tmp/aot.so /tmp/aot.o
+
+# Step 2: run with AOT
+TCG_AOT=/tmp/aot.so target/release/tcg-riscv64 <elf> [args...]
+
+# ── Profile-guided AOT (3-step, selects only hot TBs) ───────────────────────
+# Step 1: profile run — collect hot TBs (file offsets stored in profile.bin)
 TCG_PROFILE=1 TCG_PROFILE_OUT=/tmp/profile.bin \
     target/release/tcg-riscv64 <elf> [args...]
 
-# Step 3: AOT compile — translates hot TBs + goto_tb targets via LLVM O2
+# Step 2: AOT compile — translates hot TBs + goto_tb targets via LLVM O2
 target/release/tcg-aot /tmp/profile.bin <elf> -o /tmp/aot.o
 cc -shared -o /tmp/aot.so /tmp/aot.o
 
-# Step 4: run with AOT — AOT TBs are called via trampolines; others JIT'd normally
+# Step 3: run with AOT — AOT TBs are called via trampolines; others JIT'd
 TCG_AOT=/tmp/aot.so target/release/tcg-riscv64 <elf> [args...]
 
 # Optional env vars:
 #   TCG_STATS=1          print TB lookup / exit / chaining statistics
-#   TCG_PROFILE=1        enable profiling (needed for step 2)
+#   TCG_PROFILE=1        enable profiling (needed for profile-guided mode)
 #   TCG_PROFILE_OUT=path path for profile output (default: profile.bin)
 ```
 
