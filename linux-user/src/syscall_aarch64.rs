@@ -3,6 +3,7 @@ use crate::syscall::SyscallResult;
 
 // AArch64 Linux syscall numbers (asm-generic)
 const SYS_IOCTL: u64 = 29;
+const SYS_UNLINKAT: u64 = 35;
 const SYS_FACCESSAT: u64 = 48;
 const SYS_OPENAT: u64 = 56;
 const SYS_CLOSE: u64 = 57;
@@ -26,6 +27,11 @@ const SYS_RT_SIGACTION: u64 = 134;
 const SYS_RT_SIGPROCMASK: u64 = 135;
 const SYS_UNAME: u64 = 160;
 const SYS_GETPID: u64 = 172;
+const SYS_GETPPID: u64 = 173;
+const SYS_GETUID: u64 = 174;
+const SYS_GETEUID: u64 = 175;
+const SYS_GETGID: u64 = 176;
+const SYS_GETEGID: u64 = 177;
 const SYS_GETTID: u64 = 178;
 const SYS_BRK: u64 = 214;
 const SYS_MUNMAP: u64 = 215;
@@ -111,9 +117,11 @@ pub fn handle_syscall_aarch64(
             SyscallResult::Continue(0)
         }
         SYS_SET_TID_ADDRESS => SyscallResult::Continue(1),
-        SYS_GETPID | SYS_GETTID => {
+        SYS_GETPID | SYS_GETPPID | SYS_GETTID => {
             SyscallResult::Continue(1)
         }
+        SYS_GETUID | SYS_GETEUID | SYS_GETGID
+        | SYS_GETEGID => SyscallResult::Continue(0),
         SYS_GETRANDOM => {
             let buf = a0;
             let len = a1 as usize;
@@ -135,6 +143,7 @@ pub fn handle_syscall_aarch64(
         SYS_WRITEV => do_writev(space, a0, a1, a2),
         SYS_READV => do_readv(space, a0, a1, a2),
         SYS_IOCTL => do_ioctl(a0, a1, a2),
+        SYS_UNLINKAT => do_unlinkat(space, a0, a1, a2),
         SYS_FSTAT => do_fstat(space, a0, a1),
         SYS_FSTATFS => do_fstatfs(space, a0, a1),
         SYS_NEWFSTATAT => do_newfstatat(space, a0, a1, a2, a3),
@@ -488,6 +497,30 @@ fn do_clock_gettime(
         *(p.add(8) as *mut i64) = ts.tv_nsec;
     }
     SyscallResult::Continue(0)
+}
+
+fn do_unlinkat(
+    space: &mut GuestSpace,
+    dirfd: u64,
+    path_addr: u64,
+    flags: u64,
+) -> SyscallResult {
+    let host_path = space.g2h(path_addr);
+    let path = unsafe {
+        std::ffi::CStr::from_ptr(host_path as *const i8)
+    };
+    let ret = unsafe {
+        libc::unlinkat(
+            dirfd as i32,
+            path.as_ptr(),
+            flags as i32,
+        )
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(0)
+    }
 }
 
 fn do_futex(
