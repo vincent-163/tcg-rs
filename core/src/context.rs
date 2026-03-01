@@ -48,10 +48,10 @@ pub struct Context {
     pub gen_insn_end_off: Vec<u16>,
 
     // -- TB identification --
-    /// Index of the TB being translated. Used by the backend to
-    /// encode the source TB in exit_tb return values for direct
-    /// chaining.
-    pub tb_idx: u32,
+    /// Raw pointer (as usize) of the TB being translated. Used by the
+    /// backend to encode the source TB in exit_tb return values for direct
+    /// chaining (low 3 bits carry exit slot, upper bits are the pointer).
+    pub tb_ptr: usize,
 }
 
 impl Context {
@@ -68,7 +68,7 @@ impl Context {
             reserved_regs: RegSet::EMPTY,
             const_table: Default::default(),
             gen_insn_end_off: Vec::with_capacity(MAX_INSNS),
-            tb_idx: 0,
+            tb_ptr: 0,
         }
     }
 
@@ -294,7 +294,7 @@ impl Context {
             reserved_regs: RegSet::EMPTY,
             const_table: Default::default(),
             gen_insn_end_off: Vec::new(),
-            tb_idx: 0,
+            tb_ptr: 0,
         }
     }
 }

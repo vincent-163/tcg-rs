@@ -344,7 +344,7 @@ fn discover_tbs_static(
         // Translate TB to collect branch targets
         let mut ir = Context::new();
         arch.init_context(&mut ir);
-        ir.tb_idx = 0;
+        ir.tb_ptr = 0;
         let max_insns = TranslationBlock::max_insns(0);
         let pc_next =
             arch.translate_tb(&mut ir, guest_pc, base, max_insns);
@@ -466,7 +466,7 @@ fn run_profile(
         let guest_pc = entry.file_offset + load_vaddr;
         let mut ir = Context::new();
         arch.init_context(&mut ir);
-        ir.tb_idx = 0;
+        ir.tb_ptr = 0;
         let max_insns = TranslationBlock::max_insns(0);
         arch.translate_tb(&mut ir, guest_pc, base, max_insns);
         optimize(&mut ir);
@@ -592,7 +592,7 @@ fn compile_aot(
 
         let mut ir = Context::new();
         arch.init_context(&mut ir);
-        ir.tb_idx = 0;
+        ir.tb_ptr = 0;
 
         let guest_pc = offset + load_vaddr;
         let max_insns = TranslationBlock::max_insns(0);

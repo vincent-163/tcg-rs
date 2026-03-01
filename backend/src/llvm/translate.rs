@@ -34,8 +34,8 @@ pub struct TbTranslator {
     // Epilogue block (for exit_tb)
     exit_bb: LLVMBasicBlockRef,
     exit_val: LLVMValueRef, // alloca for return value
-    // TB index for encoding exits
-    tb_idx: u32,
+    // TB pointer for encoding exits
+    tb_ptr: usize,
     // AOT direct linking: peer TB functions in the same module
     aot_peers: HashMap<u64, LLVMValueRef>, // target_pc → declared function
     pc_temp: Option<TempIdx>,               // which temp is the PC register
@@ -211,7 +211,7 @@ impl TbTranslator {
                 i1, i8t, i16t, i32t, i64t, i128t, ptr,
                 env, guest_base, temps, labels,
                 exit_bb, exit_val,
-                tb_idx: ir.tb_idx,
+                tb_ptr: ir.tb_ptr,
                 aot_peers: HashMap::new(),
                 pc_temp: None,
                 last_pc_const: None,
@@ -354,7 +354,7 @@ impl TbTranslator {
     }
 
     fn do_exit(&self, exit_code: u64) {
-        let encoded = tcg_core::tb::encode_tb_exit(self.tb_idx, exit_code);
+        let encoded = tcg_core::tb::encode_tb_exit(self.tb_ptr, exit_code);
         unsafe {
             LLVMBuildStore(self.builder, self.ci(self.i64t, encoded), self.exit_val);
             LLVMBuildBr(self.builder, self.exit_bb);

@@ -17,9 +17,6 @@ use tcg_backend::HostCodeGen;
 use tcg_core::tb::JumpCache;
 use tcg_core::Context;
 
-use profile::TbProfile;
-use tb_store::MAX_TBS;
-
 #[derive(Default)]
 pub struct ExecStats {
     pub loop_iters: u64,
@@ -139,9 +136,6 @@ pub struct SharedState<B: HostCodeGen> {
     pub backend: B,
     pub code_gen_start: usize,
     pub translate_lock: Mutex<TranslateGuard>,
-    /// Per-TB profiling data (indexed by tb_idx). Pre-allocated to MAX_TBS
-    /// capacity so addresses remain stable when JIT code embeds counter pointers.
-    pub tb_profiles: UnsafeCell<Vec<TbProfile>>,
     pub profiling: bool,
     pub aot_table: Option<AotTable>,
 }
@@ -157,23 +151,6 @@ impl<B: HostCodeGen> SharedState<B> {
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn code_buf_mut(&self) -> &mut CodeBuffer {
         &mut *self.code_buf.get()
-    }
-
-    pub fn tb_profile(&self, idx: usize) -> &TbProfile {
-        unsafe { &(&*self.tb_profiles.get())[idx] }
-    }
-
-    /// # Safety: caller must hold translate_lock. Vec is pre-allocated
-    /// to avoid reallocation (addresses are embedded in JIT code).
-    pub unsafe fn alloc_profile(&self) {
-        let profiles = &mut *self.tb_profiles.get();
-        assert!(
-            profiles.len() < profiles.capacity(),
-            "profile store full ({} entries, cap {})",
-            profiles.len(),
-            profiles.capacity(),
-        );
-        profiles.push(TbProfile::new());
     }
 }
 
@@ -208,7 +185,6 @@ impl<B: HostCodeGen> ExecEnv<B> {
                 #[cfg(feature = "llvm")]
                 llvm_jit: None,
             }),
-            tb_profiles: UnsafeCell::new(Vec::with_capacity(MAX_TBS)),
             profiling,
             aot_table: aot,
         });

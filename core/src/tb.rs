@@ -1,16 +1,20 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-/// Sentinel value for "no exit target cached".
-pub const EXIT_TARGET_NONE: usize = usize::MAX;
-
+/// TB alignment — must be ≥ 8 so the low 3 bits of a TB pointer are
+/// always zero and can be used to carry exit-slot information.
+///
 /// Mutable chaining state protected by per-TB lock.
 pub struct TbJmpState {
-    /// Outgoing edge: destination TB index for each slot.
-    pub jmp_dest: [Option<usize>; 2],
-    /// Incoming edges: (source_tb_idx, slot) pairs.
-    pub jmp_list: Vec<(usize, usize)>,
+    /// Outgoing edge: destination TB pointer for each slot.
+    pub jmp_dest: [Option<*mut TranslationBlock>; 2],
+    /// Incoming edges: (source_tb_ptr, slot) pairs.
+    pub jmp_list: Vec<(*mut TranslationBlock, usize)>,
 }
+
+// SAFETY: TbJmpState pointers are only accessed under the TB's jmp mutex.
+unsafe impl Send for TbJmpState {}
+unsafe impl Sync for TbJmpState {}
 
 impl TbJmpState {
     fn new() -> Self {
@@ -26,10 +30,14 @@ impl TbJmpState {
 /// Maps to QEMU's `TranslationBlock`. Represents the mapping
 /// from a guest code region to generated host machine code.
 ///
+/// `#[repr(align(8))]` guarantees the low 3 bits of any `*mut
+/// TranslationBlock` are zero, so we can use them to carry exit-slot
+/// information (see `encode_tb_exit` / `decode_tb_exit`).
+///
 /// Fields above `jmp` are immutable after creation (set during
 /// translation under translate_lock). The `jmp` mutex protects
-/// mutable chaining state. `invalid` is atomic for lock-free
-/// checking.
+/// mutable chaining state. `invalid` is atomic for lock-free checking.
+#[repr(align(8))]
 pub struct TranslationBlock {
     // -- Immutable after creation --
     pub pc: u64,
@@ -44,28 +52,22 @@ pub struct TranslationBlock {
     pub jmp_reset_offset: [Option<u32>; 2],
     pub phys_pc: u64,
     /// Protected by TbStore hash lock.
-    pub hash_next: Option<usize>,
+    /// Stores the raw pointer value of the next TB in the hash bucket chain,
+    /// or 0 for end-of-chain.
+    pub hash_next: usize,
 
     // -- Per-TB lock for chaining state --
     pub jmp: Mutex<TbJmpState>,
 
     // -- Atomic --
     pub invalid: AtomicBool,
-    /// Single-entry target cache for indirect exits (atomic,
-    /// lock-free). EXIT_TARGET_NONE means no cached target.
+    /// Single-entry target cache for indirect exits (atomic, lock-free).
+    /// Stores a raw `*mut TranslationBlock` as usize; 0 means no cached target.
     pub exit_target: AtomicUsize,
-}
 
-/// Compile flags for TranslationBlock.cflags.
-pub mod cflags {
-    /// Mask for the instruction count limit (0 = no limit).
-    pub const CF_COUNT_MASK: u32 = 0x0000_FFFF;
-    /// Last I/O instruction in the TB.
-    pub const CF_LAST_IO: u32 = 0x0001_0000;
-    /// TB is being single-stepped.
-    pub const CF_SINGLE_STEP: u32 = 0x0002_0000;
-    /// Use icount (deterministic execution).
-    pub const CF_USE_ICOUNT: u32 = 0x0004_0000;
+    // -- Profiling (atomic, embedded in TB for stable pointer) --
+    /// Execution count, incremented by JIT-generated code.
+    pub exec_count: AtomicU64,
 }
 
 impl std::fmt::Debug for TranslationBlock {
@@ -79,6 +81,18 @@ impl std::fmt::Debug for TranslationBlock {
             .field("invalid", &self.invalid.load(Ordering::Relaxed))
             .finish()
     }
+}
+
+/// Compile flags for TranslationBlock.cflags.
+pub mod cflags {
+    /// Mask for the instruction count limit (0 = no limit).
+    pub const CF_COUNT_MASK: u32 = 0x0000_FFFF;
+    /// Last I/O instruction in the TB.
+    pub const CF_LAST_IO: u32 = 0x0001_0000;
+    /// TB is being single-stepped.
+    pub const CF_SINGLE_STEP: u32 = 0x0002_0000;
+    /// Use icount (deterministic execution).
+    pub const CF_USE_ICOUNT: u32 = 0x0004_0000;
 }
 
 impl TranslationBlock {
@@ -95,10 +109,11 @@ impl TranslationBlock {
             jmp_insn_offset: [None; 2],
             jmp_reset_offset: [None; 2],
             phys_pc: 0,
-            hash_next: None,
+            hash_next: 0,
             jmp: Mutex::new(TbJmpState::new()),
             invalid: AtomicBool::new(false),
-            exit_target: AtomicUsize::new(EXIT_TARGET_NONE),
+            exit_target: AtomicUsize::new(0),
+            exec_count: AtomicU64::new(0),
         }
     }
 
@@ -139,19 +154,35 @@ pub const TB_JMP_CACHE_SIZE: usize = 1 << 12; // 4096
 
 /// TB exit value encoding (following QEMU `TB_EXIT_*` convention).
 ///
-/// The low values are reserved for the exec loop's internal TB
-/// chaining protocol.  Real guest exits (ECALL, EBREAK, etc.)
-/// must use values >= `TB_EXIT_MAX`.
+/// For **chainable** exits the return value encodes the source TB pointer
+/// in the upper bits with the exit slot in the low 3 bits:
 ///
-/// | Value | Constant | Meaning |
-/// |-------|----------|---------|
-/// | 0 | `TB_EXIT_IDX0` | `goto_tb` slot 0 — chainable |
-/// | 1 | `TB_EXIT_IDX1` | `goto_tb` slot 1 — chainable |
-/// | 2 | `TB_EXIT_NOCHAIN` | Indirect jump — look up by PC |
-/// | >=3 | `TB_EXIT_MAX`.. | Real exit — returned to caller |
+/// ```text
+///   encoded = (tb_ptr as usize) | slot      (slot ∈ {0, 1, 2})
+/// ```
+///
+/// Because `TranslationBlock` is `#[repr(align(8))]`, TB pointers always
+/// have their low 3 bits clear, so `encoded > TB_EXIT_MAX` and the low 3
+/// bits unambiguously carry the slot.
+///
+/// For **real** exits (ECALL, EBREAK …) the raw exit code `>= TB_EXIT_MAX`
+/// is returned **without** a pointer in the upper bits.  The exec loop
+/// distinguishes these from chainable exits by checking
+/// `raw <= TB_EXIT_NOCHAIN_MAX` (values 0–2 are unreachable as bare values
+/// because all heap pointers are far above 2).
+///
+/// | Value                        | Meaning                        |
+/// |------------------------------|--------------------------------|
+/// | `ptr | 0`                    | `goto_tb` slot 0 — chainable   |
+/// | `ptr | 1`                    | `goto_tb` slot 1 — chainable   |
+/// | `ptr | 2`                    | Indirect jump (no chain)       |
+/// | `EXCP_ECALL` (= 3)           | ECALL exception                |
+/// | `EXCP_EBREAK` (= 4)          | EBREAK exception               |
+/// | `EXCP_UNDEF` (= 5)           | Undefined instruction          |
 pub const TB_EXIT_IDX0: u64 = 0;
 pub const TB_EXIT_IDX1: u64 = 1;
 pub const TB_EXIT_NOCHAIN: u64 = 2;
+/// Every real exit code must be >= TB_EXIT_MAX.
 pub const TB_EXIT_MAX: u64 = 3;
 
 /// Guest exception exit codes (must be >= `TB_EXIT_MAX`).
@@ -159,33 +190,46 @@ pub const EXCP_ECALL: u64 = TB_EXIT_MAX;
 pub const EXCP_EBREAK: u64 = TB_EXIT_MAX + 1;
 pub const EXCP_UNDEF: u64 = TB_EXIT_MAX + 2;
 
-/// Encode an exit_tb return value with the source TB index.
+/// Encode an `exit_tb` return value.
 ///
-/// For chainable exits (val < `TB_EXIT_MAX`), the upper 32 bits
-/// carry `tb_idx + 1` so the exec loop can identify which TB
-/// actually exited after direct chaining.  Real exits (val >=
-/// `TB_EXIT_MAX`) are returned unchanged.
+/// For chainable exits (`val < TB_EXIT_MAX`) the TB pointer is OR'd with
+/// the slot number into the return value.  The TB's alignment guarantees
+/// the low 3 bits are zero, so `tb_ptr | val` is lossless.
+///
+/// Real exits (`val >= TB_EXIT_MAX`) are returned as-is; their values are
+/// small integers that will never collide with heap pointers.
 #[inline]
-pub fn encode_tb_exit(tb_idx: u32, val: u64) -> u64 {
+pub fn encode_tb_exit(tb_ptr: usize, val: u64) -> usize {
     if val < TB_EXIT_MAX {
-        ((tb_idx as u64 + 1) << 32) | val
+        tb_ptr | (val as usize)
     } else {
-        val
+        val as usize
     }
 }
 
-/// Decode an exit_tb return value.
+/// Decode an `exit_tb` return value.
 ///
-/// Returns `(source_tb_idx, exit_code)`.  For chainable exits
-/// `source_tb_idx` is `Some(idx)`; for real exits it is `None`.
+/// Returns `(source_tb_ptr, exit_code)`.
+///
+/// * For chainable exits (`TB_EXIT_IDX0`, `TB_EXIT_IDX1`, `TB_EXIT_NOCHAIN`)
+///   `source_tb_ptr` is `Some(ptr)` and `exit_code` is the slot (0, 1, or 2).
+/// * For real exits `source_tb_ptr` is `None` and `exit_code` is the raw
+///   exception code.
+///
+/// Distinguishing rule: if `raw > TB_NOCHAIN_MAX` (i.e. > 2) **and** the
+/// value has pointer-magnitude (> a generous threshold), it is a chainable
+/// exit encoded as `ptr | slot`.  In practice all heap pointers on 64-bit
+/// Linux are ≥ 4096 (page size), so we use `raw > 7` as the threshold —
+/// the low 3 bits carry the slot and the rest is the TB pointer.
 #[inline]
-pub fn decode_tb_exit(raw: usize) -> (Option<usize>, usize) {
-    let marker = raw >> 32;
-    if marker != 0 {
-        let tb_idx = marker - 1;
-        let slot = raw & 3;
-        (Some(tb_idx), slot)
+pub fn decode_tb_exit(raw: usize) -> (Option<*mut TranslationBlock>, usize) {
+    if raw > 7 {
+        // Chainable exit: high bits = TB pointer, low 3 bits = slot.
+        let slot = raw & 7;
+        let tb_ptr = (raw & !7) as *mut TranslationBlock;
+        (Some(tb_ptr), slot)
     } else {
+        // Real exit code (small integer).
         (None, raw)
     }
 }
@@ -195,13 +239,14 @@ pub fn decode_tb_exit(raw: usize) -> (Option<usize>, usize) {
 /// Indexed by `(pc >> 2) & (TB_JMP_CACHE_SIZE - 1)`.
 /// Provides O(1) lookup for the common case of re-executing the same PC.
 pub struct JumpCache {
-    entries: Box<[Option<usize>; TB_JMP_CACHE_SIZE]>,
+    /// Stores raw `*mut TranslationBlock` as usize; 0 means empty.
+    entries: Box<[usize; TB_JMP_CACHE_SIZE]>,
 }
 
 impl JumpCache {
     pub fn new() -> Self {
         Self {
-            entries: Box::new([None; TB_JMP_CACHE_SIZE]),
+            entries: Box::new([0; TB_JMP_CACHE_SIZE]),
         }
     }
 
@@ -209,20 +254,26 @@ impl JumpCache {
         (pc as usize >> 2) & (TB_JMP_CACHE_SIZE - 1)
     }
 
-    pub fn lookup(&self, pc: u64) -> Option<usize> {
-        self.entries[Self::index(pc)]
+    /// Look up the cached TB pointer for `pc`.  Returns `None` if empty.
+    pub fn lookup(&self, pc: u64) -> Option<*mut TranslationBlock> {
+        let raw = self.entries[Self::index(pc)];
+        if raw == 0 {
+            None
+        } else {
+            Some(raw as *mut TranslationBlock)
+        }
     }
 
-    pub fn insert(&mut self, pc: u64, tb_idx: usize) {
-        self.entries[Self::index(pc)] = Some(tb_idx);
+    pub fn insert(&mut self, pc: u64, tb: *mut TranslationBlock) {
+        self.entries[Self::index(pc)] = tb as usize;
     }
 
     pub fn remove(&mut self, pc: u64) {
-        self.entries[Self::index(pc)] = None;
+        self.entries[Self::index(pc)] = 0;
     }
 
     pub fn invalidate(&mut self) {
-        self.entries.fill(None);
+        self.entries.fill(0);
     }
 }
 
