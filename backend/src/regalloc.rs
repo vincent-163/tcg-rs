@@ -295,6 +295,27 @@ fn regalloc_call(
     //    CPU state via env pointer).
     sync_globals(ctx, state, backend, buf);
 
+    // 1b. Evict non-Fixed globals from registers so that step 3
+    //     loads call arguments from memory.  Without this, step 3's
+    //     sequential MOVs into fixed arg registers (RDI, RSI, …) can
+    //     clobber a register that a later argument still references.
+    {
+        let nb_globals = ctx.nb_globals() as usize;
+        for i in 0..nb_globals {
+            let tidx = TempIdx(i as u32);
+            let temp = ctx.temp(tidx);
+            if temp.val_type == TempVal::Reg && temp.kind != TempKind::Fixed {
+                if let Some(reg) = temp.reg {
+                    state.free_reg(reg);
+                }
+                let t = ctx.temp_mut(tidx);
+                t.val_type = TempVal::Mem;
+                t.reg = None;
+                t.mem_coherent = true;
+            }
+        }
+    }
+
     // 2. Spill any live local temps in caller-saved
     //    regs (they will be clobbered by the call).
     for &reg in &CALLER_SAVED {

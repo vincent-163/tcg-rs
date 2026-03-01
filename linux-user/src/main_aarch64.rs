@@ -68,6 +68,10 @@ impl GuestCpu for LinuxCpu {
             d.pc = TempIdx(1 + NUM_XREGS as u32);
             d.sp = TempIdx(2 + NUM_XREGS as u32);
             d.nzcv = TempIdx(3 + NUM_XREGS as u32);
+            d.cc_op = TempIdx(4 + NUM_XREGS as u32);
+            d.cc_a = TempIdx(5 + NUM_XREGS as u32);
+            d.cc_b = TempIdx(6 + NUM_XREGS as u32);
+            d.cc_result = TempIdx(7 + NUM_XREGS as u32);
             Aarch64Translator::tb_start(&mut d, ir);
             loop {
                 Aarch64Translator::insn_start(

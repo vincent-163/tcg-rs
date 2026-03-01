@@ -429,6 +429,16 @@ fn run_tcgrs(
             &mut cpu as *mut Aarch64Cpu as *mut u8,
         );
     }
+    // Materialize NZCV from lazy state if needed.
+    use tcg_frontend::aarch64::cpu::{
+        helper_lazy_nzcv_to_packed, CC_OP_EAGER,
+    };
+    if cpu.cc_op != CC_OP_EAGER {
+        cpu.nzcv = helper_lazy_nzcv_to_packed(
+            cpu.cc_op, cpu.cc_a, cpu.cc_b, cpu.cc_result,
+        );
+        cpu.cc_op = CC_OP_EAGER;
+    }
     cpu
 }
 
