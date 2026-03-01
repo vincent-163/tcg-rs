@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
-    ExecEnv, GuestCpu, PerCpuState, SharedState, TranslateGuard, MIN_CODE_BUF_REMAINING,
+    ExecEnv, GuestCpu, PerCpuState, SharedState, MIN_CODE_BUF_REMAINING,
 };
 use tcg_backend::translate::translate;
 use tcg_backend::HostCodeGen;
@@ -97,10 +97,6 @@ where B: HostCodeGen, C: GuestCpu,
                         && tb.host_size > 0
                     {
                         per_cpu.stats.exit_target_hit += 1;
-                        if shared.profiling {
-                            shared.tb_profile(cached).indirect_count
-                                .fetch_add(1, Ordering::Relaxed);
-                        }
                         next_tb_hint = Some(cached);
                         continue;
                     }
@@ -111,10 +107,6 @@ where B: HostCodeGen, C: GuestCpu,
                     Some(idx) => idx,
                     None => return ExitReason::BufferFull,
                 };
-                if shared.profiling {
-                    shared.tb_profile(dst).indirect_count
-                        .fetch_add(1, Ordering::Relaxed);
-                }
                 stb.exit_target.store(dst, Ordering::Relaxed);
                 next_tb_hint = Some(dst);
             }
@@ -306,11 +298,6 @@ fn tb_add_jump<B: HostCodeGen>(
     let dst_tb = shared.tb_store.get(dst);
     let mut dst_jmp = dst_tb.jmp.lock().unwrap();
     dst_jmp.jmp_list.push((src, slot));
-
-    if shared.profiling {
-        shared.tb_profile(dst).chain_source_count
-            .fetch_add(1, Ordering::Relaxed);
-    }
 
     per_cpu.stats.chain_patched += 1;
 }

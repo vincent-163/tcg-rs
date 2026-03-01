@@ -7,33 +7,25 @@ use std::sync::atomic::AtomicU64;
 
 pub struct TbProfile {
     pub exec_count: AtomicU64,
-    pub indirect_count: AtomicU64,
-    pub chain_source_count: AtomicU64,
 }
 
 impl TbProfile {
     pub fn new() -> Self {
         Self {
             exec_count: AtomicU64::new(0),
-            indirect_count: AtomicU64::new(0),
-            chain_source_count: AtomicU64::new(0),
         }
     }
 }
 
-pub const PROF_FLAG_INDIRECT: u32 = 1;
-pub const PROF_FLAG_MULTI_SOURCE: u32 = 2;
 pub const DEFAULT_HOT_THRESHOLD: u64 = 10;
-pub const MULTI_SOURCE_THRESHOLD: u64 = 10;
 
 const MAGIC: &[u8; 8] = b"TCGPROF\0";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProfileEntry {
     pub file_offset: u64,
     pub exec_count: u64,
-    pub flags: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -52,8 +44,6 @@ impl ProfileData {
         for e in &self.entries {
             f.write_all(&e.file_offset.to_le_bytes())?;
             f.write_all(&e.exec_count.to_le_bytes())?;
-            f.write_all(&e.flags.to_le_bytes())?;
-            f.write_all(&0u32.to_le_bytes())?;
         }
         Ok(())
     }
@@ -79,10 +69,7 @@ impl ProfileData {
             let file_offset = u64::from_le_bytes(b8);
             f.read_exact(&mut b8)?;
             let exec_count = u64::from_le_bytes(b8);
-            f.read_exact(&mut b4)?;
-            let flags = u32::from_le_bytes(b4);
-            f.read_exact(&mut b4)?; // pad
-            entries.push(ProfileEntry { file_offset, exec_count, flags });
+            entries.push(ProfileEntry { file_offset, exec_count });
         }
         Ok(Self { threshold, entries })
     }
@@ -91,7 +78,7 @@ impl ProfileData {
         self.entries.iter().map(|e| e.file_offset).collect()
     }
 
-    pub fn should_export(e: &ProfileEntry) -> bool {
-        (e.flags & PROF_FLAG_INDIRECT) != 0 || (e.flags & PROF_FLAG_MULTI_SOURCE) != 0
+    pub fn should_export(_e: &ProfileEntry) -> bool {
+        true
     }
 }
