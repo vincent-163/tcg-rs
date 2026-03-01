@@ -1165,6 +1165,54 @@ impl Aarch64DisasContext {
         let rt = (insn & 0x1f) as usize;
         let addr = self.read_xreg_sp(ir, rn);
 
+        // LD1R: opcode=110, S=0, L=1 — load one element and replicate to all lanes
+        if opcode == 0b110 && s == 0 && is_load {
+            let (elem_bits, memop) = match size {
+                0b00 => (8, MemOp::ub()),
+                0b01 => (16, MemOp::uw()),
+                0b10 => (32, MemOp::ul()),
+                0b11 => (64, MemOp::uq()),
+                _ => unreachable!(),
+            };
+            let val = ir.new_temp(Type::I64);
+            ir.gen_qemu_ld(Type::I64, val, addr, memop.bits() as u32);
+            // Replicate element across 64-bit lane
+            let rep = match elem_bits {
+                8 => {
+                    let mask = ir.new_const(Type::I64, 0xff);
+                    let masked = ir.new_temp(Type::I64);
+                    ir.gen_and(Type::I64, masked, val, mask);
+                    let m = ir.new_const(Type::I64, 0x0101_0101_0101_0101u64);
+                    let t = ir.new_temp(Type::I64);
+                    ir.gen_mul(Type::I64, t, masked, m); t
+                }
+                16 => {
+                    let mask = ir.new_const(Type::I64, 0xffff);
+                    let masked = ir.new_temp(Type::I64);
+                    ir.gen_and(Type::I64, masked, val, mask);
+                    let m = ir.new_const(Type::I64, 0x0001_0001_0001_0001u64);
+                    let t = ir.new_temp(Type::I64);
+                    ir.gen_mul(Type::I64, t, masked, m); t
+                }
+                32 => {
+                    let t = ir.new_temp(Type::I64);
+                    let c32 = ir.new_const(Type::I64, 32);
+                    let hi = ir.new_temp(Type::I64);
+                    ir.gen_shl(Type::I64, hi, val, c32);
+                    ir.gen_or(Type::I64, t, val, hi); t
+                }
+                64 => val,
+                _ => unreachable!(),
+            };
+            self.write_vreg_lo(ir, rt, rep);
+            if q != 0 {
+                self.write_vreg_hi(ir, rt, rep);
+            } else {
+                self.clear_vreg_hi(ir, rt);
+            }
+            return true;
+        }
+
         // Determine element size and index
         let (elem_bits, idx) = match opcode {
             0b000 => (8, (q << 3) | (s << 2) | size),   // B
@@ -1321,8 +1369,10 @@ impl Aarch64DisasContext {
         // CMGE d,d,#0 (U=1 size=11 opcode=01000) / CMGT d,d,#0 (U=0 size=11 opcode=01000)
         // CMLE d,d,#0 (U=1 size=11 opcode=01001) / CMEQ d,d,#0 (U=0 size=11 opcode=01001)
         // CMLT d,d,#0 (U=0 size=11 opcode=01010)
+        // SCVTF scalar (s,s) / SCVTF scalar (d,d): opcode=11101, size=00→single, size=11→double
         if insn & 0xdf3e_0c00 == 0x5e20_0800 {
             let u = (insn >> 29) & 1;
+            let size = (insn >> 22) & 3;
             let opcode = (insn >> 12) & 0x1f;
             let rn = ((insn >> 5) & 0x1f) as usize;
             let rd = (insn & 0x1f) as usize;
@@ -1348,14 +1398,24 @@ impl Aarch64DisasContext {
                     self.clear_vreg_hi(ir, rd);
                     return true;
                 }
-                (1, 0b11101) => { // UCVTF scalar (d,d)
-                    ir.gen_call(d, helper_ucvtf_d_x as u64, &[src]);
+                (1, 0b11101) => { // UCVTF scalar: int-in-reg → float
+                    let helper = if size == 0b11 { helper_ucvtf_d_x as u64 } else { helper_ucvtf_s_s as u64 };
+                    ir.gen_call(d, helper, &[src]);
                 }
                 (0, 0b01100) => { // FCMGT #0 scalar: (src > 0.0) ? -1 : 0
                     ir.gen_call(d, helper_fcmgt_zero_scalar as u64, &[src]);
                 }
-                (0, 0b11101) => { // SCVTF scalar (d,d)
-                    ir.gen_call(d, helper_scvtf_d_d as u64, &[src]);
+                (0, 0b11101) => { // SCVTF scalar: int-in-reg → float
+                    let helper = if size == 0b11 { helper_scvtf_d_d as u64 } else { helper_scvtf_s_s as u64 };
+                    ir.gen_call(d, helper, &[src]);
+                }
+                (0, 0b11011) => { // FCVTZS scalar: float → int (truncate toward zero)
+                    let helper = if size == 0b11 { helper_fcvtzs_x_d as u64 } else { helper_fcvtzs_w_s as u64 };
+                    ir.gen_call(d, helper, &[src]);
+                }
+                (1, 0b11011) => { // FCVTZU scalar: float → uint (truncate toward zero)
+                    let helper = if size == 0b11 { helper_fcvtzu_x_d as u64 } else { helper_fcvtzu_w_s as u64 };
+                    ir.gen_call(d, helper, &[src]);
                 }
                 _ => return false,
             };
@@ -1366,6 +1426,42 @@ impl Aarch64DisasContext {
         // AdvSIMD scalar three same: 01 U 11110 size 1 Rm opcode 1 Rn Rd
         if insn & 0xdf20_0400 == 0x5e20_0400 {
             return self.neon_scalar_3same(ir, insn);
+        }
+        // FADDP scalar: 01 1 11110 sz 1 10000 01101 10 Rn Rd (mask 0xff3e0c00 == 0x7e300800)
+        if insn & 0xff3e_0c00 == 0x7e30_0800 {
+            let sz = (insn >> 22) & 1; // 0=f32, 1=f64
+            let rn = ((insn >> 5) & 0x1f) as usize;
+            let rd = (insn & 0x1f) as usize;
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let n_hi = self.read_vreg_hi(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            if sz == 1 {
+                // faddp d,v.2d: add the two f64 lanes
+                ir.gen_call(d, helper_fadd64 as u64, &[n_lo, n_hi]);
+            } else {
+                // faddp s,v.2s: add the two f32 lanes
+                ir.gen_call(d, helper_fadd32 as u64, &[n_lo, n_hi]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        // ADDP scalar: 01 0 11110 size 11000 10111 10 Rn Rd (mask 0xff3ffc00 == 0x5e31b800)
+        if insn & 0xff3f_fc00 == 0x5e31_b800 {
+            let size = (insn >> 22) & 3;
+            let rn = ((insn >> 5) & 0x1f) as usize;
+            let rd = (insn & 0x1f) as usize;
+            if size == 0b11 {
+                // addp d, v.2d: add the two i64 lanes
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let d = ir.new_temp(Type::I64);
+                ir.gen_add(Type::I64, d, n_lo, n_hi);
+                self.write_vreg_lo(ir, rd, d);
+                self.clear_vreg_hi(ir, rd);
+                return true;
+            }
+            return false;
         }
         // Dispatch 3-same / 2-reg-misc / shift-imm by top bits
         self.try_neon_3same_misc(ir, insn)
@@ -1641,8 +1737,23 @@ impl Aarch64DisasContext {
                         }
                     }
                     v
+                } else if cmode & 1 == 1 && op == 0 {
+                    // FMOV 32-bit: VFPExpandImm → replicate 32-bit float to lanes
+                    let a = (imm8 >> 7) & 1;
+                    let b = (imm8 >> 6) & 1;
+                    let not_b = 1 - b;
+                    let exp8 = (not_b << 7) | ((b * 0x1f) << 2) | ((imm8 >> 4) & 3);
+                    let frac23 = (imm8 & 0xf) << 19;
+                    let val32 = (a << 31) | (exp8 << 23) | frac23;
+                    val32 | (val32 << 32)
                 } else {
-                    return false; // FMOV — not yet
+                    // FMOV 64-bit: op=1 cmode=1111 — VFPExpandImm → 64-bit float
+                    let a = (imm8 >> 7) & 1;
+                    let b = (imm8 >> 6) & 1;
+                    let not_b = 1 - b;
+                    let exp11 = (not_b << 10) | ((b * 0xff) << 2) | ((imm8 >> 4) & 3);
+                    let frac52 = (imm8 & 0xf) << 48;
+                    (a << 63) | (exp11 << 52) | frac52
                 }
             }
             _ => return false,
@@ -1964,6 +2075,265 @@ impl Aarch64DisasContext {
             let a = self.read_vreg_lo(ir, rn);
             let b = self.read_vreg_lo(ir, rm);
             let helper = match (opcode, is_double) {
+                (0, true)  => helper_fmul64 as u64,
+                (1, true)  => helper_fdiv64 as u64,
+                (2, true)  => helper_fadd64 as u64,
+                (3, true)  => helper_fsub64 as u64,
+                (4, true)  => helper_fmax64 as u64,
+                (5, true)  => helper_fmin64 as u64,
+                (6, true)  => helper_fmaxnm64 as u64,
+                (7, true)  => helper_fminnm64 as u64,
+                (8, true)  => helper_fnmul64 as u64,  // FNMUL
+                (0, false) => helper_fmul32 as u64,
+                (1, false) => helper_fdiv32 as u64,
+                (2, false) => helper_fadd32 as u64,
+                (3, false) => helper_fsub32 as u64,
+                (4, false) => helper_fmax32 as u64,
+                (5, false) => helper_fmin32 as u64,
+                (6, false) => helper_fmaxnm32 as u64,
+                (7, false) => helper_fminnm32 as u64,
+                (8, false) => helper_fnmul32 as u64,  // FNMUL
+                _ => return None,
+            };
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper, &[a, b]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+
+        // SCVTF/UCVTF GPR→FP: 0 sf 0 11110 ftype 1 00010 000000 Rn Rd
+        // ftype=01 (double), ftype=00 (single); sf=1 → Xn, sf=0 → Wn
+        // opcode bit[16]=0→SCVTF, bit[16]=1→UCVTF; rmode=00
+        // Mask: top byte + ftype + opcode field approach
+        // SCVTF Dd, Xn: mask 0xffff_fc00 == 0x9e62_0000
+        if insn & 0xffff_fc00 == 0x9e62_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_scvtf_d_x as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // SCVTF Dd, Wn: mask 0xffff_fc00 == 0x1e62_0000
+        if insn & 0xffff_fc00 == 0x1e62_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_scvtf_d_w as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // SCVTF Sd, Xn: mask 0xffff_fc00 == 0x9e22_0000
+        if insn & 0xffff_fc00 == 0x9e22_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_scvtf_s_x as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // SCVTF Sd, Wn: mask 0xffff_fc00 == 0x1e22_0000
+        if insn & 0xffff_fc00 == 0x1e22_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_scvtf_s_w as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // UCVTF Dd, Wn: mask 0xffff_fc00 == 0x1e63_0000
+        if insn & 0xffff_fc00 == 0x1e63_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_ucvtf_d_w as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // UCVTF Dd, Xn: mask 0xffff_fc00 == 0x9e63_0000
+        if insn & 0xffff_fc00 == 0x9e63_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_ucvtf_d_x as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // UCVTF Sd, Wn: mask 0xffff_fc00 == 0x1e23_0000
+        if insn & 0xffff_fc00 == 0x1e23_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_ucvtf_s_w as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // UCVTF Sd, Xn: mask 0xffff_fc00 == 0x9e23_0000
+        if insn & 0xffff_fc00 == 0x9e23_0000 {
+            let src = self.read_xreg(ir, rn as i64);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_ucvtf_s_x as u64, &[src]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // FCVTZx double-precision: ftype=01 (bits[23:22]=01)
+        // FCVTZU Xd, Dn: mask 0xffff_fc00 == 0x9e79_0000
+        if insn & 0xffff_fc00 == 0x9e79_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzu_x_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZU Wd, Dn: mask 0xffff_fc00 == 0x1e79_0000
+        if insn & 0xffff_fc00 == 0x1e79_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzu_w_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZS Wd, Dn: mask 0xffff_fc00 == 0x1e78_0000
+        if insn & 0xffff_fc00 == 0x1e78_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzs_w_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZS Xd, Dn: mask 0xffff_fc00 == 0x9e78_0000
+        if insn & 0xffff_fc00 == 0x9e78_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzs_x_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZx single-precision: ftype=00 (bits[23:22]=00)
+        // FCVTZU Xd, Sn: mask 0xffff_fc00 == 0x9e39_0000
+        if insn & 0xffff_fc00 == 0x9e39_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzu_x_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZU Wd, Sn: mask 0xffff_fc00 == 0x1e39_0000
+        if insn & 0xffff_fc00 == 0x1e39_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzu_w_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZS Wd, Sn: mask 0xffff_fc00 == 0x1e38_0000
+        if insn & 0xffff_fc00 == 0x1e38_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzs_w_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTZS Xd, Sn: mask 0xffff_fc00 == 0x9e38_0000
+        if insn & 0xffff_fc00 == 0x9e38_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtzs_x_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTAS Xd, Dn: mask 0xffff_fc00 == 0x9e64_0000
+        if insn & 0xffff_fc00 == 0x9e64_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtas_x_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTAS Wd, Dn: mask 0xffff_fc00 == 0x1e64_0000
+        if insn & 0xffff_fc00 == 0x1e64_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtas_w_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTAS Xd, Sn: mask 0xffff_fc00 == 0x9e24_0000
+        if insn & 0xffff_fc00 == 0x9e24_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtas_x_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTAS Wd, Sn: mask 0xffff_fc00 == 0x1e24_0000
+        if insn & 0xffff_fc00 == 0x1e24_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtas_w_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTPS/FCVTPU: round toward +inf FP → int
+        // FCVTPS Wd, Dn: 0001 1110 0110 1000 0000 00 Rn Rd (0x1e680000)
+        if insn & 0xffff_fc00 == 0x1e68_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtps_w_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTPS Xd, Dn: 1001 1110 0110 1000 0000 00 Rn Rd (0x9e680000)
+        if insn & 0xffff_fc00 == 0x9e68_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtps_x_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTPS Wd, Sn: ftype=00 sf=0 (0x1e280000)
+        if insn & 0xffff_fc00 == 0x1e28_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtps_w_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTPS Xd, Sn: ftype=00 sf=1 (0x9e280000)
+        if insn & 0xffff_fc00 == 0x9e28_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtps_x_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FNMUL Dd,Dn,Dm / FNMUL Sd,Sn,Sm: x001 1110 xx1 Rm 1000 10 Rn Rd
+        // mask: 0x5f20_fc00 == 0x1e20_8800
+        if insn & 0x5f20_fc00 == 0x1e20_8800 {
+            let rm = ((insn >> 16) & 0x1f) as usize;
+            let a = self.read_vreg_lo(ir, rn);
+            let b = self.read_vreg_lo(ir, rm);
+            let d = ir.new_temp(Type::I64);
+            if is_double {
+                ir.gen_call(d, helper_fnmul64 as u64, &[a, b]);
+            } else {
+                ir.gen_call(d, helper_fnmul32 as u64, &[a, b]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
+        // FMAXNM/FMINNM/FMAX/FMIN scalar: x001 1110 xx1 Rm opcode 10 Rn Rd
+        // These share the FP two-source mask but with additional opcodes
+        // FMAXNM: opcode=0110, FMINNM: opcode=0111, FMAX: opcode=0100, FMIN: opcode=0101
+        if insn & 0x5f20_0c00 == 0x1e20_0800 {
+            let rm = ((insn >> 16) & 0x1f) as usize;
+            let opcode = (insn >> 12) & 0xf;
+            let a = self.read_vreg_lo(ir, rn);
+            let b = self.read_vreg_lo(ir, rm);
+            let helper = match (opcode, is_double) {
                 (0, true) => helper_fmul64 as u64,
                 (1, true) => helper_fdiv64 as u64,
                 (2, true) => helper_fadd64 as u64,
@@ -1972,86 +2342,75 @@ impl Aarch64DisasContext {
                 (1, false) => helper_fdiv32 as u64,
                 (2, false) => helper_fadd32 as u64,
                 (3, false) => helper_fsub32 as u64,
+                (4, true) => helper_fmax64 as u64,
+                (5, true) => helper_fmin64 as u64,
+                (6, true) => helper_fmaxnm64 as u64,
+                (7, true) => helper_fminnm64 as u64,
+                (4, false) => helper_fmax32 as u64,
+                (5, false) => helper_fmin32 as u64,
+                (6, false) => helper_fmaxnm32 as u64,
+                (7, false) => helper_fminnm32 as u64,
                 _ => return None,
             };
             let d = ir.new_temp(Type::I64);
             ir.gen_call(d, helper, &[a, b]);
             self.write_vreg_lo(ir, rd, d);
-            let zero = ir.new_const(Type::I64, 0);
-            self.write_vreg_hi(ir, rd, zero);
+            self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
-
-        // SCVTF Dd, Xn: 1001 1110 0110 0010 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x9e62_0000 {
-            let src = self.read_xreg(ir, rn as i64);
-            let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_scvtf_d_x as u64, &[src]);
-            self.write_vreg_lo(ir, rd, d);
-            let zero = ir.new_const(Type::I64, 0);
-            self.write_vreg_hi(ir, rd, zero);
-            return Some(true);
-        }
-        // SCVTF Dd, Wn: 0001 1110 0110 0010 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x1e62_0000 {
-            let src = self.read_xreg(ir, rn as i64);
-            let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_scvtf_d_w as u64, &[src]);
-            self.write_vreg_lo(ir, rd, d);
-            let zero = ir.new_const(Type::I64, 0);
-            self.write_vreg_hi(ir, rd, zero);
-            return Some(true);
-        }
-        // UCVTF Dd, Wn: 0001 1110 0110 0011 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x1e63_0000 {
-            let src = self.read_xreg(ir, rn as i64);
-            let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_ucvtf_d_w as u64, &[src]);
-            self.write_vreg_lo(ir, rd, d);
-            let zero = ir.new_const(Type::I64, 0);
-            self.write_vreg_hi(ir, rd, zero);
-            return Some(true);
-        }
-        // UCVTF Dd, Xn: 1001 1110 0110 0011 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x9e63_0000 {
-            let src = self.read_xreg(ir, rn as i64);
-            let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_ucvtf_d_x as u64, &[src]);
-            self.write_vreg_lo(ir, rd, d);
-            let zero = ir.new_const(Type::I64, 0);
-            self.write_vreg_hi(ir, rd, zero);
-            return Some(true);
-        }
-        // FCVTZU Xd, Dn: 1001 1110 0111 1001 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x9e79_0000 {
+        // double: 0x1e664000, single: 0x1e264000
+        if insn & 0xffbf_fc00 == 0x1e26_4000 {
             let src = self.read_vreg_lo(ir, rn);
             let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_fcvtzu_x_d as u64, &[src]);
-            self.write_xreg(ir, rd as i64, d);
+            if is_double {
+                ir.gen_call(d, helper_frinta_d as u64, &[src]);
+            } else {
+                ir.gen_call(d, helper_frinta_s as u64, &[src]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
-        // FCVTZU Wd, Dn: 0001 1110 0111 1001 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x1e79_0000 {
+        // FRINTM Dd/Sd: round toward minus infinity
+        // double: 0x1e654000, single: 0x1e254000
+        if insn & 0xffbf_fc00 == 0x1e25_4000 {
             let src = self.read_vreg_lo(ir, rn);
             let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_fcvtzu_w_d as u64, &[src]);
-            self.write_xreg(ir, rd as i64, d);
+            if is_double {
+                ir.gen_call(d, helper_frintm_d as u64, &[src]);
+            } else {
+                ir.gen_call(d, helper_frintm_s as u64, &[src]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
-        // FCVTZS Wd, Dn: 0001 1110 0111 1000 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x1e78_0000 {
+        // FRINTN Dd/Sd: round to nearest even
+        // double: 0x1e644000, single: 0x1e244000
+        if insn & 0xffbf_fc00 == 0x1e24_4000 {
             let src = self.read_vreg_lo(ir, rn);
             let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_fcvtzs_w_d as u64, &[src]);
-            self.write_xreg(ir, rd as i64, d);
+            if is_double {
+                ir.gen_call(d, helper_frintn_d as u64, &[src]);
+            } else {
+                ir.gen_call(d, helper_frintn_s as u64, &[src]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
-        // FCVTZS Xd, Dn: 1001 1110 0111 1000 0000 00 Rn Rd
-        if insn & 0xffff_fc00 == 0x9e78_0000 {
+        // FRINTZ Dd/Sd: round toward zero
+        // double: 0x1e65c000, single: 0x1e25c000
+        if insn & 0xffbf_fc00 == 0x1e25_c000 {
             let src = self.read_vreg_lo(ir, rn);
             let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_fcvtzs_x_d as u64, &[src]);
-            self.write_xreg(ir, rd as i64, d);
+            if is_double {
+                ir.gen_call(d, helper_frintz_d as u64, &[src]);
+            } else {
+                ir.gen_call(d, helper_frintz_s as u64, &[src]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
         // FMOV Xd, Dn: 1001 1110 0110 0110 0000 00 Rn Rd
@@ -2067,6 +2426,70 @@ impl Aarch64DisasContext {
             self.write_vreg_lo(ir, rd, val);
             let zero = ir.new_const(Type::I64, 0);
             self.write_vreg_hi(ir, rd, zero);
+            return Some(true);
+        }
+        // FMOV V.d[1], Xn: 1001 1110 1010 1111 0000 00 Rn Rd (0x9eaf0000)
+        if insn & 0xffff_fc00 == 0x9eaf_0000 {
+            let val = self.read_xreg(ir, rn as i64);
+            self.write_vreg_hi(ir, rd, val);
+            return Some(true);
+        }
+        // FMOV Xd, V.d[1]: 1001 1110 1010 1110 0000 00 Rn Rd (0x9eae0000)
+        if insn & 0xffff_fc00 == 0x9eae_0000 {
+            let val = self.read_vreg_hi(ir, rn);
+            self.write_xreg(ir, rd as i64, val);
+            return Some(true);
+        }
+        // FCVTMS/FCVTMU: round toward -inf
+        // FCVTMS Wd, Dn: 0001 1110 0111 0000 0000 00 Rn Rd (ftype=01, sf=0)
+        if insn & 0xffff_fc00 == 0x1e70_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtms_w_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTMS Xd, Dn: 1001 1110 0111 0000 0000 00 Rn Rd
+        if insn & 0xffff_fc00 == 0x9e70_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtms_x_d as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTMS Wd, Sn: ftype=00 sf=0: 0001 1110 0011 0000 0000 00 Rn Rd (0x1e300000)
+        if insn & 0xffff_fc00 == 0x1e30_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtms_w_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCVTMS Xd, Sn: ftype=00 sf=1: 1001 1110 0011 0000 0000 00 Rn Rd (0x9e300000)
+        if insn & 0xffff_fc00 == 0x9e30_0000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_fcvtms_x_s as u64, &[src]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
+        // FCCMP/FCCMPE: x001 1110 xx1 Rm cond 01 Rn nzcv
+        // mask: 0x5f200c00 == 0x1e200400
+        if insn & 0x5f20_0c00 == 0x1e20_0400 {
+            let rm = ((insn >> 16) & 0x1f) as usize;
+            let cond = ((insn >> 12) & 0xf) as i64;
+            let nzcv_imm = (insn & 0xf) as u64;
+            let a = self.read_vreg_lo(ir, rn);
+            let b = self.read_vreg_lo(ir, rm);
+            let cond_val = self.eval_cond(ir, cond);
+            let zero_const = ir.new_const(Type::I64, 0);
+            let cmp_result = ir.new_temp(Type::I64);
+            let fp_helper = if is_double { helper_fcmp64 as u64 } else { helper_fcmp32 as u64 };
+            ir.gen_call(cmp_result, fp_helper, &[a, b]);
+            let nzcv_alt = ir.new_const(Type::I64, nzcv_imm << 28);
+            let result = ir.new_temp(Type::I64);
+            ir.gen_movcond(Type::I64, result, cond_val, zero_const, cmp_result, nzcv_alt, Cond::Ne);
+            ir.gen_mov(Type::I64, self.nzcv, result);
             return Some(true);
         }
         // FMOV Sn, Wn: 0001 1110 0010 0111 0000 00 Rn Rd
@@ -2188,6 +2611,14 @@ impl Aarch64DisasContext {
     ) -> bool {
         // AdvSIMD three same: 0 Q U 01110 size 1 Rm opcode 1 Rn Rd
         if insn & 0x9f20_0400 == 0x0e20_0400 {
+            let size = (insn >> 22) & 0x3;
+            let opcode = (insn >> 11) & 0x1f;
+            // FP 3-same: opcode>=0b11000, sz = bit[22] (0=f32, 1=f64)
+            // Integer 3-same uses opcodes in 0b00000..0b10111 range
+            if opcode >= 0b11000 {
+                let sz = size & 1; // bit[22]: 0=f32, 1=f64
+                return self.neon_fp_3same(ir, insn, sz);
+            }
             return self.neon_3same(ir, insn);
         }
         // AdvSIMD two-reg misc: 0 Q U 01110 size 10000 opcode 10 Rn Rd
@@ -2202,8 +2633,6 @@ impl Aarch64DisasContext {
         if insn & 0x9f3e_0c00 == 0x0e30_0800 {
             return self.neon_across_lanes(ir, insn);
         }
-        // AdvSIMD pairwise: 0 Q U 01110 size 1 Rm opcode 1 Rn Rd
-        // (same encoding as 3-same, handled there)
         // AdvSIMD permute (UZP1/UZP2/ZIP1/ZIP2/TRN1/TRN2):
         // 0 Q 00 1110 size 0 Rm 0 opcode 10 Rn Rd
         if insn & 0xbf20_8c00 == 0x0e00_0800 {
@@ -2242,11 +2671,75 @@ impl Aarch64DisasContext {
                 self.write_vreg_hi(ir, rd, d_hi);
                 true
             }
+            // SADDW/SADDW2: U=0 size=01 opcode=0001 — .4S += sign-extend(.4H)
+            (0, 0b01, 0b0001) => {
+                let src = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_saddw16_lo as u64, &[n_lo, src]);
+                ir.gen_call(d_hi, helper_saddw16_hi as u64, &[n_hi, src]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.write_vreg_hi(ir, rd, d_hi);
+                true
+            }
+            // UADDW/UADDW2: U=1 size=01 opcode=0001 — .4S += zero-extend(.4H)
+            (1, 0b01, 0b0001) => {
+                let src = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uaddw16_lo as u64, &[n_lo, src]);
+                ir.gen_call(d_hi, helper_uaddw16_hi as u64, &[n_hi, src]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.write_vreg_hi(ir, rd, d_hi);
+                true
+            }
+            // SADDW/SADDW2 .2D += sign-extend(.2S): size=10
+            (0, 0b10, 0b0001) => {
+                let src = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_saddw32_lo as u64, &[n_lo, src]);
+                ir.gen_call(d_hi, helper_saddw32_hi as u64, &[n_hi, src]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.write_vreg_hi(ir, rd, d_hi);
+                true
+            }
+            // USUBL/USUBL2: U=1 size=01 opcode=0010 — Vd.4S = zext(Vn.4H) - zext(Vm.4H)
+            (1, 0b01, 0b0010) => {
+                let n = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+                let m = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let d_lo = ir.new_temp(Type::I64);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_usubl16_lo as u64, &[n, m]);
+                ir.gen_call(d_hi, helper_usubl16_hi as u64, &[n, m]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.write_vreg_hi(ir, rd, d_hi);
+                true
+            }
+            // SMLAL/SMLAL2 .2D, .2S, .2S: U=0 size=10 opcode=1000
+            (0, 0b10, 0b1000) => {
+                let n = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+                let m = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let acc_lo = self.read_vreg_lo(ir, rd);
+                let acc_hi = self.read_vreg_hi(ir, rd);
+                let d_lo = ir.new_temp(Type::I64);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_smlal32_lo as u64, &[acc_lo, n, m]);
+                ir.gen_call(d_hi, helper_smlal32_hi as u64, &[acc_hi, n, m]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.write_vreg_hi(ir, rd, d_hi);
+                true
+            }
             _ => false,
         }
     }
 
-    /// AdvSIMD vector × indexed element
     fn neon_indexed_element(
         &mut self, ir: &mut Context, insn: u32,
     ) -> Option<bool> {
@@ -2351,38 +2844,48 @@ impl Aarch64DisasContext {
 
         // UZP1: opcode=001
         if opcode == 1 && size == 0 {
-            // UZP1 .16B/.8B: take even-indexed bytes
+            // UZP1 .16B: gather even-indexed bytes within each source register
+            // Q=0 (.8B): d_lo = uzp1(n_lo, m_lo)
+            // Q=1 (.16B): d_lo = uzp1(n_lo, n_hi), d_hi = uzp1(m_lo, m_hi)
             let n_lo = self.read_vreg_lo(ir, rn);
             let m_lo = self.read_vreg_lo(ir, rm);
-            let d_lo = ir.new_temp(Type::I64);
-            ir.gen_call(d_lo, helper_uzp1_8 as u64, &[n_lo, m_lo]);
-            self.write_vreg_lo(ir, rd, d_lo);
-            if q != 0 {
+            if q == 0 {
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp1_8 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.clear_vreg_hi(ir, rd);
+            } else {
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp1_8 as u64, &[n_lo, n_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
                 let d_hi = ir.new_temp(Type::I64);
-                ir.gen_call(d_hi, helper_uzp1_8 as u64, &[n_hi, m_hi]);
+                ir.gen_call(d_hi, helper_uzp1_8 as u64, &[m_lo, m_hi]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else {
-                self.clear_vreg_hi(ir, rd);
             }
             return true;
         }
         if opcode == 1 && size == 1 {
-            // UZP1 .8H/.4H: take even-indexed 16-bit elements
+            // UZP1 .8H/.4H: gather even halfwords within each source
+            // Q=0 (.4H): d_lo = uzp1(n_lo, m_lo)
+            // Q=1 (.8H): d_lo = uzp1(n_lo, n_hi), d_hi = uzp1(m_lo, m_hi)
             let n_lo = self.read_vreg_lo(ir, rn);
             let m_lo = self.read_vreg_lo(ir, rm);
-            let d_lo = ir.new_temp(Type::I64);
-            ir.gen_call(d_lo, helper_uzp1_16 as u64, &[n_lo, m_lo]);
-            self.write_vreg_lo(ir, rd, d_lo);
-            if q != 0 {
+            if q == 0 {
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp1_16 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.clear_vreg_hi(ir, rd);
+            } else {
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp1_16 as u64, &[n_lo, n_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
                 let d_hi = ir.new_temp(Type::I64);
-                ir.gen_call(d_hi, helper_uzp1_16 as u64, &[n_hi, m_hi]);
+                ir.gen_call(d_hi, helper_uzp1_16 as u64, &[m_lo, m_hi]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else {
-                self.clear_vreg_hi(ir, rd);
             }
             return true;
         }
@@ -2470,9 +2973,143 @@ impl Aarch64DisasContext {
             }
             return true;
         }
+        // UZP2 .8B/.16B: opcode=101, size=00
+        // Q=0: d_lo = uzp2(n_lo, m_lo)
+        // Q=1: d_lo = uzp2(n_lo, n_hi), d_hi = uzp2(m_lo, m_hi)
+        if opcode == 5 && size == 0 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            if q == 0 {
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp2_8 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.clear_vreg_hi(ir, rd);
+            } else {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp2_8 as u64, &[n_lo, n_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_uzp2_8 as u64, &[m_lo, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            }
+            return true;
+        }
+        // UZP2 .4H/.8H: opcode=101, size=01
+        if opcode == 5 && size == 1 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            if q == 0 {
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp2_16 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.clear_vreg_hi(ir, rd);
+            } else {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp2_16 as u64, &[n_lo, n_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_uzp2_16 as u64, &[m_lo, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            }
+            return true;
+        }
         // UZP2 .4S/.2S: opcode=101, size=10 — take odd-indexed 32-bit elements
         if opcode == 5 && size == 2 {
-            self.neon_call2_halves(ir, q, rd, rn, rm, helper_uzp2_32);
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            if q == 0 {
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp2_32 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.clear_vreg_hi(ir, rd);
+            } else {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_uzp2_32 as u64, &[n_lo, n_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_uzp2_32 as u64, &[m_lo, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            }
+            return true;
+        }
+        // ZIP1 .8B/.16B: opcode=011, size=00
+        // Q=0: d_lo = zip1(n_lo, m_lo) — interleave low 4 bytes of Vn and Vm
+        // Q=1: d_lo = zip1(n_lo, m_lo), d_hi = zip1(n_hi, m_hi) — pairs from matching halves
+        if opcode == 3 && size == 0 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_zip1_8 as u64, &[n_lo, m_lo]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_zip1_8 as u64, &[n_hi, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
+            return true;
+        }
+        // ZIP2 .8B/.16B: opcode=111, size=00
+        if opcode == 7 && size == 0 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_zip2_8 as u64, &[n_lo, m_lo]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_zip2_8 as u64, &[n_hi, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
+            return true;
+        }
+        // ZIP1 .4H/.8H: opcode=011, size=01
+        if opcode == 3 && size == 1 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_zip1_16 as u64, &[n_lo, m_lo]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_zip1_16 as u64, &[n_hi, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
+            return true;
+        }
+        // ZIP2 .4H/.8H: opcode=111, size=01
+        if opcode == 7 && size == 1 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_zip2_16 as u64, &[n_lo, m_lo]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let m_hi = self.read_vreg_hi(ir, rm);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_zip2_16 as u64, &[n_hi, m_hi]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
         // UZP1 .4S/.2S: opcode=001, size=10 — take even-indexed 32-bit elements
@@ -2562,6 +3199,17 @@ unsafe extern "C" fn helper_cmeq8(a: u64, b: u64) -> u64 {
         let ab = (a >> (i * 8)) & 0xff;
         let bb = (b >> (i * 8)) & 0xff;
         if ab == bb { r |= 0xffu64 << (i * 8); }
+    }
+    r
+}
+
+/// CMTST .16B/.8B: each byte → 0xFF if (a & b) != 0, else 0x00.
+unsafe extern "C" fn helper_cmtst8(a: u64, b: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let ab = (a >> (i * 8)) & 0xff;
+        let bb = (b >> (i * 8)) & 0xff;
+        if ab & bb != 0 { r |= 0xffu64 << (i * 8); }
     }
     r
 }
@@ -2668,6 +3316,24 @@ unsafe extern "C" fn helper_addp8(a: u64, b: u64) -> u64 {
     r
 }
 
+/// ADDP .4S/.2S: pairwise add 32-bit elements.
+unsafe extern "C" fn helper_addp32(a: u64, b: u64) -> u64 {
+    let a0 = (a as u32).wrapping_add((a >> 32) as u32) as u64;
+    let b0 = (b as u32).wrapping_add((b >> 32) as u32) as u64;
+    a0 | (b0 << 32)
+}
+
+/// CMTST .4S/.2S: if (a & b) != 0 then 0xFFFFFFFF else 0 per 32-bit element.
+unsafe extern "C" fn helper_cmtst32(a: u64, b: u64) -> u64 {
+    let lo_a = a as u32;
+    let lo_b = b as u32;
+    let hi_a = (a >> 32) as u32;
+    let hi_b = (b >> 32) as u32;
+    let r_lo = if lo_a & lo_b != 0 { !0u32 } else { 0 };
+    let r_hi = if hi_a & hi_b != 0 { !0u32 } else { 0 };
+    r_lo as u64 | ((r_hi as u64) << 32)
+}
+
 /// Byte-wise add.
 unsafe extern "C" fn helper_add8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
@@ -2715,6 +3381,63 @@ unsafe extern "C" fn helper_smax32(a: u64, b: u64) -> u64 {
     let hi = std::cmp::max((a >> 32) as i32, (b >> 32) as i32) as u32 as u64;
     lo | (hi << 32)
 }
+unsafe extern "C" fn helper_smin32(a: u64, b: u64) -> u64 {
+    let lo = std::cmp::min(a as i32, b as i32) as u32 as u64;
+    let hi = std::cmp::min((a >> 32) as i32, (b >> 32) as i32) as u32 as u64;
+    lo | (hi << 32)
+}
+unsafe extern "C" fn helper_umax32(a: u64, b: u64) -> u64 {
+    let lo = std::cmp::max(a as u32, b as u32) as u64;
+    let hi = std::cmp::max((a >> 32) as u32, (b >> 32) as u32) as u64;
+    lo | (hi << 32)
+}
+unsafe extern "C" fn helper_umin32(a: u64, b: u64) -> u64 {
+    let lo = std::cmp::min(a as u32, b as u32) as u64;
+    let hi = std::cmp::min((a >> 32) as u32, (b >> 32) as u32) as u64;
+    lo | (hi << 32)
+}
+/// Reduce 2x32-bit to single signed max
+unsafe extern "C" fn helper_smaxv32_reduce(a: u64) -> u64 {
+    std::cmp::max(a as i32, (a >> 32) as i32) as u32 as u64
+}
+/// Reduce 2x32-bit to single signed min
+unsafe extern "C" fn helper_sminv32_reduce(a: u64) -> u64 {
+    std::cmp::min(a as i32, (a >> 32) as i32) as u32 as u64
+}
+/// Reduce 2x32-bit to single unsigned max
+unsafe extern "C" fn helper_umaxv32_reduce(a: u64) -> u64 {
+    std::cmp::max(a as u32, (a >> 32) as u32) as u64
+}
+/// Reduce 2x32-bit to single unsigned min
+unsafe extern "C" fn helper_uminv32_reduce(a: u64) -> u64 {
+    std::cmp::min(a as u32, (a >> 32) as u32) as u64
+}
+/// SMAXV 16-bit: max across 4x16-bit elements in two 64-bit halves
+unsafe extern "C" fn helper_smaxv16_pair(lo: u64, hi: u64) -> u64 {
+    let mut m = i16::MIN;
+    for i in 0..4 {
+        let e = ((lo >> (i * 16)) & 0xffff) as i16;
+        if e > m { m = e; }
+    }
+    for i in 0..4 {
+        let e = ((hi >> (i * 16)) & 0xffff) as i16;
+        if e > m { m = e; }
+    }
+    m as u16 as u64
+}
+/// SMINV 16-bit: min across 4x16-bit elements in two 64-bit halves
+unsafe extern "C" fn helper_sminv16_pair(lo: u64, hi: u64) -> u64 {
+    let mut m = i16::MAX;
+    for i in 0..4 {
+        let e = ((lo >> (i * 16)) & 0xffff) as i16;
+        if e < m { m = e; }
+    }
+    for i in 0..4 {
+        let e = ((hi >> (i * 16)) & 0xffff) as i16;
+        if e < m { m = e; }
+    }
+    m as u16 as u64
+}
 unsafe extern "C" fn helper_cmeq32(a: u64, b: u64) -> u64 {
     let lo: u32 = if a as u32 == b as u32 { !0 } else { 0 };
     let hi: u32 = if (a >> 32) as u32 == (b >> 32) as u32 { !0 } else { 0 };
@@ -2748,6 +3471,25 @@ unsafe extern "C" fn helper_sshr32(a: u64, shift: u64) -> u64 {
     let lo = ((a as i32) >> shift) as u32 as u64;
     let hi = (((a >> 32) as i32) >> shift) as u32 as u64;
     lo | (hi << 32)
+}
+/// USHR 8-bit: logical shift right 8x8-bit elements
+unsafe extern "C" fn helper_ushr8(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let elem = (a >> (i * 8)) & 0xff;
+        r |= (elem >> shift) << (i * 8);
+    }
+    r
+}
+/// SSHR 8-bit: arithmetic shift right 8x8-bit elements
+unsafe extern "C" fn helper_sshr8(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let elem = ((a >> (i * 8)) & 0xff) as i8;
+        let shifted = ((elem as i32) >> shift) as u64;
+        r |= (shifted & 0xff) << (i * 8);
+    }
+    r
 }
 /// UZP1 16-bit: take even-indexed 16-bit elements from two sources
 unsafe extern "C" fn helper_uzp1_16(a: u64, b: u64) -> u64 {
@@ -2791,6 +3533,72 @@ unsafe extern "C" fn helper_uzp1_8(a: u64, b: u64) -> u64 {
         r |= ((b >> (i * 16)) & 0xff) << ((i + 4) * 8);
     }
     r
+}
+/// UZP2 .8B/.16B: take odd-indexed bytes
+unsafe extern "C" fn helper_uzp2_8(a: u64, b: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        r |= ((a >> (i * 16 + 8)) & 0xff) << (i * 8);
+    }
+    for i in 0..4 {
+        r |= ((b >> (i * 16 + 8)) & 0xff) << ((i + 4) * 8);
+    }
+    r
+}
+/// ZIP1 .8B/.16B: interleave low bytes of a and b
+unsafe extern "C" fn helper_zip1_8(a: u64, b: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        r |= ((a >> (i * 8)) & 0xff) << (i * 16);
+        r |= ((b >> (i * 8)) & 0xff) << (i * 16 + 8);
+    }
+    r
+}
+/// ZIP2 .8B/.16B: interleave high bytes of a and b
+unsafe extern "C" fn helper_zip2_8(a: u64, b: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        r |= ((a >> (i * 8 + 32)) & 0xff) << (i * 16);
+        r |= ((b >> (i * 8 + 32)) & 0xff) << (i * 16 + 8);
+    }
+    r
+}
+/// UZP2 .4H/.8H: take odd-indexed 16-bit elements
+unsafe extern "C" fn helper_uzp2_16(a: u64, b: u64) -> u64 {
+    let a1 = (a >> 16) & 0xffff;
+    let a3 = (a >> 48) & 0xffff;
+    let b1 = (b >> 16) & 0xffff;
+    let b3 = (b >> 48) & 0xffff;
+    a1 | (a3 << 16) | (b1 << 32) | (b3 << 48)
+}
+/// ZIP1 .4H/.8H: interleave low halfwords
+unsafe extern "C" fn helper_zip1_16(a: u64, b: u64) -> u64 {
+    let a0 = a & 0xffff;
+    let a1 = (a >> 16) & 0xffff;
+    let b0 = b & 0xffff;
+    let b1 = (b >> 16) & 0xffff;
+    a0 | (b0 << 16) | (a1 << 32) | (b1 << 48)
+}
+/// ZIP2 .4H/.8H: interleave high halfwords
+unsafe extern "C" fn helper_zip2_16(a: u64, b: u64) -> u64 {
+    let a2 = (a >> 32) & 0xffff;
+    let a3 = (a >> 48) & 0xffff;
+    let b2 = (b >> 32) & 0xffff;
+    let b3 = (b >> 48) & 0xffff;
+    a2 | (b2 << 16) | (a3 << 32) | (b3 << 48)
+}
+/// FCVTL: convert 2x f32 (low 64 bits) to 2x f64
+unsafe extern "C" fn helper_fcvtl_lo(a: u64) -> (u64, u64) {
+    let f0 = f32::from_bits(a as u32) as f64;
+    let f1 = f32::from_bits((a >> 32) as u32) as f64;
+    (f0.to_bits(), f1.to_bits())
+}
+/// FCVTL2: convert 2x f32 (high 64 bits) to 2x f64
+unsafe extern "C" fn helper_fcvtl2_lo(a: u64) -> u64 {
+    (f32::from_bits(a as u32) as f64).to_bits()
+}
+unsafe extern "C" fn helper_fcvtl2_hi(a: u64) -> u64 {
+    (f32::from_bits((a >> 32) as u32) as f64).to_bits()
 }
 /// USHLL 8→16: zero-extend 4 bytes to 4x16-bit, then shift left
 unsafe extern "C" fn helper_ushll8(a: u64, shift: u64) -> u64 {
@@ -2978,6 +3786,13 @@ unsafe extern "C" fn helper_addv8(a: u64) -> u64 {
     sum & 0xff
 }
 
+/// ADDV .4S: add all four 32-bit elements from lo and hi halves.
+unsafe extern "C" fn helper_addv32(lo: u64, hi: u64) -> u64 {
+    let s0 = (lo as u32).wrapping_add((lo >> 32) as u32);
+    let s1 = (hi as u32).wrapping_add((hi >> 32) as u32);
+    s0.wrapping_add(s1) as u64
+}
+
 /// Byte-wise shift left.
 unsafe extern "C" fn helper_shl8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
@@ -2986,6 +3801,206 @@ unsafe extern "C" fn helper_shl8(a: u64, shift: u64) -> u64 {
         r |= ((byte << shift) & 0xff) << (i * 8);
     }
     r
+}
+/// SHL 32-bit: shift left 2x32-bit elements packed in 64 bits
+unsafe extern "C" fn helper_shl32(a: u64, shift: u64) -> u64 {
+    let lo = ((a as u32) << shift) as u64;
+    let hi = (((a >> 32) as u32) << shift) as u64;
+    lo | (hi << 32)
+}
+/// SHL 16-bit: shift left 4x16-bit elements packed in 64 bits
+unsafe extern "C" fn helper_shl16(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        let elem = (a >> (i * 16)) & 0xffff;
+        r |= ((elem << shift) & 0xffff) << (i * 16);
+    }
+    r
+}
+/// USHR 16-bit: logical shift right 4x16-bit elements
+unsafe extern "C" fn helper_ushr16(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        let elem = (a >> (i * 16)) & 0xffff;
+        r |= (elem >> shift) << (i * 16);
+    }
+    r
+}
+/// SSHR 16-bit: arithmetic shift right 4x16-bit elements
+unsafe extern "C" fn helper_sshr16(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        let elem = ((a >> (i * 16)) & 0xffff) as i16;
+        let shifted = ((elem as i32) >> shift) as u64;
+        r |= (shifted & 0xffff) << (i * 16);
+    }
+    r
+}
+/// Vector FP: fadd 2x f32 packed in 64 bits
+unsafe extern "C" fn helper_vfadd32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (a0 + b0).to_bits() as u64 | (((a1 + b1).to_bits() as u64) << 32)
+}
+/// Vector FP: fsub 2x f32 packed in 64 bits
+unsafe extern "C" fn helper_vfsub32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (a0 - b0).to_bits() as u64 | (((a1 - b1).to_bits() as u64) << 32)
+}
+/// Vector FP: fmul 2x f32 packed in 64 bits
+unsafe extern "C" fn helper_vfmul32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (a0 * b0).to_bits() as u64 | (((a1 * b1).to_bits() as u64) << 32)
+}
+/// Vector FP: fdiv 2x f32 packed in 64 bits
+unsafe extern "C" fn helper_vfdiv32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (a0 / b0).to_bits() as u64 | (((a1 / b1).to_bits() as u64) << 32)
+}
+/// Vector FP: fmax 2x f32
+unsafe extern "C" fn helper_vfmax32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    a0.max(b0).to_bits() as u64 | ((a1.max(b1).to_bits() as u64) << 32)
+}
+/// Vector FP: fmin 2x f32
+unsafe extern "C" fn helper_vfmin32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    a0.min(b0).to_bits() as u64 | ((a1.min(b1).to_bits() as u64) << 32)
+}
+/// Vector FP: fcmeq (==) 2x f32: each lane: all-ones if equal, else 0
+unsafe extern "C" fn helper_vfcmeq32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    let r0: u32 = if a0 == b0 { !0 } else { 0 };
+    let r1: u32 = if a1 == b1 { !0 } else { 0 };
+    r0 as u64 | ((r1 as u64) << 32)
+}
+/// Vector FP: fcmgt (>) 2x f32
+unsafe extern "C" fn helper_vfcmgt32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    let r0: u32 = if a0 > b0 { !0 } else { 0 };
+    let r1: u32 = if a1 > b1 { !0 } else { 0 };
+    r0 as u64 | ((r1 as u64) << 32)
+}
+/// Vector FP: fcmge (>=) 2x f32
+unsafe extern "C" fn helper_vfcmge32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    let r0: u32 = if a0 >= b0 { !0 } else { 0 };
+    let r1: u32 = if a1 >= b1 { !0 } else { 0 };
+    r0 as u64 | ((r1 as u64) << 32)
+}
+/// scvtf vector: convert 2x i32 to 2x f32
+unsafe extern "C" fn helper_vscvtf32(a: u64) -> u64 {
+    let e0 = (a as i32) as f32;
+    let e1 = ((a >> 32) as i32) as f32;
+    e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
+}
+/// scvtf vector: convert 2x i64 to 2x f64 (one lane per 64-bit half)
+unsafe extern "C" fn helper_vscvtf64(a: u64) -> u64 {
+    (a as i64 as f64).to_bits()
+}
+/// shl vector: shift left each 64-bit lane by shift amount
+unsafe extern "C" fn helper_shl64(a: u64, shift: u64) -> u64 {
+    if shift >= 64 { 0 } else { a << shift }
+}
+/// ucvtf vector: convert 2x u32 to 2x f32
+unsafe extern "C" fn helper_vucvtf32(a: u64) -> u64 {
+    let e0 = (a as u32) as f32;
+    let e1 = ((a >> 32) as u32) as f32;
+    e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
+}
+/// fcvtzs vector: convert 2x f32 to 2x i32 (truncate toward zero)
+unsafe extern "C" fn helper_vfcvtzs32(a: u64) -> u64 {
+    let e0 = f32::from_bits(a as u32) as i32 as u32;
+    let e1 = f32::from_bits((a >> 32) as u32) as i32 as u32;
+    e0 as u64 | ((e1 as u64) << 32)
+}
+/// fcvtzs vector fixed-point: multiply by 2^fbits then truncate to i32
+unsafe extern "C" fn helper_vfcvtzs32_fixedpt(a: u64, fbits: u64) -> u64 {
+    let scale = (1u64 << fbits) as f32;
+    let e0 = (f32::from_bits(a as u32) * scale) as i32 as u32;
+    let e1 = (f32::from_bits((a >> 32) as u32) * scale) as i32 as u32;
+    e0 as u64 | ((e1 as u64) << 32)
+}
+/// SMLAL .2D: signed multiply-accumulate long — acc += sext(n) * sext(m), low lanes
+unsafe extern "C" fn helper_smlal32_lo(acc: u64, n: u64, m: u64) -> u64 {
+    let n0 = n as u32 as i32 as i64;
+    let m0 = m as u32 as i32 as i64;
+    (acc as i64).wrapping_add(n0.wrapping_mul(m0)) as u64
+}
+unsafe extern "C" fn helper_smlal32_hi(acc: u64, n: u64, m: u64) -> u64 {
+    let n1 = (n >> 32) as u32 as i32 as i64;
+    let m1 = (m >> 32) as u32 as i32 as i64;
+    (acc as i64).wrapping_add(n1.wrapping_mul(m1)) as u64
+}
+/// fabs vector: abs 2x f32
+unsafe extern "C" fn helper_vfabs32(a: u64) -> u64 {
+    let e0 = f32::from_bits(a as u32).abs();
+    let e1 = f32::from_bits((a >> 32) as u32).abs();
+    e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
+}
+/// fneg vector: negate 2x f32
+unsafe extern "C" fn helper_vfneg32(a: u64) -> u64 {
+    let e0 = -f32::from_bits(a as u32);
+    let e1 = -f32::from_bits((a >> 32) as u32);
+    e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
+}
+/// fsqrt vector: sqrt 2x f32
+unsafe extern "C" fn helper_vfsqrt32(a: u64) -> u64 {
+    let e0 = f32::from_bits(a as u32).sqrt();
+    let e1 = f32::from_bits((a >> 32) as u32).sqrt();
+    e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
+}
+/// frecpe vector: reciprocal estimate 2x f32
+unsafe extern "C" fn helper_vfrecpe32(a: u64) -> u64 {
+    let e0 = 1.0f32 / f32::from_bits(a as u32);
+    let e1 = 1.0f32 / f32::from_bits((a >> 32) as u32);
+    e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
+}
+/// fmla vector: fused multiply-add 2x f32: d = a + b*c
+unsafe extern "C" fn helper_vfmla32(d: u64, a: u64, b: u64) -> u64 {
+    let d0 = f32::from_bits(d as u32);
+    let d1 = f32::from_bits((d >> 32) as u32);
+    let a0 = f32::from_bits(a as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b0 = f32::from_bits(b as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (d0 + a0 * b0).to_bits() as u64 | (((d1 + a1 * b1).to_bits() as u64) << 32)
+}
+/// fmls vector: fused multiply-subtract 2x f32: d = d - a*b
+unsafe extern "C" fn helper_vfmls32(d: u64, a: u64, b: u64) -> u64 {
+    let d0 = f32::from_bits(d as u32);
+    let d1 = f32::from_bits((d >> 32) as u32);
+    let a0 = f32::from_bits(a as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b0 = f32::from_bits(b as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (d0 - a0 * b0).to_bits() as u64 | (((d1 - a1 * b1).to_bits() as u64) << 32)
 }
 
 /// XTN: narrow 16→8 (take low byte of each 16-bit element, 4 elements).
@@ -3000,6 +4015,184 @@ unsafe extern "C" fn helper_xtn8(a: u64) -> u64 {
 
 // ── FP helper functions ─────────────────────────────────
 
+unsafe extern "C" fn helper_fcmp32(a: u64, b: u64) -> u64 {
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    let nzcv = if fa.is_nan() || fb.is_nan() {
+        0b0011u64
+    } else if fa == fb {
+        0b0110
+    } else if fa < fb {
+        0b1000
+    } else {
+        0b0010
+    };
+    nzcv << 28
+}
+unsafe extern "C" fn helper_fcvtms_w_d(a: u64) -> u64 {
+    let f = f64::from_bits(a).floor();
+    if f.is_nan() { 0 } else if f >= i32::MAX as f64 { i32::MAX as u64 } else if f <= i32::MIN as f64 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+}
+unsafe extern "C" fn helper_fcvtms_x_d(a: u64) -> u64 {
+    let f = f64::from_bits(a).floor();
+    if f.is_nan() { 0 } else if f >= i64::MAX as f64 { i64::MAX as u64 } else if f <= i64::MIN as f64 { i64::MIN as u64 } else { f as i64 as u64 }
+}
+unsafe extern "C" fn helper_fcvtms_w_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32).floor();
+    if f.is_nan() { 0 } else if f >= i32::MAX as f32 { i32::MAX as u64 } else if f <= i32::MIN as f32 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+}
+unsafe extern "C" fn helper_fcvtms_x_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32).floor();
+    if f.is_nan() { 0 } else if f >= i64::MAX as f32 { i64::MAX as u64 } else if f <= i64::MIN as f32 { i64::MIN as u64 } else { f as i64 as u64 }
+}
+unsafe extern "C" fn helper_neg8(a: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let b = ((a >> (i * 8)) & 0xff) as u8;
+        r |= (b.wrapping_neg() as u64) << (i * 8);
+    }
+    r
+}
+unsafe extern "C" fn helper_neg16(a: u64) -> u64 {
+    let lo = (a as u16).wrapping_neg() as u64;
+    let hi = ((a >> 16) as u16).wrapping_neg() as u64;
+    let hi2 = ((a >> 32) as u16).wrapping_neg() as u64;
+    let hi3 = ((a >> 48) as u16).wrapping_neg() as u64;
+    lo | (hi << 16) | (hi2 << 32) | (hi3 << 48)
+}
+unsafe extern "C" fn helper_neg32(a: u64) -> u64 {
+    let lo = (a as u32).wrapping_neg() as u64;
+    let hi = ((a >> 32) as u32).wrapping_neg() as u64;
+    lo | (hi << 32)
+}
+// REV64 .2S: swap the two 32-bit words within a 64-bit lane
+unsafe extern "C" fn helper_rev64_2s(a: u64) -> u64 {
+    let lo = a as u32;
+    let hi = (a >> 32) as u32;
+    (lo as u64) << 32 | (hi as u64)
+}
+// REV64 .4H: reverse 4 halfwords within a 64-bit lane
+unsafe extern "C" fn helper_rev64_4h(a: u64) -> u64 {
+    let h0 = (a      ) as u16 as u64;
+    let h1 = (a >> 16) as u16 as u64;
+    let h2 = (a >> 32) as u16 as u64;
+    let h3 = (a >> 48) as u16 as u64;
+    h3 | (h2 << 16) | (h1 << 32) | (h0 << 48)
+}
+// USHL .2S: unsigned shift each 32-bit lane by signed amount in corresponding lane of Vm
+unsafe extern "C" fn helper_ushl32(vn: u64, vm: u64) -> u64 {
+    let shift0 = (vm as i8) as i32;
+    let shift1 = ((vm >> 32) as i8) as i32;
+    let n0 = vn as u32;
+    let n1 = (vn >> 32) as u32;
+    let r0 = if shift0 >= 32 || shift0 <= -32 { 0u32 }
+             else if shift0 >= 0 { n0.wrapping_shl(shift0 as u32) }
+             else { n0.wrapping_shr((-shift0) as u32) };
+    let r1 = if shift1 >= 32 || shift1 <= -32 { 0u32 }
+             else if shift1 >= 0 { n1.wrapping_shl(shift1 as u32) }
+             else { n1.wrapping_shr((-shift1) as u32) };
+    (r0 as u64) | ((r1 as u64) << 32)
+}
+// SSHL .2S: signed shift each 32-bit lane by signed amount in corresponding lane of Vm
+unsafe extern "C" fn helper_sshl32(vn: u64, vm: u64) -> u64 {
+    let shift0 = (vm as i8) as i32;
+    let shift1 = ((vm >> 32) as i8) as i32;
+    let n0 = vn as u32 as i32;
+    let n1 = (vn >> 32) as u32 as i32;
+    let r0 = if shift0 >= 32 { 0i32 }
+             else if shift0 <= -32 { n0 >> 31 }
+             else if shift0 >= 0 { n0.wrapping_shl(shift0 as u32) }
+             else { n0 >> (-shift0) };
+    let r1 = if shift1 >= 32 { 0i32 }
+             else if shift1 <= -32 { n1 >> 31 }
+             else if shift1 >= 0 { n1.wrapping_shl(shift1 as u32) }
+             else { n1 >> (-shift1) };
+    (r0 as u32 as u64) | ((r1 as u32 as u64) << 32)
+}
+// SADDW .4S += sext(.4H): add each of 4 signed 16-bit lanes from src into 4 32-bit lanes of acc
+unsafe extern "C" fn helper_saddw16_lo(acc: u64, src: u64) -> u64 {
+    let a0 = (acc as u32) as i32;
+    let a1 = ((acc >> 32) as u32) as i32;
+    let s0 = (src as i16) as i32;
+    let s1 = ((src >> 16) as i16) as i32;
+    let r0 = a0.wrapping_add(s0) as u32 as u64;
+    let r1 = a1.wrapping_add(s1) as u32 as u64;
+    r0 | (r1 << 32)
+}
+unsafe extern "C" fn helper_saddw16_hi(acc: u64, src: u64) -> u64 {
+    let a0 = (acc as u32) as i32;
+    let a1 = ((acc >> 32) as u32) as i32;
+    let s0 = ((src >> 32) as i16) as i32;
+    let s1 = ((src >> 48) as i16) as i32;
+    let r0 = a0.wrapping_add(s0) as u32 as u64;
+    let r1 = a1.wrapping_add(s1) as u32 as u64;
+    r0 | (r1 << 32)
+}
+unsafe extern "C" fn helper_uaddw16_lo(acc: u64, src: u64) -> u64 {
+    let a0 = (acc as u32).wrapping_add((src as u16) as u32) as u64;
+    let a1 = ((acc >> 32) as u32).wrapping_add(((src >> 16) as u16) as u32) as u64;
+    a0 | (a1 << 32)
+}
+unsafe extern "C" fn helper_uaddw16_hi(acc: u64, src: u64) -> u64 {
+    let a0 = (acc as u32).wrapping_add(((src >> 32) as u16) as u32) as u64;
+    let a1 = ((acc >> 32) as u32).wrapping_add(((src >> 48) as u16) as u32) as u64;
+    a0 | (a1 << 32)
+}
+// SADDW .2D += sext(.2S)
+unsafe extern "C" fn helper_saddw32_lo(acc: u64, src: u64) -> u64 {
+    acc.wrapping_add((src as u32 as i32 as i64) as u64)
+}
+unsafe extern "C" fn helper_saddw32_hi(acc: u64, src: u64) -> u64 {
+    acc.wrapping_add(((src >> 32) as u32 as i32 as i64) as u64)
+}
+// CMHI .8B: unsigned greater-than per byte, result = 0xFF or 0x00
+unsafe extern "C" fn helper_cmhi8(a: u64, b: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let va = ((a >> (i * 8)) & 0xff) as u8;
+        let vb = ((b >> (i * 8)) & 0xff) as u8;
+        if va > vb { r |= 0xffu64 << (i * 8); }
+    }
+    r
+}
+// CMGT .8B: signed greater-than per byte
+unsafe extern "C" fn helper_cmgt8(a: u64, b: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let va = ((a >> (i * 8)) & 0xff) as u8 as i8;
+        let vb = ((b >> (i * 8)) & 0xff) as u8 as i8;
+        if va > vb { r |= 0xffu64 << (i * 8); }
+    }
+    r
+}
+// SSRA .2S: signed shift right and accumulate per 32-bit lane
+unsafe extern "C" fn helper_ssra32(acc: u64, src: u64, shift: u64) -> u64 {
+    let sh = shift as u32;
+    let s0 = (src as u32 as i32) >> sh;
+    let s1 = ((src >> 32) as u32 as i32) >> sh;
+    let a0 = (acc as u32).wrapping_add(s0 as u32);
+    let a1 = ((acc >> 32) as u32).wrapping_add(s1 as u32);
+    (a0 as u64) | ((a1 as u64) << 32)
+}
+// USUBL .4S: Vd.4S = zext(Vn.4H) - zext(Vm.4H), low two lanes
+unsafe extern "C" fn helper_usubl16_lo(n: u64, m: u64) -> u64 {
+    let n0 = (n as u16) as u32;
+    let n1 = ((n >> 16) as u16) as u32;
+    let m0 = (m as u16) as u32;
+    let m1 = ((m >> 16) as u16) as u32;
+    let r0 = n0.wrapping_sub(m0) as u64;
+    let r1 = n1.wrapping_sub(m1) as u64;
+    r0 | (r1 << 32)
+}
+unsafe extern "C" fn helper_usubl16_hi(n: u64, m: u64) -> u64 {
+    let n0 = ((n >> 32) as u16) as u32;
+    let n1 = ((n >> 48) as u16) as u32;
+    let m0 = ((m >> 32) as u16) as u32;
+    let m1 = ((m >> 48) as u16) as u32;
+    let r0 = n0.wrapping_sub(m0) as u64;
+    let r1 = n1.wrapping_sub(m1) as u64;
+    r0 | (r1 << 32)
+}
 unsafe extern "C" fn helper_fadd64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) + f64::from_bits(b)).to_bits()
 }
@@ -3008,6 +4201,69 @@ unsafe extern "C" fn helper_fsub64(a: u64, b: u64) -> u64 {
 }
 unsafe extern "C" fn helper_fmul64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) * f64::from_bits(b)).to_bits()
+}
+unsafe extern "C" fn helper_fnmul64(a: u64, b: u64) -> u64 {
+    (-(f64::from_bits(a) * f64::from_bits(b))).to_bits()
+}
+unsafe extern "C" fn helper_fnmul32(a: u64, b: u64) -> u64 {
+    (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))).to_bits() as u64
+}
+unsafe extern "C" fn helper_fmax64(a: u64, b: u64) -> u64 {
+    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
+    // IEEE 754: FMAX returns the larger, treating NaN from sNaN specially
+    if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.max(fb).to_bits() }
+}
+unsafe extern "C" fn helper_fmin64(a: u64, b: u64) -> u64 {
+    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
+    if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.min(fb).to_bits() }
+}
+unsafe extern "C" fn helper_fmaxnm64(a: u64, b: u64) -> u64 {
+    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
+    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.max(fb).to_bits() }
+}
+unsafe extern "C" fn helper_fminnm64(a: u64, b: u64) -> u64 {
+    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
+    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.min(fb).to_bits() }
+}
+unsafe extern "C" fn helper_fmax32(a: u64, b: u64) -> u64 {
+    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
+    if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.max(fb).to_bits() as u64 }
+}
+unsafe extern "C" fn helper_fmin32(a: u64, b: u64) -> u64 {
+    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
+    if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.min(fb).to_bits() as u64 }
+}
+unsafe extern "C" fn helper_fmaxnm32(a: u64, b: u64) -> u64 {
+    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
+    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.max(fb).to_bits() as u64 }
+}
+unsafe extern "C" fn helper_fminnm32(a: u64, b: u64) -> u64 {
+    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
+    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.min(fb).to_bits() as u64 }
+}
+unsafe extern "C" fn helper_fcvtps_w_d(a: u64) -> u64 {
+    let f = f64::from_bits(a).ceil();
+    if f.is_nan() { 0 } else if f >= i32::MAX as f64 { i32::MAX as u64 } else if f <= i32::MIN as f64 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+}
+unsafe extern "C" fn helper_fcvtps_x_d(a: u64) -> u64 {
+    let f = f64::from_bits(a).ceil();
+    if f.is_nan() { 0 } else if f >= i64::MAX as f64 { i64::MAX as u64 } else if f <= i64::MIN as f64 { i64::MIN as u64 } else { f as i64 as u64 }
+}
+unsafe extern "C" fn helper_fcvtps_w_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32).ceil();
+    if f.is_nan() { 0 } else if f >= i32::MAX as f32 { i32::MAX as u64 } else if f <= i32::MIN as f32 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+}
+unsafe extern "C" fn helper_fcvtps_x_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32).ceil();
+    if f.is_nan() { 0 } else if f >= i64::MAX as f32 { i64::MAX as u64 } else if f <= i64::MIN as f32 { i64::MIN as u64 } else { f as i64 as u64 }
+}
+unsafe extern "C" fn helper_fabd64(a: u64, b: u64) -> u64 {
+    let r = f64::from_bits(a) - f64::from_bits(b);
+    r.abs().to_bits()
+}
+unsafe extern "C" fn helper_fabd32(a: u64, b: u64) -> u64 {
+    let r = f32::from_bits(a as u32) - f32::from_bits(b as u32);
+    r.abs().to_bits() as u64
 }
 unsafe extern "C" fn helper_fdiv64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) / f64::from_bits(b)).to_bits()
@@ -3066,6 +4322,51 @@ unsafe extern "C" fn helper_ucvtf_d_w(a: u64) -> u64 {
 unsafe extern "C" fn helper_ucvtf_d_x(a: u64) -> u64 {
     (a as f64).to_bits()
 }
+// Single-precision (Sd) conversions from/to GPR
+unsafe extern "C" fn helper_scvtf_s_w(a: u64) -> u64 {
+    ((a as u32 as i32) as f32).to_bits() as u64
+}
+unsafe extern "C" fn helper_scvtf_s_x(a: u64) -> u64 {
+    ((a as i64) as f32).to_bits() as u64
+}
+unsafe extern "C" fn helper_ucvtf_s_w(a: u64) -> u64 {
+    ((a as u32) as f32).to_bits() as u64
+}
+unsafe extern "C" fn helper_ucvtf_s_x(a: u64) -> u64 {
+    (a as f32).to_bits() as u64
+}
+// Single-precision: integer-in-Sn register to float-in-Sd
+unsafe extern "C" fn helper_scvtf_s_s(a: u64) -> u64 {
+    ((a as u32 as i32) as f32).to_bits() as u64
+}
+unsafe extern "C" fn helper_ucvtf_s_s(a: u64) -> u64 {
+    ((a as u32) as f32).to_bits() as u64
+}
+// FCVTZx single-precision float to integer
+unsafe extern "C" fn helper_fcvtzu_w_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    if f.is_nan() || f <= 0.0 { 0 } else if f >= u32::MAX as f32 { u32::MAX as u64 } else { f as u32 as u64 }
+}
+unsafe extern "C" fn helper_fcvtzu_x_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    if f.is_nan() || f <= 0.0 { 0 } else if f >= u64::MAX as f32 { u64::MAX } else { f as u64 }
+}
+unsafe extern "C" fn helper_fcvtzs_w_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    if f.is_nan() { 0 } else if f >= i32::MAX as f32 { i32::MAX as u64 } else if f <= i32::MIN as f32 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+}
+unsafe extern "C" fn helper_fcvtzs_x_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    if f.is_nan() { 0 } else if f >= i64::MAX as f32 { i64::MAX as u64 } else if f <= i64::MIN as f32 { i64::MIN as u64 } else { f as i64 as u64 }
+}
+unsafe extern "C" fn helper_fcvtas_x_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    if f.is_nan() { 0 } else { f.round() as i64 as u64 }
+}
+unsafe extern "C" fn helper_fcvtas_w_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    if f.is_nan() { 0 } else { f.round() as i32 as u64 }
+}
 unsafe extern "C" fn helper_fcvtzu_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() || f < 0.0 { 0 } else { f as u64 }
@@ -3081,6 +4382,52 @@ unsafe extern "C" fn helper_fcvtzs_w_d(a: u64) -> u64 {
 unsafe extern "C" fn helper_fcvtzs_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() { 0 } else { (f as i64) as u64 }
+}
+unsafe extern "C" fn helper_fcvtas_x_d(a: u64) -> u64 {
+    let f = f64::from_bits(a);
+    if f.is_nan() { 0 } else { f.round() as i64 as u64 }
+}
+unsafe extern "C" fn helper_fcvtas_w_d(a: u64) -> u64 {
+    let f = f64::from_bits(a);
+    if f.is_nan() { 0 } else { f.round() as i32 as u64 }
+}
+unsafe extern "C" fn helper_frinta_d(a: u64) -> u64 {
+    f64::from_bits(a).round().to_bits()
+}
+unsafe extern "C" fn helper_frinta_s(a: u64) -> u64 {
+    (f32::from_bits(a as u32).round()).to_bits() as u64
+}
+unsafe extern "C" fn helper_frintm_d(a: u64) -> u64 {
+    f64::from_bits(a).floor().to_bits()
+}
+unsafe extern "C" fn helper_frintm_s(a: u64) -> u64 {
+    (f32::from_bits(a as u32).floor()).to_bits() as u64
+}
+unsafe extern "C" fn helper_frintn_d(a: u64) -> u64 {
+    // Round to nearest even (banker's rounding)
+    let f = f64::from_bits(a);
+    let rounded = f.round();
+    // Check ties (exactly 0.5): use banker's rounding
+    if (f - rounded).abs() == 0.5 {
+        let even = if (rounded as i64) % 2 == 0 { rounded } else { rounded - rounded.signum() };
+        even.to_bits()
+    } else {
+        rounded.to_bits()
+    }
+}
+unsafe extern "C" fn helper_frintn_s(a: u64) -> u64 {
+    let f = f32::from_bits(a as u32);
+    let rounded = f.round();
+    let result = if (f - rounded).abs() == 0.5 {
+        if (rounded as i32) % 2 == 0 { rounded } else { rounded - rounded.signum() }
+    } else { rounded };
+    result.to_bits() as u64
+}
+unsafe extern "C" fn helper_frintz_d(a: u64) -> u64 {
+    f64::from_bits(a).trunc().to_bits()
+}
+unsafe extern "C" fn helper_frintz_s(a: u64) -> u64 {
+    (f32::from_bits(a as u32).trunc()).to_bits() as u64
 }
 /// Returns NZCV bits (packed in bits 31:28) for fcmp/fcmpe.
 unsafe extern "C" fn helper_fcmp64(a: u64, b: u64) -> u64 {
@@ -3174,14 +4521,32 @@ impl Aarch64DisasContext {
         let rn = ((insn >> 5) & 0x1f) as usize;
         let rd = (insn & 0x1f) as usize;
 
-        // Only 64-bit (size=11) integer ops for now
-        if size != 0b11 {
-            return false;
-        }
-
         let n = self.read_vreg_lo(ir, rn);
         let m = self.read_vreg_lo(ir, rm);
         let d = ir.new_temp(Type::I64);
+
+        // FP scalar 3-same: size=10 (single) or size=11 (double, FP or int)
+        if opcode >= 0b11000 {
+            // FP ops: sz = size & 1 (0=f32, 1=f64)
+            let sz = size & 1;
+            let helper: u64 = match (u, opcode) {
+                (0, 0b11010) => if sz == 1 { helper_fadd64 as u64 } else { helper_fadd32 as u64 }, // FADD
+                (0, 0b11101) => if sz == 1 { helper_fsub64 as u64 } else { helper_fsub32 as u64 }, // FSUB
+                (0, 0b11011) | (1, 0b11011) => if sz == 1 { helper_fmul64 as u64 } else { helper_fmul32 as u64 }, // FMUL
+                (1, 0b11111) => if sz == 1 { helper_fdiv64 as u64 } else { helper_fdiv32 as u64 }, // FDIV
+                (1, 0b11010) => if sz == 1 { helper_fabd64 as u64 } else { helper_fabd32 as u64 }, // FABD (abs diff)
+                _ => return false,
+            };
+            ir.gen_call(d, helper, &[n, m]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        // Integer scalar 3-same: only size=11 (64-bit)
+        if size != 0b11 {
+            return false;
+        }
 
         match (u, opcode) {
             (0, 0b10000) => { // ADD d,d,d
@@ -3216,6 +4581,106 @@ impl Aarch64DisasContext {
         self.write_vreg_lo(ir, rd, d);
         self.clear_vreg_hi(ir, rd);
         true
+    }
+
+    /// AdvSIMD FP three same: bit[23]=1 means FP op, sz=bit[22] (0=f32, 1=f64)
+    /// Opcodes: fadd=11010, fsub=11101, fmul=11011, fdiv=11111,
+    ///          fmax=11110, fmin=11000, fmaxnm=11100, fminnm=11001,
+    ///          fcmeq=11100(U=0), fcmge=11100(U=1), fcmgt=11101(U=1),
+    ///          fmla=11001(U=0), fmls=11001(U=1), frsqrts=11111(U=0)
+    fn neon_fp_3same(
+        &mut self, ir: &mut Context, insn: u32, sz: u32,
+    ) -> bool {
+        let q = (insn >> 30) & 1;
+        let u = (insn >> 29) & 1;
+        let rm = ((insn >> 16) & 0x1f) as usize;
+        let opcode = (insn >> 11) & 0x1f;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+
+        if sz == 0 {
+            // f32 — use vf*32 helpers that process 2x f32 per 64-bit half
+            let helper: Option<u64> = match (u, opcode) {
+                (0, 0b11010) => Some(helper_vfadd32 as u64), // FADD
+                (0, 0b11101) => Some(helper_vfsub32 as u64), // FSUB
+                (0, 0b11011) | (1, 0b11011) => Some(helper_vfmul32 as u64), // FMUL/FMULX
+                (1, 0b11111) => Some(helper_vfdiv32 as u64), // FDIV
+                (0, 0b11110) | (1, 0b11110) => Some(helper_vfmax32 as u64), // FMAX/FMAXNM
+                (0, 0b11000) | (1, 0b11000) => Some(helper_vfmin32 as u64), // FMIN/FMINNM
+                (0, 0b11100) => Some(helper_vfcmeq32 as u64), // FCMEQ
+                (1, 0b11100) => Some(helper_vfcmge32 as u64), // FCMGE
+                (1, 0b11101) => Some(helper_vfcmgt32 as u64), // FCMGT
+                _ => None,
+            };
+            if let Some(h) = helper {
+                self.neon_call2_halves(ir, q, rd, rn, rm, unsafe { std::mem::transmute::<u64, unsafe extern "C" fn(u64, u64) -> u64>(h) });
+                return true;
+            }
+            // FMLA: d = d + n*m
+            if (u, opcode) == (0, 0b11001) {
+                let d_lo = self.read_vreg_lo(ir, rd);
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                let r_lo = ir.new_temp(Type::I64);
+                ir.gen_call(r_lo, helper_vfmla32 as u64, &[d_lo, n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, r_lo);
+                if q != 0 {
+                    let d_hi = self.read_vreg_hi(ir, rd);
+                    let n_hi = self.read_vreg_hi(ir, rn);
+                    let m_hi = self.read_vreg_hi(ir, rm);
+                    let r_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(r_hi, helper_vfmla32 as u64, &[d_hi, n_hi, m_hi]);
+                    self.write_vreg_hi(ir, rd, r_hi);
+                }
+                return true;
+            }
+            // FMLS: d = d - n*m
+            if (u, opcode) == (1, 0b11001) {
+                let d_lo = self.read_vreg_lo(ir, rd);
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                let r_lo = ir.new_temp(Type::I64);
+                ir.gen_call(r_lo, helper_vfmls32 as u64, &[d_lo, n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, r_lo);
+                if q != 0 {
+                    let d_hi = self.read_vreg_hi(ir, rd);
+                    let n_hi = self.read_vreg_hi(ir, rn);
+                    let m_hi = self.read_vreg_hi(ir, rm);
+                    let r_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(r_hi, helper_vfmls32 as u64, &[d_hi, n_hi, m_hi]);
+                    self.write_vreg_hi(ir, rd, r_hi);
+                }
+                return true;
+            }
+        } else {
+            // f64 — sz=1, only .2D (Q=1) or .1D (Q=0)
+            // Process each 64-bit lane as a scalar f64 op
+            let helper64: Option<u64> = match (u, opcode) {
+                (0, 0b11010) => Some(helper_fadd64 as u64), // FADD
+                (0, 0b11101) => Some(helper_fsub64 as u64), // FSUB
+                (0, 0b11011) | (1, 0b11011) => Some(helper_fmul64 as u64), // FMUL/FMULX
+                (1, 0b11111) => Some(helper_fdiv64 as u64), // FDIV
+                _ => None,
+            };
+            if let Some(h) = helper64 {
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, h, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let n_hi = self.read_vreg_hi(ir, rn);
+                    let m_hi = self.read_vreg_hi(ir, rm);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, h, &[n_hi, m_hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// AdvSIMD three same: 0 Q U 01110 size 1 Rm opcode 1 Rn Rd
@@ -3273,7 +4738,10 @@ impl Aarch64DisasContext {
                 (0, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_add8); true }
                 (1, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub8); true }
                 (1, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq8); true }
+                (0, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst8); true } // CMTST
                 (1, 0b00111) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs8); true }
+                (1, 0b00110) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhi8); true } // CMHI .8B/.16B
+                (0, 0b00110) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt8); true } // CMGT .8B/.16B
                 (1, 0b10100) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_umaxp8); true }
                 (1, 0b10101) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_uminp8); true }
                 (0, 0b10111) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_addp8); true }
@@ -3287,6 +4755,9 @@ impl Aarch64DisasContext {
                 (1, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub32); true }
                 (0, 0b10011) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_mul32); true }
                 (0, 0b01100) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_smax32); true } // SMAX
+                (0, 0b01101) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_smin32); true } // SMIN
+                (1, 0b01100) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_umax32); true } // UMAX
+                (1, 0b01101) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_umin32); true } // UMIN
                 (1, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq32); true } // CMEQ
                 (1, 0b00111) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs32); true } // CMHS
                 (0, 0b00110) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt32); true } // CMGT
@@ -3325,6 +4796,10 @@ impl Aarch64DisasContext {
                     }
                     true
                 }
+                (0, 0b10111) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_addp32); true } // ADDP .4S/.2S
+                (0, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst32); true } // CMTST .4S/.2S
+                (1, 0b01000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_ushl32); true } // USHL .2S/.4S
+                (0, 0b01000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_sshl32); true } // SSHL .2S/.4S
                 _ => false,
             };
         }
@@ -3363,6 +4838,33 @@ impl Aarch64DisasContext {
                         let d_hi = ir.new_temp(Type::I64);
                         ir.gen_setcond(Type::I64, d_hi, n_hi, m_hi, Cond::Eq);
                         ir.gen_neg(Type::I64, d_hi, d_hi);
+                        self.write_vreg_hi(ir, rd, d_hi);
+                    } else {
+                        self.clear_vreg_hi(ir, rd);
+                    }
+                    true
+                }
+                (0, 0b10001) => { // CMTST .2D: if (a & b) != 0 then -1 else 0 per lane
+                    let n_lo = self.read_vreg_lo(ir, rn);
+                    let m_lo = self.read_vreg_lo(ir, rm);
+                    let t_lo = ir.new_temp(Type::I64);
+                    ir.gen_and(Type::I64, t_lo, n_lo, m_lo);
+                    let zero = ir.new_const(Type::I64, 0);
+                    let all_ones = ir.new_const(Type::I64, !0u64);
+                    let zero2 = ir.new_const(Type::I64, 0);
+                    let d_lo = ir.new_temp(Type::I64);
+                    ir.gen_movcond(Type::I64, d_lo, t_lo, zero, all_ones, zero2, Cond::Ne);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    if q != 0 {
+                        let n_hi = self.read_vreg_hi(ir, rn);
+                        let m_hi = self.read_vreg_hi(ir, rm);
+                        let t_hi = ir.new_temp(Type::I64);
+                        ir.gen_and(Type::I64, t_hi, n_hi, m_hi);
+                        let zero3 = ir.new_const(Type::I64, 0);
+                        let all_ones2 = ir.new_const(Type::I64, !0u64);
+                        let zero4 = ir.new_const(Type::I64, 0);
+                        let d_hi = ir.new_temp(Type::I64);
+                        ir.gen_movcond(Type::I64, d_hi, t_hi, zero3, all_ones2, zero4, Cond::Ne);
                         self.write_vreg_hi(ir, rd, d_hi);
                     } else {
                         self.clear_vreg_hi(ir, rd);
@@ -3504,7 +5006,21 @@ impl Aarch64DisasContext {
                 } else { self.clear_vreg_hi(ir, rd); }
                 true
             }
-            // REV64 .16B: U=0 size=00 opcode=00000
+            // REV64 .2S/.4S: U=0 size=10 opcode=00000 — swap two 32-bit words in each 64-bit lane
+            (0, 0b10, 0b00000) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_rev64_2s as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_rev64_2s as u64, &[hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else { self.clear_vreg_hi(ir, rd); }
+                true
+            }
+            // REV64 .8B/.16B: U=0 size=00 opcode=00000
             (0, 0b00, 0b00000) => {
                 let lo = self.read_vreg_lo(ir, rn);
                 let d_lo = ir.new_temp(Type::I64);
@@ -3628,6 +5144,102 @@ impl Aarch64DisasContext {
                 self.write_vreg_hi(ir, rd, d_hi);
                 true
             }
+            // CMEQ #0 .2D: U=0 size=11 opcode=01001
+            (0, 0b11, 0b01001) => {
+                // Each 64-bit lane == 0 → all-ones, else all-zeros
+                let lo = self.read_vreg_lo(ir, rn);
+                let zero = ir.new_const(Type::I64, 0);
+                let all_ones = ir.new_const(Type::I64, !0u64);
+                let zero2 = ir.new_const(Type::I64, 0);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_movcond(Type::I64, d_lo, lo, zero, all_ones, zero2, Cond::Eq);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let zero3 = ir.new_const(Type::I64, 0);
+                    let all_ones2 = ir.new_const(Type::I64, !0u64);
+                    let zero4 = ir.new_const(Type::I64, 0);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_movcond(Type::I64, d_hi, hi, zero3, all_ones2, zero4, Cond::Eq);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
+                true
+            }
+            // FCVTL .2D, .2S: U=0 size=01 opcode=10111 (Q=0: low 2x f32 → 2x f64)
+            // FCVTL2 .2D, .4S: Q=1 reads the high half
+            (0, 0b01, 0b10111) => {
+                let src = if q == 0 {
+                    self.read_vreg_lo(ir, rn)
+                } else {
+                    self.read_vreg_hi(ir, rn)
+                };
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_fcvtl2_lo as u64, &[src]);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_fcvtl2_hi as u64, &[src]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                self.write_vreg_hi(ir, rd, d_hi);
+                true
+            }
+            // NEG .2S/.4S: U=1 size=10 opcode=01011
+            (1, 0b10, 0b01011) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_neg32);
+                true
+            }
+            // MVN/NOT .8B/.16B: U=1 size=00 opcode=00101
+            (1, 0b00, 0b00101) => {
+                self.neon_binop_halves(ir, q, rd, rn, rn,
+                    |ir, a, _b| { let d = ir.new_temp(Type::I64); ir.gen_not(Type::I64, d, a); d });
+                true
+            }
+            // NEG .8B/.16B: U=1 size=00 opcode=01011
+            (1, 0b00, 0b01011) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_neg8);
+                true
+            }
+            // NEG .4H/.8H: U=1 size=01 opcode=01011
+            (1, 0b01, 0b01011) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_neg16);
+                true
+            }
+            // NEG .2D: U=1 size=11 opcode=01011
+            (1, 0b11, 0b01011) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_neg(Type::I64, d_lo, lo);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_neg(Type::I64, d_hi, hi);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
+                true
+            }
+            // FCVTZS .2S/.4S: U=0 size=10 opcode=11011 — vector float-to-signed-int (round toward zero)
+            (0, 0b10, 0b11011) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_vfcvtzs32);
+                true
+            }
+            // SCVTF .2D/.4D: U=0 size=01 opcode=11101 — vector signed-int-to-float (64-bit)
+            // Each 64-bit lane holds one i64 → f64
+            (0, 0b01, 0b11101) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_vscvtf64 as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_vscvtf64 as u64, &[hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else { self.clear_vreg_hi(ir, rd); }
+                true
+            }
             _ => false,
         }
     }
@@ -3684,6 +5296,57 @@ impl Aarch64DisasContext {
             return true;
         }
 
+        // SHL: U=0 opcode=01010 (16-bit): immh=001x
+        if u == 0 && opcode == 0b01010 && immh >= 2 && immh < 4 {
+            let shift = immhb - 16;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_shl16 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_shl16 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
+        // SHL: U=0 opcode=01010 (32-bit): immh=01xx
+        if u == 0 && opcode == 0b01010 && immh >= 4 && immh < 8 {
+            let shift = immhb - 32;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_shl32 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_shl32 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
+        // SHL: U=0 opcode=01010 (64-bit): immh=1xxx → shift = immhb - 64
+        if u == 0 && opcode == 0b01010 && immh >= 8 {
+            let shift = immhb - 64;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_shl64 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_shl64 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
         // USHR 32-bit: U=1 opcode=00000, immh=01xx → shift = 2*32 - immhb = 64 - immhb
         if u == 1 && opcode == 0b00000 && immh >= 4 && immh < 8 {
             let shift = 64 - immhb;
@@ -3701,6 +5364,41 @@ impl Aarch64DisasContext {
             return true;
         }
 
+        // USHR 16-bit: U=1 opcode=00000, immh=001x → shift = 32 - immhb
+        if u == 1 && opcode == 0b00000 && immh >= 2 && immh < 4 {
+            let shift = 32 - immhb;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_ushr16 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_ushr16 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
+        // USHR 8-bit: U=1 opcode=00000, immh=0001 → shift = 16 - immhb
+        if u == 1 && opcode == 0b00000 && immh >= 1 && immh < 2 {
+            let shift = 16 - immhb;
+            // reuse helper_sshr8 with logical mask
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_ushr8 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_ushr8 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
         // SSHR 32-bit: U=0 opcode=00000, immh=01xx → shift = 64 - immhb
         if u == 0 && opcode == 0b00000 && immh >= 4 && immh < 8 {
             let shift = 64 - immhb;
@@ -3713,6 +5411,59 @@ impl Aarch64DisasContext {
                 let hi = self.read_vreg_hi(ir, rn);
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_sshr32 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
+        // SSRA 32-bit: U=0 opcode=00010, immh=01xx → shift = 64 - immhb
+        if u == 0 && opcode == 0b00010 && immh >= 4 && immh < 8 {
+            let shift = 64 - immhb;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let d_lo = self.read_vreg_lo(ir, rd);
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let r_lo = ir.new_temp(Type::I64);
+            ir.gen_call(r_lo, helper_ssra32 as u64, &[d_lo, n_lo, sh]);
+            self.write_vreg_lo(ir, rd, r_lo);
+            if q != 0 {
+                let d_hi = self.read_vreg_hi(ir, rd);
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let r_hi = ir.new_temp(Type::I64);
+                ir.gen_call(r_hi, helper_ssra32 as u64, &[d_hi, n_hi, sh]);
+                self.write_vreg_hi(ir, rd, r_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
+        // SSHR 16-bit: U=0 opcode=00000, immh=001x → shift = 32 - immhb
+        if u == 0 && opcode == 0b00000 && immh >= 2 && immh < 4 {
+            let shift = 32 - immhb;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_sshr16 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_sshr16 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
+        // SSHR 8-bit: U=0 opcode=00000, immh=0001 → shift = 16 - immhb
+        if u == 0 && opcode == 0b00000 && immh >= 1 && immh < 2 {
+            let shift = 16 - immhb;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_sshr8 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_sshr8 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else { self.clear_vreg_hi(ir, rd); }
             return true;
@@ -3846,6 +5597,23 @@ impl Aarch64DisasContext {
             return true;
         }
 
+        // FCVTZS (vector, fixed-point) 32-bit: U=0 opcode=11111, immh=01xx
+        if u == 0 && opcode == 0b11111 && immh >= 4 && immh < 8 {
+            let fbits = 64 - immhb; // number of fractional bits
+            let sh = ir.new_const(Type::I64, fbits as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_vfcvtzs32_fixedpt as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_vfcvtzs32_fixedpt as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else { self.clear_vreg_hi(ir, rd); }
+            return true;
+        }
+
         false
     }
 
@@ -3877,6 +5645,88 @@ impl Aarch64DisasContext {
             self.clear_vreg_hi(ir, rd);
             return true;
         }
+
+        // SMAXV .4S: U=0 size=10 opcode=01010, Q must be 1
+        if u == 0 && size == 0b10 && opcode == 0b01010 && q != 0 {
+            // max of 4x32-bit elements across lo and hi halves
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_smax32 as u64, &[lo, hi]);
+            // now reduce: max of the 2 elements in t
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_smaxv32_reduce as u64, &[t]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        // SMINV .4S: U=0 size=10 opcode=11010, Q must be 1
+        if u == 0 && size == 0b10 && opcode == 0b11010 && q != 0 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_smin32 as u64, &[lo, hi]);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_sminv32_reduce as u64, &[t]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        // UMAXV .4S: U=1 size=10 opcode=01010
+        if u == 1 && size == 0b10 && opcode == 0b01010 && q != 0 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_umax32 as u64, &[lo, hi]);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_umaxv32_reduce as u64, &[t]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        // UMINV .4S: U=1 size=10 opcode=11010
+        if u == 1 && size == 0b10 && opcode == 0b11010 && q != 0 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_umin32 as u64, &[lo, hi]);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_uminv32_reduce as u64, &[t]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        // SMAXV .8H / SMINV .8H: size=01
+        if u == 0 && size == 0b01 && opcode == 0b01010 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = if q != 0 { self.read_vreg_hi(ir, rn) } else { ir.new_const(Type::I64, i16::MAX as u64) };
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_smaxv16_pair as u64, &[lo, hi]);
+            self.write_vreg_lo(ir, rd, t);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        if u == 0 && size == 0b01 && opcode == 0b11010 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = if q != 0 { self.read_vreg_hi(ir, rn) } else { ir.new_const(Type::I64, i16::MIN as u64) };
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_sminv16_pair as u64, &[lo, hi]);
+            self.write_vreg_lo(ir, rd, t);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+        // ADDV .4S: U=0 size=10 opcode=11011, Q=1 — sum all 4x 32-bit elements
+        if u == 0 && size == 0b10 && opcode == 0b11011 && q != 0 {
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let t = ir.new_temp(Type::I64);
+            ir.gen_call(t, helper_addv32 as u64, &[lo, hi]);
+            self.write_vreg_lo(ir, rd, t);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        // ADDV .8B/.16B: U=0 size=00 opcode=11011 (already at top)
         false
     }
 }
@@ -5038,6 +6888,25 @@ impl Decode<Context> for Aarch64DisasContext {
     }
 
     // -- Divide --
+
+    fn trans_ADC(
+        &mut self, ir: &mut Context, a: &ArgsRrrS,
+    ) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
+        let n = self.read_xreg(ir, a.rn);
+        let m = self.read_xreg(ir, a.rm);
+        let c29 = ir.new_const(Type::I64, 29);
+        let one = ir.new_const(Type::I64, 1);
+        let c = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, c, self.nzcv, c29);
+        ir.gen_and(Type::I64, c, c, one);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_add(ty, d, n, m);
+        ir.gen_add(ty, d, d, c);
+        self.write_xreg_sz(ir, a.rd, d, sf);
+        true
+    }
 
     fn trans_SBC(
         &mut self, ir: &mut Context, a: &ArgsRrrS,

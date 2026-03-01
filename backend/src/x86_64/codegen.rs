@@ -660,6 +660,11 @@ impl HostCodeGen for X86_64CodeGen {
     fn clear_goto_tb_offsets(&self) {
         self.goto_tb_info.lock().unwrap().clear();
     }
+
+    fn emit_profile_inc(&self, buf: &mut CodeBuffer, counter_addr: u64) {
+        use crate::x86_64::emitter::emit_inc_abs;
+        emit_inc_abs(buf, counter_addr);
+    }
 }
 
 fn cond_from_u32(val: u32) -> Cond {

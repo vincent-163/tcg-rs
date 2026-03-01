@@ -37,6 +37,27 @@ cargo doc --open                     # 生成并打开文档
 # LLVM JIT 后端（需系统安装 LLVM 21，libLLVM-21）
 cargo build --bin tcg-riscv64 --features llvm --release
 TCG_LLVM=1 target/release/tcg-riscv64 <elf>   # 启用 LLVM JIT
+
+# AOT (Ahead-of-Time) pipeline — profile-guided compilation of hot TBs via LLVM
+# Step 1: build tools
+cargo build --release -p tcg-aot --features llvm
+cargo build --release -p tcg-linux-user
+
+# Step 2: profile run — collect hot TBs (file offsets stored in profile.bin)
+TCG_PROFILE=1 TCG_PROFILE_OUT=/tmp/profile.bin \
+    target/release/tcg-riscv64 <elf> [args...]
+
+# Step 3: AOT compile — translates hot TBs + goto_tb targets via LLVM O2
+target/release/tcg-aot /tmp/profile.bin <elf> -o /tmp/aot.o
+cc -shared -o /tmp/aot.so /tmp/aot.o
+
+# Step 4: run with AOT — AOT TBs are called via trampolines; others JIT'd normally
+TCG_AOT=/tmp/aot.so target/release/tcg-riscv64 <elf> [args...]
+
+# Optional env vars:
+#   TCG_STATS=1          print TB lookup / exit / chaining statistics
+#   TCG_PROFILE=1        enable profiling (needed for step 2)
+#   TCG_PROFILE_OUT=path path for profile output (default: profile.bin)
 ```
 
 ## Git Commit 规范

@@ -124,7 +124,7 @@ fn main() {
     for (i, mut ctx) in contexts.into_iter().enumerate() {
         backend.init_context(&mut ctx);
         backend.clear_goto_tb_offsets();
-        let tb_start = translate(&mut ctx, &backend, &mut buf);
+        let tb_start = translate(&mut ctx, &backend, &mut buf, None);
         let tb_end = buf.offset();
         let tb_size = tb_end - tb_start;
         eprintln!("TB #{i}: {tb_size} bytes @ offset 0x{tb_start:x}");
