@@ -7,12 +7,26 @@ mod insn_decode;
 mod trans;
 
 use crate::{DisasContextBase, DisasJumpType, TranslatorOps};
-use cpu::{
-    xreg_offset, NZCV_OFFSET, NUM_XREGS,
-    PC_OFFSET, SP_OFFSET,
-};
+use cpu::{xreg_offset, NUM_XREGS, NZCV_OFFSET, PC_OFFSET, SP_OFFSET};
 use tcg_core::tb::{EXCP_UNDEF, TB_EXIT_IDX0};
 use tcg_core::{Context, TempIdx, Type};
+
+/// Source model for the current architectural NZCV flags.
+#[derive(Clone, Copy)]
+pub(crate) enum NzcvSource {
+    /// Unknown producer, read flags from the architectural `nzcv` temp.
+    Unknown,
+    /// Produced by ADDS/SUBS/CMN/CMP-style arithmetic.
+    AddSub {
+        a: TempIdx,
+        b: TempIdx,
+        result: TempIdx,
+        ty: Type,
+        is_sub: bool,
+    },
+    /// Produced by logical flag-setting ops (ANDS/BICS): C=V=0.
+    Logic { result: TempIdx, ty: Type },
+}
 
 // ---------------------------------------------------------------
 // Disassembly context
@@ -32,6 +46,8 @@ pub struct Aarch64DisasContext {
     pub sp: TempIdx,
     /// IR temp for NZCV condition flags (global).
     pub nzcv: TempIdx,
+    /// Tracking info for condition/carry fast paths.
+    pub(crate) nzcv_src: NzcvSource,
     /// Raw instruction word being decoded.
     pub opcode: u32,
     /// Pointer to guest code bytes for fetching.
@@ -55,6 +71,7 @@ impl Aarch64DisasContext {
             pc: TempIdx(0),
             sp: TempIdx(0),
             nzcv: TempIdx(0),
+            nzcv_src: NzcvSource::Unknown,
             opcode: 0,
             guest_base,
         }
@@ -66,9 +83,7 @@ impl Aarch64DisasContext {
     /// `guest_base + pc_next` must be a valid, readable
     /// 4-byte aligned host address.
     unsafe fn fetch_insn(&self) -> u32 {
-        let ptr =
-            self.guest_base.add(self.base.pc_next as usize)
-                as *const u32;
+        let ptr = self.guest_base.add(self.base.pc_next as usize) as *const u32;
         ptr.read_unaligned()
     }
 }
@@ -83,59 +98,36 @@ pub struct Aarch64Translator;
 impl TranslatorOps for Aarch64Translator {
     type DisasContext = Aarch64DisasContext;
 
-    fn init_disas_context(
-        ctx: &mut Aarch64DisasContext,
-        ir: &mut Context,
-    ) {
+    fn init_disas_context(ctx: &mut Aarch64DisasContext, ir: &mut Context) {
         // Register the env pointer (fixed to host RBP = reg 5).
         ctx.env = ir.new_fixed(Type::I64, 5, "env");
 
         // Register guest GPRs as globals at known offsets.
         for i in 0..NUM_XREGS {
-            ctx.xregs[i] = ir.new_global(
-                Type::I64,
-                ctx.env,
-                xreg_offset(i),
-                "xreg",
-            );
+            ctx.xregs[i] =
+                ir.new_global(Type::I64, ctx.env, xreg_offset(i), "xreg");
         }
 
         // Register guest PC as a global.
-        ctx.pc =
-            ir.new_global(Type::I64, ctx.env, PC_OFFSET, "pc");
+        ctx.pc = ir.new_global(Type::I64, ctx.env, PC_OFFSET, "pc");
 
         // Register SP as a global.
-        ctx.sp =
-            ir.new_global(Type::I64, ctx.env, SP_OFFSET, "sp");
+        ctx.sp = ir.new_global(Type::I64, ctx.env, SP_OFFSET, "sp");
 
         // Register NZCV as a global.
-        ctx.nzcv = ir.new_global(
-            Type::I64,
-            ctx.env,
-            NZCV_OFFSET,
-            "nzcv",
-        );
+        ctx.nzcv = ir.new_global(Type::I64, ctx.env, NZCV_OFFSET, "nzcv");
     }
 
-    fn tb_start(
-        _ctx: &mut Aarch64DisasContext,
-        _ir: &mut Context,
-    ) {
+    fn tb_start(_ctx: &mut Aarch64DisasContext, _ir: &mut Context) {
         // Nothing special for user-mode.
     }
 
-    fn insn_start(
-        ctx: &mut Aarch64DisasContext,
-        ir: &mut Context,
-    ) {
+    fn insn_start(ctx: &mut Aarch64DisasContext, ir: &mut Context) {
         ir.gen_insn_start(ctx.base.pc_next);
         ctx.base.num_insns += 1;
     }
 
-    fn translate_insn(
-        ctx: &mut Aarch64DisasContext,
-        ir: &mut Context,
-    ) {
+    fn translate_insn(ctx: &mut Aarch64DisasContext, ir: &mut Context) {
         // AArch64 instructions are always 32-bit.
         let insn = unsafe { ctx.fetch_insn() };
         ctx.opcode = insn;
@@ -153,19 +145,14 @@ impl TranslatorOps for Aarch64Translator {
         ctx.base.pc_next += 4;
     }
 
-    fn tb_stop(
-        ctx: &mut Aarch64DisasContext,
-        ir: &mut Context,
-    ) {
+    fn tb_stop(ctx: &mut Aarch64DisasContext, ir: &mut Context) {
         match ctx.base.is_jmp {
             DisasJumpType::NoReturn => {
                 // TB already terminated by the instruction.
             }
-            DisasJumpType::Next
-            | DisasJumpType::TooMany => {
+            DisasJumpType::Next | DisasJumpType::TooMany => {
                 let pc_val = ctx.base.pc_next;
-                let pc_const =
-                    ir.new_const(Type::I64, pc_val);
+                let pc_const = ir.new_const(Type::I64, pc_val);
                 ir.gen_mov(Type::I64, ctx.pc, pc_const);
                 ir.gen_goto_tb(0);
                 ir.gen_exit_tb(TB_EXIT_IDX0);
@@ -173,15 +160,11 @@ impl TranslatorOps for Aarch64Translator {
         }
     }
 
-    fn base(
-        ctx: &Aarch64DisasContext,
-    ) -> &DisasContextBase {
+    fn base(ctx: &Aarch64DisasContext) -> &DisasContextBase {
         &ctx.base
     }
 
-    fn base_mut(
-        ctx: &mut Aarch64DisasContext,
-    ) -> &mut DisasContextBase {
+    fn base_mut(ctx: &mut Aarch64DisasContext) -> &mut DisasContextBase {
         &mut ctx.base
     }
 }

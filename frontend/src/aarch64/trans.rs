@@ -8,44 +8,42 @@
 #![allow(clippy::fn_to_numeric_cast)]
 
 use super::cpu::{
-    vreg_hi_offset, vreg_lo_offset, FPCR_OFFSET,
-    FPSR_OFFSET, TPIDR_EL0_OFFSET,
+    vreg_hi_offset, vreg_lo_offset, FPCR_OFFSET, FPSR_OFFSET, TPIDR_EL0_OFFSET,
 };
 use super::insn_decode::*;
-use super::Aarch64DisasContext;
+use super::{Aarch64DisasContext, NzcvSource};
 use crate::DisasJumpType;
 use tcg_core::context::Context;
-use tcg_core::tb::{
-    EXCP_ECALL, TB_EXIT_IDX0, TB_EXIT_IDX1,
-    TB_EXIT_NOCHAIN,
-};
+use tcg_core::tb::{EXCP_ECALL, TB_EXIT_IDX0, TB_EXIT_IDX1, TB_EXIT_NOCHAIN};
 use tcg_core::types::{Cond, MemOp, Type};
 use tcg_core::TempIdx;
 
 /// Binary IR operation: `fn(ir, ty, dst, lhs, rhs) -> dst`.
 #[allow(dead_code)]
-type BinOp =
-    fn(&mut Context, Type, TempIdx, TempIdx, TempIdx)
-        -> TempIdx;
+type BinOp = fn(&mut Context, Type, TempIdx, TempIdx, TempIdx) -> TempIdx;
 
 // ── Bitmask immediate decoding ───────────────────────────
 
-fn decode_bitmask_imm(
-    sf: bool, n: u32, immr: u32, imms: u32,
-) -> Option<u64> {
+fn decode_bitmask_imm(sf: bool, n: u32, immr: u32, imms: u32) -> Option<u64> {
     let len = if n != 0 {
         6
     } else {
         let combined = !imms & 0x3f;
-        if combined == 0 { return None; }
+        if combined == 0 {
+            return None;
+        }
         31 - combined.leading_zeros()
     };
-    if len == 0 { return None; }
+    if len == 0 {
+        return None;
+    }
     let size = 1u32 << len;
     let mask = size - 1;
     let s = imms & mask;
     let r = immr & mask;
-    if s == mask { return None; }
+    if s == mask {
+        return None;
+    }
     let welem = (1u64 << (s + 1)) - 1;
     let elem_mask = if size >= 64 {
         u64::MAX
@@ -59,17 +57,20 @@ fn decode_bitmask_imm(
     };
     let mut imm = elem;
     let mut sz = size;
-    while sz < 64 { imm |= imm << sz; sz <<= 1; }
-    if !sf { imm &= 0xffff_ffff; }
+    while sz < 64 {
+        imm |= imm << sz;
+        sz <<= 1;
+    }
+    if !sf {
+        imm &= 0xffff_ffff;
+    }
     Some(imm)
 }
 
 // ── Helpers ──────────────────────────────────────────────
 
 impl Aarch64DisasContext {
-    pub(crate) fn read_xreg(
-        &self, ir: &mut Context, reg: i64,
-    ) -> TempIdx {
+    pub(crate) fn read_xreg(&self, ir: &mut Context, reg: i64) -> TempIdx {
         if reg == 31 {
             ir.new_const(Type::I64, 0)
         } else {
@@ -77,57 +78,59 @@ impl Aarch64DisasContext {
         }
     }
 
-    pub(crate) fn write_xreg(
-        &self, ir: &mut Context, reg: i64, val: TempIdx,
-    ) {
+    pub(crate) fn write_xreg(&self, ir: &mut Context, reg: i64, val: TempIdx) {
         if reg != 31 {
-            ir.gen_mov(
-                Type::I64, self.xregs[reg as usize], val,
-            );
+            ir.gen_mov(Type::I64, self.xregs[reg as usize], val);
         }
     }
 
-    pub(crate) fn read_xreg_sp(
-        &self, _ir: &mut Context, reg: i64,
-    ) -> TempIdx {
-        if reg == 31 { self.sp }
-        else { self.xregs[reg as usize] }
+    pub(crate) fn read_xreg_sp(&self, _ir: &mut Context, reg: i64) -> TempIdx {
+        if reg == 31 {
+            self.sp
+        } else {
+            self.xregs[reg as usize]
+        }
     }
 
     pub(crate) fn write_xreg_sp(
-        &self, ir: &mut Context, reg: i64, val: TempIdx,
+        &self,
+        ir: &mut Context,
+        reg: i64,
+        val: TempIdx,
     ) {
         if reg == 31 {
             ir.gen_mov(Type::I64, self.sp, val);
         } else {
-            ir.gen_mov(
-                Type::I64, self.xregs[reg as usize], val,
-            );
+            ir.gen_mov(Type::I64, self.xregs[reg as usize], val);
         }
     }
 
     /// Write with optional 32-bit zero-extension.
     fn write_xreg_sz(
-        &self, ir: &mut Context, reg: i64,
-        val: TempIdx, sf: bool,
+        &self,
+        ir: &mut Context,
+        reg: i64,
+        val: TempIdx,
+        sf: bool,
     ) {
-        if reg == 31 { return; }
+        if reg == 31 {
+            return;
+        }
         if sf {
-            ir.gen_mov(
-                Type::I64, self.xregs[reg as usize], val,
-            );
+            ir.gen_mov(Type::I64, self.xregs[reg as usize], val);
         } else {
             let ext = ir.new_temp(Type::I64);
             ir.gen_ext_u32_i64(ext, val);
-            ir.gen_mov(
-                Type::I64, self.xregs[reg as usize], ext,
-            );
+            ir.gen_mov(Type::I64, self.xregs[reg as usize], ext);
         }
     }
 
     fn write_xreg_sp_sz(
-        &self, ir: &mut Context, reg: i64,
-        val: TempIdx, sf: bool,
+        &self,
+        ir: &mut Context,
+        reg: i64,
+        val: TempIdx,
+        sf: bool,
     ) {
         let dst = if reg == 31 {
             self.sp
@@ -144,13 +147,17 @@ impl Aarch64DisasContext {
     }
 
     fn sf_type(sf: bool) -> Type {
-        if sf { Type::I64 } else { Type::I32 }
+        if sf {
+            Type::I64
+        } else {
+            Type::I32
+        }
     }
 
-    fn trunc32(
-        ir: &mut Context, val: TempIdx, sf: bool,
-    ) -> TempIdx {
-        if sf { val } else {
+    fn trunc32(ir: &mut Context, val: TempIdx, sf: bool) -> TempIdx {
+        if sf {
+            val
+        } else {
             let t = ir.new_temp(Type::I32);
             ir.gen_extrl_i64_i32(t, val);
             t
@@ -158,10 +165,15 @@ impl Aarch64DisasContext {
     }
 
     fn apply_shift(
-        ir: &mut Context, ty: Type, val: TempIdx,
-        shift_type: i64, amount: i64,
+        ir: &mut Context,
+        ty: Type,
+        val: TempIdx,
+        shift_type: i64,
+        amount: i64,
     ) -> TempIdx {
-        if amount == 0 { return val; }
+        if amount == 0 {
+            return val;
+        }
         let sh = ir.new_const(ty, amount as u64);
         let d = ir.new_temp(ty);
         match shift_type {
@@ -176,16 +188,28 @@ impl Aarch64DisasContext {
 
     // -- NZCV for add/sub --
     fn gen_nzcv_add_sub(
-        &self, ir: &mut Context,
-        a: TempIdx, b: TempIdx, result: TempIdx,
-        sf: bool, is_sub: bool,
+        &mut self,
+        ir: &mut Context,
+        a: TempIdx,
+        b: TempIdx,
+        result: TempIdx,
+        sf: bool,
+        is_sub: bool,
     ) {
         let ty = Self::sf_type(sf);
+        let bits = if sf { 63u64 } else { 31u64 };
         let zero = ir.new_const(ty, 0);
+        let sh = ir.new_const(ty, bits);
 
         // N
+        let n_tmp = ir.new_temp(ty);
+        ir.gen_shr(ty, n_tmp, result, sh);
         let n_bit = ir.new_temp(Type::I64);
-        ir.gen_setcond(ty, n_bit, result, zero, Cond::Lt);
+        if sf {
+            ir.gen_mov(Type::I64, n_bit, n_tmp);
+        } else {
+            ir.gen_ext_u32_i64(n_bit, n_tmp);
+        }
 
         // Z
         let z_bit = ir.new_temp(Type::I64);
@@ -196,9 +220,7 @@ impl Aarch64DisasContext {
         if is_sub {
             ir.gen_setcond(ty, c_bit, a, b, Cond::Geu);
         } else {
-            ir.gen_setcond(
-                ty, c_bit, result, a, Cond::Ltu,
-            );
+            ir.gen_setcond(ty, c_bit, result, a, Cond::Ltu);
         }
 
         // V
@@ -214,8 +236,14 @@ impl Aarch64DisasContext {
             ir.gen_not(ty, not_xor, xor_ab);
             ir.gen_and(ty, v_tmp, not_xor, xor_ar);
         }
+        let v_sh = ir.new_temp(ty);
+        ir.gen_shr(ty, v_sh, v_tmp, sh);
         let v_bit = ir.new_temp(Type::I64);
-        ir.gen_setcond(ty, v_bit, v_tmp, zero, Cond::Lt);
+        if sf {
+            ir.gen_mov(Type::I64, v_bit, v_sh);
+        } else {
+            ir.gen_ext_u32_i64(v_bit, v_sh);
+        }
 
         // Pack (N<<31)|(Z<<30)|(C<<29)|(V<<28)
         let c31 = ir.new_const(Type::I64, 31);
@@ -230,21 +258,36 @@ impl Aarch64DisasContext {
         ir.gen_shl(Type::I64, c_s, c_bit, c29);
         let v_s = ir.new_temp(Type::I64);
         ir.gen_shl(Type::I64, v_s, v_bit, c28);
-        ir.gen_or(Type::I64, n_s, n_s, z_s);
-        ir.gen_or(Type::I64, n_s, n_s, c_s);
-        ir.gen_or(Type::I64, n_s, n_s, v_s);
-        ir.gen_mov(Type::I64, self.nzcv, n_s);
+        let nzcv = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, nzcv, n_s, z_s);
+        let tmp = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, tmp, c_s, v_s);
+        ir.gen_or(Type::I64, nzcv, nzcv, tmp);
+        ir.gen_mov(Type::I64, self.nzcv, nzcv);
+        self.nzcv_src = NzcvSource::AddSub {
+            a,
+            b,
+            result,
+            ty,
+            is_sub,
+        };
     }
 
     // -- NZCV for logical (C=0, V=0) --
-    fn gen_nzcv_logic(
-        &self, ir: &mut Context,
-        result: TempIdx, sf: bool,
-    ) {
+    fn gen_nzcv_logic(&mut self, ir: &mut Context, result: TempIdx, sf: bool) {
         let ty = Self::sf_type(sf);
+        let bits = if sf { 63u64 } else { 31u64 };
         let zero = ir.new_const(ty, 0);
+        let sh = ir.new_const(ty, bits);
+
+        let n_tmp = ir.new_temp(ty);
+        ir.gen_shr(ty, n_tmp, result, sh);
         let n_bit = ir.new_temp(Type::I64);
-        ir.gen_setcond(ty, n_bit, result, zero, Cond::Lt);
+        if sf {
+            ir.gen_mov(Type::I64, n_bit, n_tmp);
+        } else {
+            ir.gen_ext_u32_i64(n_bit, n_tmp);
+        }
 
         let z_bit = ir.new_temp(Type::I64);
         ir.gen_setcond(ty, z_bit, result, zero, Cond::Eq);
@@ -255,65 +298,166 @@ impl Aarch64DisasContext {
         ir.gen_shl(Type::I64, n_s, n_bit, c31);
         let z_s = ir.new_temp(Type::I64);
         ir.gen_shl(Type::I64, z_s, z_bit, c30);
-        ir.gen_or(Type::I64, n_s, n_s, z_s);
-        ir.gen_mov(Type::I64, self.nzcv, n_s);
+        let nzcv = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, nzcv, n_s, z_s);
+        ir.gen_mov(Type::I64, self.nzcv, nzcv);
+        self.nzcv_src = NzcvSource::Logic { result, ty };
+    }
+
+    fn set_nzcv_packed(&mut self, ir: &mut Context, val: TempIdx) {
+        ir.gen_mov(Type::I64, self.nzcv, val);
+        // Use architectural nzcv temp for subsequent reads; `val`
+        // may be a short-lived local temp.
+        self.nzcv_src = NzcvSource::Unknown;
     }
 
     fn extract_nzcv_bit(
-        &self, ir: &mut Context, bit: u64,
+        &self,
+        ir: &mut Context,
+        nzcv: TempIdx,
+        bit: u64,
     ) -> TempIdx {
         let sh = ir.new_const(Type::I64, bit);
         let one = ir.new_const(Type::I64, 1);
         let t = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, t, self.nzcv, sh);
+        ir.gen_shr(Type::I64, t, nzcv, sh);
         ir.gen_and(Type::I64, t, t, one);
         t
     }
 
-    // -- Condition evaluation --
-    fn eval_cond(
-        &self, ir: &mut Context, cond: i64,
-    ) -> TempIdx {
-        let one = ir.new_const(Type::I64, 1);
+    fn eval_n_flag(&self, ir: &mut Context) -> TempIdx {
+        match self.nzcv_src {
+            NzcvSource::AddSub { result, ty, .. }
+            | NzcvSource::Logic { result, ty } => {
+                let zero = ir.new_const(ty, 0);
+                let n = ir.new_temp(Type::I64);
+                ir.gen_setcond(ty, n, result, zero, Cond::Lt);
+                n
+            }
+            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 31),
+        }
+    }
 
+    fn eval_z_flag(&self, ir: &mut Context) -> TempIdx {
+        match self.nzcv_src {
+            NzcvSource::AddSub { result, ty, .. }
+            | NzcvSource::Logic { result, ty } => {
+                let zero = ir.new_const(ty, 0);
+                let z = ir.new_temp(Type::I64);
+                ir.gen_setcond(ty, z, result, zero, Cond::Eq);
+                z
+            }
+            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 30),
+        }
+    }
+
+    fn eval_c_flag(&self, ir: &mut Context) -> TempIdx {
+        match self.nzcv_src {
+            NzcvSource::AddSub {
+                a,
+                b,
+                result,
+                ty,
+                is_sub,
+            } => {
+                let c = ir.new_temp(Type::I64);
+                if is_sub {
+                    ir.gen_setcond(ty, c, a, b, Cond::Geu);
+                } else {
+                    ir.gen_setcond(ty, c, result, a, Cond::Ltu);
+                }
+                c
+            }
+            NzcvSource::Logic { .. } => ir.new_const(Type::I64, 0),
+            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 29),
+        }
+    }
+
+    fn eval_v_flag(&self, ir: &mut Context) -> TempIdx {
+        match self.nzcv_src {
+            NzcvSource::AddSub {
+                a,
+                b,
+                result,
+                ty,
+                is_sub,
+            } => {
+                let bits = if ty == Type::I64 { 63u64 } else { 31u64 };
+                let sh = ir.new_const(ty, bits);
+                let xor_ab = ir.new_temp(ty);
+                ir.gen_xor(ty, xor_ab, a, b);
+                let xor_ar = ir.new_temp(ty);
+                ir.gen_xor(ty, xor_ar, a, result);
+                let v_tmp = ir.new_temp(ty);
+                if is_sub {
+                    ir.gen_and(ty, v_tmp, xor_ab, xor_ar);
+                } else {
+                    let not_xor = ir.new_temp(ty);
+                    ir.gen_not(ty, not_xor, xor_ab);
+                    ir.gen_and(ty, v_tmp, not_xor, xor_ar);
+                }
+                let v_sh = ir.new_temp(ty);
+                ir.gen_shr(ty, v_sh, v_tmp, sh);
+                let v = ir.new_temp(Type::I64);
+                if ty == Type::I64 {
+                    ir.gen_mov(Type::I64, v, v_sh);
+                } else {
+                    ir.gen_ext_u32_i64(v, v_sh);
+                }
+                v
+            }
+            NzcvSource::Logic { .. } => ir.new_const(Type::I64, 0),
+            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 28),
+        }
+    }
+
+    // -- Condition evaluation --
+    fn eval_cond(&self, ir: &mut Context, cond: i64) -> TempIdx {
+        let zero = ir.new_const(Type::I64, 0);
         let base_cond = (cond >> 1) as u32;
         let result = match base_cond {
-            0 => self.extract_nzcv_bit(ir, 30), // EQ/NE: Z==1
-            1 => self.extract_nzcv_bit(ir, 29), // CS/CC: C==1
-            2 => self.extract_nzcv_bit(ir, 31), // MI/PL: N==1
-            3 => self.extract_nzcv_bit(ir, 28), // VS/VC: V==1
-            4 => { // HI/LS: C==1 && Z==0
-                let c = self.extract_nzcv_bit(ir, 29);
-                let z = self.extract_nzcv_bit(ir, 30);
+            0 => self.eval_z_flag(ir), // EQ/NE: Z==1
+            1 => self.eval_c_flag(ir), // CS/CC: C==1
+            2 => self.eval_n_flag(ir), // MI/PL: N==1
+            3 => self.eval_v_flag(ir), // VS/VC: V==1
+            4 => {
+                // HI/LS: C==1 && Z==0
+                let c = self.eval_c_flag(ir);
+                let z = self.eval_z_flag(ir);
                 let t = ir.new_temp(Type::I64);
                 ir.gen_andc(Type::I64, t, c, z);
-                t
+                let r = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, r, t, zero, Cond::Ne);
+                r
             }
-            5 => { // GE/LT: N==V
-                let n = self.extract_nzcv_bit(ir, 31);
-                let v = self.extract_nzcv_bit(ir, 28);
+            5 => {
+                // GE/LT: N==V
+                let n = self.eval_n_flag(ir);
+                let v = self.eval_v_flag(ir);
                 let r = ir.new_temp(Type::I64);
                 ir.gen_setcond(Type::I64, r, n, v, Cond::Eq);
                 r
             }
-            6 => { // GT/LE: N==V && Z==0
-                let n = self.extract_nzcv_bit(ir, 31);
-                let v = self.extract_nzcv_bit(ir, 28);
+            6 => {
+                // GT/LE: N==V && Z==0
+                let n = self.eval_n_flag(ir);
+                let v = self.eval_v_flag(ir);
                 let nv = ir.new_temp(Type::I64);
-                ir.gen_setcond(
-                    Type::I64, nv, n, v, Cond::Eq,
-                );
-                let z = self.extract_nzcv_bit(ir, 30);
+                ir.gen_setcond(Type::I64, nv, n, v, Cond::Eq);
+                let z = self.eval_z_flag(ir);
                 let t = ir.new_temp(Type::I64);
                 ir.gen_andc(Type::I64, t, nv, z);
-                t
+                let r = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, r, t, zero, Cond::Ne);
+                r
             }
-            7 => one, // AL
+            7 => ir.new_const(Type::I64, 1), // AL
             _ => unreachable!(),
         };
         // Invert if low bit set (and not AL/NV).
         if (cond & 1) != 0 && cond != 0xf {
             let inv = ir.new_temp(Type::I64);
+            let one = ir.new_const(Type::I64, 1);
             ir.gen_xor(Type::I64, inv, result, one);
             inv
         } else {
@@ -322,10 +466,7 @@ impl Aarch64DisasContext {
     }
 
     // -- Branch helpers --
-    fn gen_direct_branch(
-        &mut self, ir: &mut Context,
-        target: u64, slot: u32,
-    ) {
+    fn gen_direct_branch(&mut self, ir: &mut Context, target: u64, slot: u32) {
         let c = ir.new_const(Type::I64, target);
         ir.gen_mov(Type::I64, self.pc, c);
         ir.gen_goto_tb(slot);
@@ -337,19 +478,22 @@ impl Aarch64DisasContext {
         ir.gen_exit_tb(exit);
     }
 
-    fn gen_indirect_branch(
-        &mut self, ir: &mut Context, addr: TempIdx,
-    ) {
+    fn gen_indirect_branch(&mut self, ir: &mut Context, addr: TempIdx) {
         ir.gen_mov(Type::I64, self.pc, addr);
         ir.gen_exit_tb(TB_EXIT_NOCHAIN);
     }
 
     // -- Load/store address helpers --
     pub(crate) fn compute_addr_imm(
-        &self, ir: &mut Context, rn: i64, offset: i64,
+        &self,
+        ir: &mut Context,
+        rn: i64,
+        offset: i64,
     ) -> TempIdx {
         let base = self.read_xreg_sp(ir, rn);
-        if offset == 0 { return base; }
+        if offset == 0 {
+            return base;
+        }
         let c = ir.new_const(Type::I64, offset as u64);
         let addr = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr, base, c);
@@ -357,21 +501,25 @@ impl Aarch64DisasContext {
     }
 
     fn compute_addr_reg(
-        &self, ir: &mut Context,
-        rn: i64, rm: i64,
-        option: i64, shift_amount: i64,
+        &self,
+        ir: &mut Context,
+        rn: i64,
+        rm: i64,
+        option: i64,
+        shift_amount: i64,
     ) -> TempIdx {
         let base = self.read_xreg_sp(ir, rn);
         let idx = self.read_xreg(ir, rm);
         let ext = match option {
-            0b010 => { // UXTW
+            0b010 => {
+                // UXTW
                 let t = ir.new_temp(Type::I64);
-                let mask =
-                    ir.new_const(Type::I64, 0xffff_ffff);
+                let mask = ir.new_const(Type::I64, 0xffff_ffff);
                 ir.gen_and(Type::I64, t, idx, mask);
                 t
             }
-            0b110 => { // SXTW
+            0b110 => {
+                // SXTW
                 let t32 = ir.new_temp(Type::I32);
                 ir.gen_extrl_i64_i32(t32, idx);
                 let t = ir.new_temp(Type::I64);
@@ -381,8 +529,7 @@ impl Aarch64DisasContext {
             _ => idx, // LSL/UXTX/SXTX
         };
         let shifted = if shift_amount != 0 {
-            let sh =
-                ir.new_const(Type::I64, shift_amount as u64);
+            let sh = ir.new_const(Type::I64, shift_amount as u64);
             let t = ir.new_temp(Type::I64);
             ir.gen_shl(Type::I64, t, ext, sh);
             t
@@ -396,27 +543,31 @@ impl Aarch64DisasContext {
 
     // -- Extend register helper for ADD/SUB extended --
     fn extend_reg(
-        ir: &mut Context, val: TempIdx,
-        option: i64, shift: i64,
+        ir: &mut Context,
+        val: TempIdx,
+        option: i64,
+        shift: i64,
     ) -> TempIdx {
         // Extract based on option[1:0] size
         let extracted = match option & 0x3 {
-            0 => { // xTB - byte
+            0 => {
+                // xTB - byte
                 let t = ir.new_temp(Type::I64);
                 let m = ir.new_const(Type::I64, 0xff);
                 ir.gen_and(Type::I64, t, val, m);
                 t
             }
-            1 => { // xTH - halfword
+            1 => {
+                // xTH - halfword
                 let t = ir.new_temp(Type::I64);
                 let m = ir.new_const(Type::I64, 0xffff);
                 ir.gen_and(Type::I64, t, val, m);
                 t
             }
-            2 => { // xTW - word
+            2 => {
+                // xTW - word
                 let t = ir.new_temp(Type::I64);
-                let m =
-                    ir.new_const(Type::I64, 0xffff_ffff);
+                let m = ir.new_const(Type::I64, 0xffff_ffff);
                 ir.gen_and(Type::I64, t, val, m);
                 t
             }
@@ -433,9 +584,7 @@ impl Aarch64DisasContext {
                 }
                 1 => {
                     let t = ir.new_temp(Type::I64);
-                    ir.gen_sextract(
-                        Type::I64, t, val, 0, 16,
-                    );
+                    ir.gen_sextract(Type::I64, t, val, 0, 16);
                     t
                 }
                 2 => {
@@ -465,9 +614,13 @@ impl Aarch64DisasContext {
     /// `ofs`. Equivalent to `gen_deposit` but uses shift/mask
     /// operations that the backend supports.
     fn deposit(
-        ir: &mut Context, ty: Type,
-        dst: TempIdx, src: TempIdx,
-        ofs: u32, len: u32, sf: bool,
+        ir: &mut Context,
+        ty: Type,
+        dst: TempIdx,
+        src: TempIdx,
+        ofs: u32,
+        len: u32,
+        sf: bool,
     ) -> TempIdx {
         if ofs == 0 && (len == 8 || len == 16) {
             // Simple case: use gen_deposit
@@ -479,7 +632,11 @@ impl Aarch64DisasContext {
             // Use minimal temps to avoid register pressure
             let bits = if sf { 64u32 } else { 32u32 };
             let mask_val = if len >= bits {
-                if sf { u64::MAX } else { 0xffff_ffff }
+                if sf {
+                    u64::MAX
+                } else {
+                    0xffff_ffff
+                }
             } else {
                 (1u64 << len) - 1
             };
@@ -512,58 +669,41 @@ impl Aarch64DisasContext {
 
     // -- VREG helpers (env-relative load/store) --
 
-    fn read_vreg_lo(
-        &self, ir: &mut Context, reg: usize,
-    ) -> TempIdx {
+    fn read_vreg_lo(&self, ir: &mut Context, reg: usize) -> TempIdx {
         let d = ir.new_temp(Type::I64);
-        ir.gen_ld(
-            Type::I64, d, self.env, vreg_lo_offset(reg),
-        );
+        ir.gen_ld(Type::I64, d, self.env, vreg_lo_offset(reg));
         d
     }
 
-    fn read_vreg_hi(
-        &self, ir: &mut Context, reg: usize,
-    ) -> TempIdx {
+    fn read_vreg_hi(&self, ir: &mut Context, reg: usize) -> TempIdx {
         let d = ir.new_temp(Type::I64);
-        ir.gen_ld(
-            Type::I64, d, self.env, vreg_hi_offset(reg),
-        );
+        ir.gen_ld(Type::I64, d, self.env, vreg_hi_offset(reg));
         d
     }
 
-    fn write_vreg_lo(
-        &self, ir: &mut Context, reg: usize,
-        val: TempIdx,
-    ) {
-        ir.gen_st(
-            Type::I64, val, self.env, vreg_lo_offset(reg),
-        );
+    fn write_vreg_lo(&self, ir: &mut Context, reg: usize, val: TempIdx) {
+        ir.gen_st(Type::I64, val, self.env, vreg_lo_offset(reg));
     }
 
-    fn write_vreg_hi(
-        &self, ir: &mut Context, reg: usize,
-        val: TempIdx,
-    ) {
-        ir.gen_st(
-            Type::I64, val, self.env, vreg_hi_offset(reg),
-        );
+    fn write_vreg_hi(&self, ir: &mut Context, reg: usize, val: TempIdx) {
+        ir.gen_st(Type::I64, val, self.env, vreg_hi_offset(reg));
     }
 
     /// Write full 128-bit vreg (lo, hi).
     #[allow(dead_code)]
     fn write_vreg128(
-        &self, ir: &mut Context, reg: usize,
-        lo: TempIdx, hi: TempIdx,
+        &self,
+        ir: &mut Context,
+        reg: usize,
+        lo: TempIdx,
+        hi: TempIdx,
     ) {
         self.write_vreg_lo(ir, reg, lo);
         self.write_vreg_hi(ir, reg, hi);
     }
 
     /// Zero the high half of a vreg.
-    fn clear_vreg_hi(
-        &self, ir: &mut Context, reg: usize,
-    ) {
+    fn clear_vreg_hi(&self, ir: &mut Context, reg: usize) {
         let z = ir.new_const(Type::I64, 0);
         self.write_vreg_hi(ir, reg, z);
     }
@@ -574,20 +714,14 @@ impl Aarch64DisasContext {
 impl Aarch64DisasContext {
     /// Try to decode and translate a NEON/FP instruction.
     /// Returns true if handled.
-    pub(crate) fn try_neon(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    pub(crate) fn try_neon(&mut self, ir: &mut Context, insn: u32) -> bool {
         // Dispatch by top-level encoding groups
         let op0 = (insn >> 25) & 0xf;
         match op0 {
             // Load/Store SIMD & FP
-            0b0100 | 0b0110 | 0b1100 | 0b1110 => {
-                self.try_fp_ldst(ir, insn)
-            }
+            0b0100 | 0b0110 | 0b1100 | 0b1110 => self.try_fp_ldst(ir, insn),
             // Data processing — SIMD & FP
-            0b0111 | 0b1111 => {
-                self.try_fp_data(ir, insn)
-            }
+            0b0111 | 0b1111 => self.try_fp_data(ir, insn),
             _ => false,
         }
     }
@@ -596,9 +730,7 @@ impl Aarch64DisasContext {
 // ── FP/SIMD load/store ──────────────────────────────────
 
 impl Aarch64DisasContext {
-    fn try_fp_ldst(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn try_fp_ldst(&mut self, ir: &mut Context, insn: u32) -> bool {
         let op3 = (insn >> 10) & 0x3;
         let top6 = (insn >> 24) & 0x3f;
 
@@ -616,26 +748,17 @@ impl Aarch64DisasContext {
 
         // LDUR/STUR — SIMD & FP
         // xx 111 100 x0 imm9 00 rn rt
-        if top6 == 0b111100
-            && (insn >> 21) & 1 == 0
-            && op3 == 0
-        {
+        if top6 == 0b111100 && (insn >> 21) & 1 == 0 && op3 == 0 {
             return self.fp_ldst_unscaled(ir, insn);
         }
 
         // LDR/STR pre/post-index — SIMD & FP
-        if top6 == 0b111100
-            && (insn >> 21) & 1 == 0
-            && (op3 == 1 || op3 == 3)
-        {
+        if top6 == 0b111100 && (insn >> 21) & 1 == 0 && (op3 == 1 || op3 == 3) {
             return self.fp_ldst_prepost(ir, insn);
         }
 
         // LDR/STR register offset — SIMD & FP
-        if top6 == 0b111100
-            && (insn >> 21) & 1 == 1
-            && op3 == 2
-        {
+        if top6 == 0b111100 && (insn >> 21) & 1 == 1 && op3 == 2 {
             return self.fp_ldst_reg(ir, insn);
         }
 
@@ -682,8 +805,12 @@ impl Aarch64DisasContext {
     }
 
     fn fp_do_load(
-        &mut self, ir: &mut Context, reg: usize,
-        addr: TempIdx, log2: u32, is_128: bool,
+        &mut self,
+        ir: &mut Context,
+        reg: usize,
+        addr: TempIdx,
+        log2: u32,
+        is_128: bool,
     ) {
         if is_128 {
             let lo = ir.new_temp(Type::I64);
@@ -709,8 +836,12 @@ impl Aarch64DisasContext {
     }
 
     fn fp_do_store(
-        &mut self, ir: &mut Context, reg: usize,
-        addr: TempIdx, log2: u32, is_128: bool,
+        &mut self,
+        ir: &mut Context,
+        reg: usize,
+        addr: TempIdx,
+        log2: u32,
+        is_128: bool,
     ) {
         if is_128 {
             let lo = self.read_vreg_lo(ir, reg);
@@ -732,9 +863,7 @@ impl Aarch64DisasContext {
     }
 
     /// LDR/STR (unsigned immediate) — SIMD & FP
-    fn fp_ldst_uimm(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_uimm(&mut self, ir: &mut Context, insn: u32) -> bool {
         let size = (insn >> 30) & 0x3;
         let opc = (insn >> 22) & 0x3;
         let imm12 = ((insn >> 10) & 0xfff) as i64;
@@ -755,9 +884,7 @@ impl Aarch64DisasContext {
     }
 
     /// LDR (literal) — SIMD & FP
-    fn fp_ldr_literal(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldr_literal(&mut self, ir: &mut Context, insn: u32) -> bool {
         let opc = (insn >> 30) & 0x3;
         let imm19 = ((insn >> 5) & 0x7ffff) as i64;
         let rt = (insn & 0x1f) as usize;
@@ -776,9 +903,7 @@ impl Aarch64DisasContext {
     }
 
     /// LDUR/STUR — SIMD & FP (unscaled)
-    fn fp_ldst_unscaled(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_unscaled(&mut self, ir: &mut Context, insn: u32) -> bool {
         let size = (insn >> 30) & 0x3;
         let opc = (insn >> 22) & 0x3;
         let imm9 = (((insn >> 12) & 0x1ff) as i32 as i64) << 55 >> 55;
@@ -798,9 +923,7 @@ impl Aarch64DisasContext {
     }
 
     /// LDR/STR pre/post-index — SIMD & FP
-    fn fp_ldst_prepost(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_prepost(&mut self, ir: &mut Context, insn: u32) -> bool {
         let size = (insn >> 30) & 0x3;
         let opc = (insn >> 22) & 0x3;
         let imm9 = (((insn >> 12) & 0x1ff) as i32 as i64) << 55 >> 55;
@@ -826,9 +949,7 @@ impl Aarch64DisasContext {
     }
 
     /// LDR/STR register offset — SIMD & FP
-    fn fp_ldst_reg(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_reg(&mut self, ir: &mut Context, insn: u32) -> bool {
         let size = (insn >> 30) & 0x3;
         let opc = (insn >> 22) & 0x3;
         let rm = ((insn >> 16) & 0x1f) as i64;
@@ -851,9 +972,7 @@ impl Aarch64DisasContext {
     }
 
     /// LDP/STP — SIMD & FP
-    fn fp_ldst_pair(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_pair(&mut self, ir: &mut Context, insn: u32) -> bool {
         let opc = (insn >> 30) & 0x3;
         let is_load = (insn >> 22) & 1 != 0;
         let imm7 = (((insn >> 15) & 0x7f) as i32 as i64) << 57 >> 57;
@@ -913,9 +1032,7 @@ impl Aarch64DisasContext {
     }
 
     /// LD1/ST1 multiple structures (single register, no offset).
-    fn fp_ldst_multiple(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_multiple(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let is_load = (insn >> 22) & 1 != 0;
         let opcode = (insn >> 12) & 0xf;
@@ -949,27 +1066,47 @@ impl Aarch64DisasContext {
                 };
                 if is_load {
                     let lo = ir.new_temp(Type::I64);
-                    ir.gen_qemu_ld(Type::I64, lo, cur_addr, MemOp::uq().bits() as u32);
+                    ir.gen_qemu_ld(
+                        Type::I64,
+                        lo,
+                        cur_addr,
+                        MemOp::uq().bits() as u32,
+                    );
                     self.write_vreg_lo(ir, reg, lo);
                     if q != 0 {
                         let c8 = ir.new_const(Type::I64, 8);
                         let hi_addr = ir.new_temp(Type::I64);
                         ir.gen_add(Type::I64, hi_addr, cur_addr, c8);
                         let hi = ir.new_temp(Type::I64);
-                        ir.gen_qemu_ld(Type::I64, hi, hi_addr, MemOp::uq().bits() as u32);
+                        ir.gen_qemu_ld(
+                            Type::I64,
+                            hi,
+                            hi_addr,
+                            MemOp::uq().bits() as u32,
+                        );
                         self.write_vreg_hi(ir, reg, hi);
                     } else {
                         self.clear_vreg_hi(ir, reg);
                     }
                 } else {
                     let lo = self.read_vreg_lo(ir, reg);
-                    ir.gen_qemu_st(Type::I64, lo, cur_addr, MemOp::uq().bits() as u32);
+                    ir.gen_qemu_st(
+                        Type::I64,
+                        lo,
+                        cur_addr,
+                        MemOp::uq().bits() as u32,
+                    );
                     if q != 0 {
                         let c8 = ir.new_const(Type::I64, 8);
                         let hi_addr = ir.new_temp(Type::I64);
                         ir.gen_add(Type::I64, hi_addr, cur_addr, c8);
                         let hi = self.read_vreg_hi(ir, reg);
-                        ir.gen_qemu_st(Type::I64, hi, hi_addr, MemOp::uq().bits() as u32);
+                        ir.gen_qemu_st(
+                            Type::I64,
+                            hi,
+                            hi_addr,
+                            MemOp::uq().bits() as u32,
+                        );
                     }
                 }
             }
@@ -1022,8 +1159,11 @@ impl Aarch64DisasContext {
                 let reg = (rt + i) & 31;
                 let zero = ir.new_const(Type::I64, 0);
                 self.write_vreg_lo(ir, reg, zero);
-                if q != 0 { self.write_vreg_hi(ir, reg, zero); }
-                else { self.clear_vreg_hi(ir, reg); }
+                if q != 0 {
+                    self.write_vreg_hi(ir, reg, zero);
+                } else {
+                    self.clear_vreg_hi(ir, reg);
+                }
             }
             for flat_idx in 0..total_elems {
                 let byte_off = flat_idx * elem_bytes;
@@ -1043,8 +1183,16 @@ impl Aarch64DisasContext {
                 let bit_off = (elem_idx * elem_bytes * 8) % 64;
                 let is_hi = (elem_idx * elem_bytes * 8) >= 64;
                 // Read current half, insert element, write back
-                let half = if is_hi { self.read_vreg_hi(ir, dest_reg) } else { self.read_vreg_lo(ir, dest_reg) };
-                let elem_mask = if elem_bytes == 8 { !0u64 } else { (1u64 << (elem_bytes * 8)) - 1 };
+                let half = if is_hi {
+                    self.read_vreg_hi(ir, dest_reg)
+                } else {
+                    self.read_vreg_lo(ir, dest_reg)
+                };
+                let elem_mask = if elem_bytes == 8 {
+                    !0u64
+                } else {
+                    (1u64 << (elem_bytes * 8)) - 1
+                };
                 let cmask = ir.new_const(Type::I64, !(elem_mask << bit_off));
                 let cleared = ir.new_temp(Type::I64);
                 ir.gen_and(Type::I64, cleared, half, cmask);
@@ -1060,8 +1208,11 @@ impl Aarch64DisasContext {
                     ir.gen_or(Type::I64, result, cleared, val);
                     result
                 };
-                if is_hi { self.write_vreg_hi(ir, dest_reg, inserted); }
-                else { self.write_vreg_lo(ir, dest_reg, inserted); }
+                if is_hi {
+                    self.write_vreg_hi(ir, dest_reg, inserted);
+                } else {
+                    self.write_vreg_lo(ir, dest_reg, inserted);
+                }
             }
         } else {
             // Store: read nregs vector regs, interleave elements, store to memory
@@ -1071,7 +1222,11 @@ impl Aarch64DisasContext {
                 let elem_idx = flat_idx / nregs as u64;
                 let bit_off = (elem_idx * elem_bytes * 8) % 64;
                 let is_hi = (elem_idx * elem_bytes * 8) >= 64;
-                let half = if is_hi { self.read_vreg_hi(ir, src_reg) } else { self.read_vreg_lo(ir, src_reg) };
+                let half = if is_hi {
+                    self.read_vreg_hi(ir, src_reg)
+                } else {
+                    self.read_vreg_lo(ir, src_reg)
+                };
                 let val = if bit_off > 0 {
                     let sh = ir.new_const(Type::I64, bit_off);
                     let t = ir.new_temp(Type::I64);
@@ -1113,9 +1268,7 @@ impl Aarch64DisasContext {
 
     /// LD1/ST1 single structure: load/store one element from/to a vector register.
     /// Encoding: 0 Q 001101 0 L R opcode S size Rn Rt
-    fn fp_ldst_single(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn fp_ldst_single(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let is_load = (insn >> 22) & 1 != 0;
         let opcode = (insn >> 13) & 7;
@@ -1144,7 +1297,8 @@ impl Aarch64DisasContext {
                     ir.gen_and(Type::I64, masked, val, mask);
                     let m = ir.new_const(Type::I64, 0x0101_0101_0101_0101u64);
                     let t = ir.new_temp(Type::I64);
-                    ir.gen_mul(Type::I64, t, masked, m); t
+                    ir.gen_mul(Type::I64, t, masked, m);
+                    t
                 }
                 16 => {
                     let mask = ir.new_const(Type::I64, 0xffff);
@@ -1152,14 +1306,16 @@ impl Aarch64DisasContext {
                     ir.gen_and(Type::I64, masked, val, mask);
                     let m = ir.new_const(Type::I64, 0x0001_0001_0001_0001u64);
                     let t = ir.new_temp(Type::I64);
-                    ir.gen_mul(Type::I64, t, masked, m); t
+                    ir.gen_mul(Type::I64, t, masked, m);
+                    t
                 }
                 32 => {
                     let t = ir.new_temp(Type::I64);
                     let c32 = ir.new_const(Type::I64, 32);
                     let hi = ir.new_temp(Type::I64);
                     ir.gen_shl(Type::I64, hi, val, c32);
-                    ir.gen_or(Type::I64, t, val, hi); t
+                    ir.gen_or(Type::I64, t, val, hi);
+                    t
                 }
                 64 => val,
                 _ => unreachable!(),
@@ -1175,10 +1331,10 @@ impl Aarch64DisasContext {
 
         // Determine element size and index
         let (elem_bits, idx) = match opcode {
-            0b000 => (8, (q << 3) | (s << 2) | size),   // B
+            0b000 => (8, (q << 3) | (s << 2) | size), // B
             0b010 => (16, (q << 2) | (s << 1) | (size >> 1)), // H
-            0b100 if size == 0 => (32, (q << 1) | s),    // S
-            0b100 if size == 1 && s == 0 => (64, q),     // D
+            0b100 if size == 0 => (32, (q << 1) | s), // S
+            0b100 if size == 1 && s == 0 => (64, q),  // D
             _ => return false,
         };
 
@@ -1197,8 +1353,16 @@ impl Aarch64DisasContext {
                 _ => unreachable!(),
             };
             ir.gen_qemu_ld(Type::I64, val, addr, memop.bits() as u32);
-            let half = if is_hi { self.read_vreg_hi(ir, rt) } else { self.read_vreg_lo(ir, rt) };
-            let elem_mask = if elem_bits == 64 { !0u64 } else { (1u64 << elem_bits) - 1 };
+            let half = if is_hi {
+                self.read_vreg_hi(ir, rt)
+            } else {
+                self.read_vreg_lo(ir, rt)
+            };
+            let elem_mask = if elem_bits == 64 {
+                !0u64
+            } else {
+                (1u64 << elem_bits) - 1
+            };
             let cmask = ir.new_const(Type::I64, !(elem_mask << bit_off));
             let cleared = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, cleared, half, cmask);
@@ -1208,11 +1372,18 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, val);
-            if is_hi { self.write_vreg_hi(ir, rt, result); }
-            else { self.write_vreg_lo(ir, rt, result); }
+            if is_hi {
+                self.write_vreg_hi(ir, rt, result);
+            } else {
+                self.write_vreg_lo(ir, rt, result);
+            }
         } else {
             // Store
-            let half = if is_hi { self.read_vreg_hi(ir, rt) } else { self.read_vreg_lo(ir, rt) };
+            let half = if is_hi {
+                self.read_vreg_hi(ir, rt)
+            } else {
+                self.read_vreg_lo(ir, rt)
+            };
             let val = ir.new_temp(Type::I64);
             if bit_off > 0 {
                 let sh = ir.new_const(Type::I64, bit_off as u64);
@@ -1234,9 +1405,7 @@ impl Aarch64DisasContext {
 
     /// FP/SIMD data processing — handles DUP, UMOV, and other
     /// NEON instructions needed by glibc.
-    fn try_fp_data(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn try_fp_data(&mut self, ir: &mut Context, insn: u32) -> bool {
         // DUP (general) — 0 Q 00 1110 000 imm5 0 0001 1 Rn Rd
         // Encodes as: 0x0e000c00 mask 0xbfe0fc00
         // DUP (element) — 0 Q 00 1110 000 imm5 0 0000 1 Rn Rd
@@ -1340,16 +1509,20 @@ impl Aarch64DisasContext {
             let zero = ir.new_const(Type::I64, 0);
             let d = ir.new_temp(Type::I64);
             match (u, opcode) {
-                (1, 0b01000) => { // CMGE #0
+                (1, 0b01000) => {
+                    // CMGE #0
                     ir.gen_call(d, helper_cmge_scalar as u64, &[src]);
                 }
-                (0, 0b01000) => { // CMGT #0
+                (0, 0b01000) => {
+                    // CMGT #0
                     ir.gen_call(d, helper_cmgt_scalar as u64, &[src]);
                 }
-                (1, 0b01001) => { // CMLE #0
+                (1, 0b01001) => {
+                    // CMLE #0
                     ir.gen_call(d, helper_cmle_scalar as u64, &[src]);
                 }
-                (0, 0b01001) => { // CMEQ #0
+                (0, 0b01001) => {
+                    // CMEQ #0
                     let _ = d;
                     let d2 = ir.new_temp(Type::I64);
                     ir.gen_setcond(Type::I64, d2, src, zero, Cond::Eq);
@@ -1358,23 +1531,44 @@ impl Aarch64DisasContext {
                     self.clear_vreg_hi(ir, rd);
                     return true;
                 }
-                (1, 0b11101) => { // UCVTF scalar: int-in-reg → float
-                    let helper = if size == 0b11 { helper_ucvtf_d_x as u64 } else { helper_ucvtf_s_s as u64 };
+                (1, 0b11101) => {
+                    // UCVTF scalar: int-in-reg → float
+                    let helper = if size == 0b11 {
+                        helper_ucvtf_d_x as u64
+                    } else {
+                        helper_ucvtf_s_s as u64
+                    };
                     ir.gen_call(d, helper, &[src]);
                 }
-                (0, 0b01100) => { // FCMGT #0 scalar: (src > 0.0) ? -1 : 0
+                (0, 0b01100) => {
+                    // FCMGT #0 scalar: (src > 0.0) ? -1 : 0
                     ir.gen_call(d, helper_fcmgt_zero_scalar as u64, &[src]);
                 }
-                (0, 0b11101) => { // SCVTF scalar: int-in-reg → float
-                    let helper = if size == 0b11 { helper_scvtf_d_d as u64 } else { helper_scvtf_s_s as u64 };
+                (0, 0b11101) => {
+                    // SCVTF scalar: int-in-reg → float
+                    let helper = if size == 0b11 {
+                        helper_scvtf_d_d as u64
+                    } else {
+                        helper_scvtf_s_s as u64
+                    };
                     ir.gen_call(d, helper, &[src]);
                 }
-                (0, 0b11011) => { // FCVTZS scalar: float → int (truncate toward zero)
-                    let helper = if size == 0b11 { helper_fcvtzs_x_d as u64 } else { helper_fcvtzs_w_s as u64 };
+                (0, 0b11011) => {
+                    // FCVTZS scalar: float → int (truncate toward zero)
+                    let helper = if size == 0b11 {
+                        helper_fcvtzs_x_d as u64
+                    } else {
+                        helper_fcvtzs_w_s as u64
+                    };
                     ir.gen_call(d, helper, &[src]);
                 }
-                (1, 0b11011) => { // FCVTZU scalar: float → uint (truncate toward zero)
-                    let helper = if size == 0b11 { helper_fcvtzu_x_d as u64 } else { helper_fcvtzu_w_s as u64 };
+                (1, 0b11011) => {
+                    // FCVTZU scalar: float → uint (truncate toward zero)
+                    let helper = if size == 0b11 {
+                        helper_fcvtzu_x_d as u64
+                    } else {
+                        helper_fcvtzu_w_s as u64
+                    };
                     ir.gen_call(d, helper, &[src]);
                 }
                 _ => return false,
@@ -1428,9 +1622,7 @@ impl Aarch64DisasContext {
     }
 
     /// DUP (element): replicate a vector element into all lanes.
-    fn neon_dup_element(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_dup_element(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let imm5 = (insn >> 16) & 0x1f;
         let rn = ((insn >> 5) & 0x1f) as usize;
@@ -1440,7 +1632,11 @@ impl Aarch64DisasContext {
         if imm5 & 1 != 0 {
             // 8-bit: index = imm5[4:1]
             let idx = (imm5 >> 1) as usize;
-            let half = if idx < 8 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let half = if idx < 8 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             let bit_off = (idx % 8) * 8;
             let sh = ir.new_const(Type::I64, bit_off as u64);
             let elem = ir.new_temp(Type::I64);
@@ -1451,12 +1647,19 @@ impl Aarch64DisasContext {
             let lo = ir.new_temp(Type::I64);
             ir.gen_mul(Type::I64, lo, elem, mul);
             self.write_vreg_lo(ir, rd, lo);
-            if q != 0 { self.write_vreg_hi(ir, rd, lo); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, lo);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else if imm5 & 2 != 0 {
             // 16-bit: index = imm5[4:2]
             let idx = (imm5 >> 2) as usize;
-            let half = if idx < 4 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let half = if idx < 4 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             let bit_off = (idx % 4) * 16;
             let sh = ir.new_const(Type::I64, bit_off as u64);
             let elem = ir.new_temp(Type::I64);
@@ -1467,12 +1670,19 @@ impl Aarch64DisasContext {
             let lo = ir.new_temp(Type::I64);
             ir.gen_mul(Type::I64, lo, elem, mul);
             self.write_vreg_lo(ir, rd, lo);
-            if q != 0 { self.write_vreg_hi(ir, rd, lo); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, lo);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else if imm5 & 4 != 0 {
             // 32-bit: index = imm5[4:3]
             let idx = (imm5 >> 3) as usize;
-            let half = if idx < 2 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let half = if idx < 2 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             let bit_off = (idx % 2) * 32;
             let sh = ir.new_const(Type::I64, bit_off as u64);
             let elem = ir.new_temp(Type::I64);
@@ -1485,15 +1695,25 @@ impl Aarch64DisasContext {
             let lo = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, lo, elem, hi32);
             self.write_vreg_lo(ir, rd, lo);
-            if q != 0 { self.write_vreg_hi(ir, rd, lo); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, lo);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else if imm5 & 8 != 0 {
             // 64-bit: index = imm5[4]
             let idx = (imm5 >> 4) as usize;
-            let half = if idx == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let half = if idx == 0 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             self.write_vreg_lo(ir, rd, half);
-            if q != 0 { self.write_vreg_hi(ir, rd, half); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, half);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else {
             return false;
         }
@@ -1501,9 +1721,7 @@ impl Aarch64DisasContext {
     }
 
     /// DUP (general): replicate a GPR scalar into all vector lanes.
-    fn neon_dup_general(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_dup_general(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let imm5 = (insn >> 16) & 0x1f;
         let rn = ((insn >> 5) & 0x1f) as i64;
@@ -1535,8 +1753,11 @@ impl Aarch64DisasContext {
             let lo = ir.new_temp(Type::I64);
             ir.gen_mul(Type::I64, lo, hw, mul);
             self.write_vreg_lo(ir, rd, lo);
-            if q != 0 { self.write_vreg_hi(ir, rd, lo); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, lo);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else if imm5 & 4 != 0 {
             // 32-bit
             let w = ir.new_temp(Type::I64);
@@ -1548,13 +1769,19 @@ impl Aarch64DisasContext {
             let lo = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, lo, w, hi32);
             self.write_vreg_lo(ir, rd, lo);
-            if q != 0 { self.write_vreg_hi(ir, rd, lo); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, lo);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else if imm5 & 8 != 0 {
             // 64-bit
             self.write_vreg_lo(ir, rd, src);
-            if q != 0 { self.write_vreg_hi(ir, rd, src); }
-            else { self.clear_vreg_hi(ir, rd); }
+            if q != 0 {
+                self.write_vreg_hi(ir, rd, src);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
         } else {
             return false;
         }
@@ -1562,13 +1789,11 @@ impl Aarch64DisasContext {
     }
 
     /// UMOV: extract a vector element to a GPR.
-    fn neon_umov(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_umov(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let imm5 = (insn >> 16) & 0x1f;
         let _rn = (insn & 0x1f) as usize; // Vn — source SIMD reg
-        // Note: field at bits[9:5] is Rn (SIMD), bits[4:0] is Rd (GPR)
+                                          // Note: field at bits[9:5] is Rn (SIMD), bits[4:0] is Rd (GPR)
         let rn_simd = ((insn >> 5) & 0x1f) as usize;
         let rd = (insn & 0x1f) as i64;
 
@@ -1587,7 +1812,9 @@ impl Aarch64DisasContext {
                 let t = ir.new_temp(Type::I64);
                 ir.gen_shr(Type::I64, t, half, sh);
                 t
-            } else { half };
+            } else {
+                half
+            };
             let mask = ir.new_const(Type::I64, 0xff);
             let result = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, result, val, mask);
@@ -1606,7 +1833,9 @@ impl Aarch64DisasContext {
                 let t = ir.new_temp(Type::I64);
                 ir.gen_shr(Type::I64, t, half, sh);
                 t
-            } else { half };
+            } else {
+                half
+            };
             let mask = ir.new_const(Type::I64, 0xffff);
             let result = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, result, val, mask);
@@ -1625,7 +1854,9 @@ impl Aarch64DisasContext {
                 let t = ir.new_temp(Type::I64);
                 ir.gen_shr(Type::I64, t, half, sh);
                 t
-            } else { half };
+            } else {
+                half
+            };
             let mask = ir.new_const(Type::I64, 0xffff_ffff);
             let result = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, result, val, mask);
@@ -1646,9 +1877,7 @@ impl Aarch64DisasContext {
     }
 
     /// MOVI/MVNI: modified immediate to vector.
-    fn neon_movi(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_movi(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let op = (insn >> 29) & 1;
         let cmode = (insn >> 12) & 0xf;
@@ -1660,10 +1889,22 @@ impl Aarch64DisasContext {
         // Build 64-bit element value based on cmode
         let elem64 = match cmode >> 1 {
             // 32-bit shifted: cmode=000x,001x,010x,011x
-            0b000 => { let v = imm8; v | (v << 32) }
-            0b001 => { let v = imm8 << 8; v | (v << 32) }
-            0b010 => { let v = imm8 << 16; v | (v << 32) }
-            0b011 => { let v = imm8 << 24; v | (v << 32) }
+            0b000 => {
+                let v = imm8;
+                v | (v << 32)
+            }
+            0b001 => {
+                let v = imm8 << 8;
+                v | (v << 32)
+            }
+            0b010 => {
+                let v = imm8 << 16;
+                v | (v << 32)
+            }
+            0b011 => {
+                let v = imm8 << 24;
+                v | (v << 32)
+            }
             // 16-bit shifted: cmode=100x,101x
             0b100 => {
                 let v = imm8;
@@ -1702,7 +1943,8 @@ impl Aarch64DisasContext {
                     let a = (imm8 >> 7) & 1;
                     let b = (imm8 >> 6) & 1;
                     let not_b = 1 - b;
-                    let exp8 = (not_b << 7) | ((b * 0x1f) << 2) | ((imm8 >> 4) & 3);
+                    let exp8 =
+                        (not_b << 7) | ((b * 0x1f) << 2) | ((imm8 >> 4) & 3);
                     let frac23 = (imm8 & 0xf) << 19;
                     let val32 = (a << 31) | (exp8 << 23) | frac23;
                     val32 | (val32 << 32)
@@ -1711,7 +1953,8 @@ impl Aarch64DisasContext {
                     let a = (imm8 >> 7) & 1;
                     let b = (imm8 >> 6) & 1;
                     let not_b = 1 - b;
-                    let exp11 = (not_b << 10) | ((b * 0xff) << 2) | ((imm8 >> 4) & 3);
+                    let exp11 =
+                        (not_b << 10) | ((b * 0xff) << 2) | ((imm8 >> 4) & 3);
                     let frac52 = (imm8 & 0xf) << 48;
                     (a << 63) | (exp11 << 52) | frac52
                 }
@@ -1736,12 +1979,10 @@ impl Aarch64DisasContext {
     }
 
     /// INS (general): insert a GPR value into a vector element.
-    fn neon_ins_general(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_ins_general(&mut self, ir: &mut Context, insn: u32) -> bool {
         let imm5 = (insn >> 16) & 0x1f;
         let rn = ((insn >> 5) & 0x1f) as i64; // GPR source
-        let rd = (insn & 0x1f) as usize;       // SIMD dest
+        let rd = (insn & 0x1f) as usize; // SIMD dest
         let src = self.read_xreg(ir, rn);
 
         if imm5 & 1 != 0 {
@@ -1749,7 +1990,11 @@ impl Aarch64DisasContext {
             let idx = (imm5 >> 1) as usize;
             let is_hi = idx >= 8;
             let bit_off = (idx % 8) * 8;
-            let half = if is_hi { self.read_vreg_hi(ir, rd) } else { self.read_vreg_lo(ir, rd) };
+            let half = if is_hi {
+                self.read_vreg_hi(ir, rd)
+            } else {
+                self.read_vreg_lo(ir, rd)
+            };
             let mask_val = !(0xffu64 << bit_off);
             let mask = ir.new_const(Type::I64, mask_val);
             let cleared = ir.new_temp(Type::I64);
@@ -1763,14 +2008,21 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, byte);
-            if is_hi { self.write_vreg_hi(ir, rd, result); }
-            else { self.write_vreg_lo(ir, rd, result); }
+            if is_hi {
+                self.write_vreg_hi(ir, rd, result);
+            } else {
+                self.write_vreg_lo(ir, rd, result);
+            }
         } else if imm5 & 2 != 0 {
             // 16-bit: index = imm5[4:2]
             let idx = (imm5 >> 2) as usize;
             let is_hi = idx >= 4;
             let bit_off = (idx % 4) * 16;
-            let half = if is_hi { self.read_vreg_hi(ir, rd) } else { self.read_vreg_lo(ir, rd) };
+            let half = if is_hi {
+                self.read_vreg_hi(ir, rd)
+            } else {
+                self.read_vreg_lo(ir, rd)
+            };
             let mask_val = !(0xffffu64 << bit_off);
             let mask = ir.new_const(Type::I64, mask_val);
             let cleared = ir.new_temp(Type::I64);
@@ -1784,14 +2036,21 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, hw);
-            if is_hi { self.write_vreg_hi(ir, rd, result); }
-            else { self.write_vreg_lo(ir, rd, result); }
+            if is_hi {
+                self.write_vreg_hi(ir, rd, result);
+            } else {
+                self.write_vreg_lo(ir, rd, result);
+            }
         } else if imm5 & 4 != 0 {
             // 32-bit: index = imm5[4:3]
             let idx = (imm5 >> 3) as usize;
             let is_hi = idx >= 2;
             let bit_off = (idx % 2) * 32;
-            let half = if is_hi { self.read_vreg_hi(ir, rd) } else { self.read_vreg_lo(ir, rd) };
+            let half = if is_hi {
+                self.read_vreg_hi(ir, rd)
+            } else {
+                self.read_vreg_lo(ir, rd)
+            };
             let mask_val = !(0xffff_ffffu64 << bit_off);
             let mask = ir.new_const(Type::I64, mask_val);
             let cleared = ir.new_temp(Type::I64);
@@ -1805,13 +2064,19 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, w);
-            if is_hi { self.write_vreg_hi(ir, rd, result); }
-            else { self.write_vreg_lo(ir, rd, result); }
+            if is_hi {
+                self.write_vreg_hi(ir, rd, result);
+            } else {
+                self.write_vreg_lo(ir, rd, result);
+            }
         } else if imm5 & 8 != 0 {
             // 64-bit: index = imm5[4]
             let idx = (imm5 >> 4) as usize;
-            if idx == 0 { self.write_vreg_lo(ir, rd, src); }
-            else { self.write_vreg_hi(ir, rd, src); }
+            if idx == 0 {
+                self.write_vreg_lo(ir, rd, src);
+            } else {
+                self.write_vreg_hi(ir, rd, src);
+            }
         } else {
             return false;
         }
@@ -1819,17 +2084,17 @@ impl Aarch64DisasContext {
     }
 
     /// TBL/TBX: byte-level table lookup.
-    fn neon_tbl(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_tbl(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let rm = ((insn >> 16) & 0x1f) as usize;
         let len = (insn >> 13) & 3; // 0→1reg, 1→2reg, 2→3reg, 3→4reg
-        let op = (insn >> 12) & 1;  // 0→TBL, 1→TBX
+        let op = (insn >> 12) & 1; // 0→TBL, 1→TBX
         let rn = ((insn >> 5) & 0x1f) as usize;
         let rd = (insn & 0x1f) as usize;
 
-        if op != 0 { return false; } // TBX not yet implemented
+        if op != 0 {
+            return false;
+        } // TBX not yet implemented
 
         match len {
             0 => {
@@ -1843,7 +2108,11 @@ impl Aarch64DisasContext {
                 if q != 0 {
                     let idx_hi = self.read_vreg_hi(ir, rm);
                     let d_hi = ir.new_temp(Type::I64);
-                    ir.gen_call(d_hi, helper_tbl1 as u64, &[t_lo, t_hi, idx_hi]);
+                    ir.gen_call(
+                        d_hi,
+                        helper_tbl1 as u64,
+                        &[t_lo, t_hi, idx_hi],
+                    );
                     self.write_vreg_hi(ir, rd, d_hi);
                 } else {
                     self.clear_vreg_hi(ir, rd);
@@ -1859,12 +2128,20 @@ impl Aarch64DisasContext {
                 let t1_hi = self.read_vreg_hi(ir, rn2);
                 let idx_lo = self.read_vreg_lo(ir, rm);
                 let d_lo = ir.new_temp(Type::I64);
-                ir.gen_call(d_lo, helper_tbl2 as u64, &[t0_lo, t0_hi, t1_lo, t1_hi, idx_lo]);
+                ir.gen_call(
+                    d_lo,
+                    helper_tbl2 as u64,
+                    &[t0_lo, t0_hi, t1_lo, t1_hi, idx_lo],
+                );
                 self.write_vreg_lo(ir, rd, d_lo);
                 if q != 0 {
                     let idx_hi = self.read_vreg_hi(ir, rm);
                     let d_hi = ir.new_temp(Type::I64);
-                    ir.gen_call(d_hi, helper_tbl2 as u64, &[t0_lo, t0_hi, t1_lo, t1_hi, idx_hi]);
+                    ir.gen_call(
+                        d_hi,
+                        helper_tbl2 as u64,
+                        &[t0_lo, t0_hi, t1_lo, t1_hi, idx_hi],
+                    );
                     self.write_vreg_hi(ir, rd, d_hi);
                 } else {
                     self.clear_vreg_hi(ir, rd);
@@ -1877,9 +2154,7 @@ impl Aarch64DisasContext {
 
     /// INS (element): copy element from one vector to another.
     /// Encoding: 0110 1110 000 imm5 0 imm4 1 Rn Rd
-    fn neon_ins_element(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_ins_element(&mut self, ir: &mut Context, insn: u32) -> bool {
         let imm5 = (insn >> 16) & 0x1f;
         let imm4 = (insn >> 11) & 0xf;
         let rn = ((insn >> 5) & 0x1f) as usize;
@@ -1890,7 +2165,11 @@ impl Aarch64DisasContext {
             // 8-bit: dst_idx = imm5[4:1], src_idx = imm4[3:0]
             let dst_idx = (imm5 >> 1) as usize;
             let src_idx = imm4 as usize;
-            let src_half = if src_idx < 8 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let src_half = if src_idx < 8 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             let src_off = (src_idx % 8) * 8;
             let elem = ir.new_temp(Type::I64);
             let sh = ir.new_const(Type::I64, src_off as u64);
@@ -1899,7 +2178,11 @@ impl Aarch64DisasContext {
             ir.gen_and(Type::I64, elem, elem, mask);
             let dst_hi = dst_idx >= 8;
             let dst_off = (dst_idx % 8) * 8;
-            let dst_half = if dst_hi { self.read_vreg_hi(ir, rd) } else { self.read_vreg_lo(ir, rd) };
+            let dst_half = if dst_hi {
+                self.read_vreg_hi(ir, rd)
+            } else {
+                self.read_vreg_lo(ir, rd)
+            };
             let cmask = ir.new_const(Type::I64, !(0xffu64 << dst_off));
             let cleared = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, cleared, dst_half, cmask);
@@ -1909,13 +2192,20 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, elem);
-            if dst_hi { self.write_vreg_hi(ir, rd, result); }
-            else { self.write_vreg_lo(ir, rd, result); }
+            if dst_hi {
+                self.write_vreg_hi(ir, rd, result);
+            } else {
+                self.write_vreg_lo(ir, rd, result);
+            }
         } else if imm5 & 2 != 0 {
             // 16-bit: dst_idx = imm5[4:2], src_idx = imm4[3:1]
             let dst_idx = (imm5 >> 2) as usize;
             let src_idx = (imm4 >> 1) as usize;
-            let src_half = if src_idx < 4 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let src_half = if src_idx < 4 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             let src_off = (src_idx % 4) * 16;
             let elem = ir.new_temp(Type::I64);
             let sh = ir.new_const(Type::I64, src_off as u64);
@@ -1924,7 +2214,11 @@ impl Aarch64DisasContext {
             ir.gen_and(Type::I64, elem, elem, mask);
             let dst_hi = dst_idx >= 4;
             let dst_off = (dst_idx % 4) * 16;
-            let dst_half = if dst_hi { self.read_vreg_hi(ir, rd) } else { self.read_vreg_lo(ir, rd) };
+            let dst_half = if dst_hi {
+                self.read_vreg_hi(ir, rd)
+            } else {
+                self.read_vreg_lo(ir, rd)
+            };
             let cmask = ir.new_const(Type::I64, !(0xffffu64 << dst_off));
             let cleared = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, cleared, dst_half, cmask);
@@ -1934,13 +2228,20 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, elem);
-            if dst_hi { self.write_vreg_hi(ir, rd, result); }
-            else { self.write_vreg_lo(ir, rd, result); }
+            if dst_hi {
+                self.write_vreg_hi(ir, rd, result);
+            } else {
+                self.write_vreg_lo(ir, rd, result);
+            }
         } else if imm5 & 4 != 0 {
             // 32-bit: dst_idx = imm5[4:3], src_idx = imm4[3:2]
             let dst_idx = (imm5 >> 3) as usize;
             let src_idx = (imm4 >> 2) as usize;
-            let src_half = if src_idx < 2 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+            let src_half = if src_idx < 2 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
             let src_off = (src_idx % 2) * 32;
             let elem = ir.new_temp(Type::I64);
             let sh = ir.new_const(Type::I64, src_off as u64);
@@ -1949,7 +2250,11 @@ impl Aarch64DisasContext {
             ir.gen_and(Type::I64, elem, elem, mask);
             let dst_hi = dst_idx >= 2;
             let dst_off = (dst_idx % 2) * 32;
-            let dst_half = if dst_hi { self.read_vreg_hi(ir, rd) } else { self.read_vreg_lo(ir, rd) };
+            let dst_half = if dst_hi {
+                self.read_vreg_hi(ir, rd)
+            } else {
+                self.read_vreg_lo(ir, rd)
+            };
             let cmask = ir.new_const(Type::I64, !(0xffff_ffffu64 << dst_off));
             let cleared = ir.new_temp(Type::I64);
             ir.gen_and(Type::I64, cleared, dst_half, cmask);
@@ -1959,15 +2264,25 @@ impl Aarch64DisasContext {
             }
             let result = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, result, cleared, elem);
-            if dst_hi { self.write_vreg_hi(ir, rd, result); }
-            else { self.write_vreg_lo(ir, rd, result); }
+            if dst_hi {
+                self.write_vreg_hi(ir, rd, result);
+            } else {
+                self.write_vreg_lo(ir, rd, result);
+            }
         } else if imm5 & 8 != 0 {
             // 64-bit: dst_idx = imm5[4], src_idx = imm4[3]
             let dst_idx = (imm5 >> 4) as usize;
             let src_idx = (imm4 >> 3) as usize;
-            let val = if src_idx == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
-            if dst_idx == 0 { self.write_vreg_lo(ir, rd, val); }
-            else { self.write_vreg_hi(ir, rd, val); }
+            let val = if src_idx == 0 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
+            if dst_idx == 0 {
+                self.write_vreg_lo(ir, rd, val);
+            } else {
+                self.write_vreg_hi(ir, rd, val);
+            }
         } else {
             return false;
         }
@@ -1975,9 +2290,7 @@ impl Aarch64DisasContext {
     }
 
     /// FMOV Xd, Dn — move D register low half to GPR.
-    fn neon_fmov_to_gpr(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_fmov_to_gpr(&mut self, ir: &mut Context, insn: u32) -> bool {
         let rn = ((insn >> 5) & 0x1f) as usize;
         let rd = (insn & 0x1f) as i64;
         let val = self.read_vreg_lo(ir, rn);
@@ -1985,9 +2298,7 @@ impl Aarch64DisasContext {
         true
     }
 
-    fn neon_fmov_imm(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_fmov_imm(&mut self, ir: &mut Context, insn: u32) -> bool {
         let rd = (insn & 0x1f) as usize;
         let imm8 = ((insn >> 13) & 0xff) as u64;
         let is_double = (insn >> 22) & 3 == 1;
@@ -2005,9 +2316,7 @@ impl Aarch64DisasContext {
         true
     }
 
-    fn try_fp_scalar(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> Option<bool> {
+    fn try_fp_scalar(&mut self, ir: &mut Context, insn: u32) -> Option<bool> {
         let rd = (insn & 0x1f) as usize;
         let rn = ((insn >> 5) & 0x1f) as usize;
         let ftype = (insn >> 22) & 3;
@@ -2024,7 +2333,7 @@ impl Aarch64DisasContext {
             };
             let d = ir.new_temp(Type::I64);
             ir.gen_call(d, helper_fcmp64 as u64, &[a, b]);
-            ir.gen_mov(Type::I64, self.nzcv, d);
+            self.set_nzcv_packed(ir, d);
             return Some(true);
         }
 
@@ -2035,15 +2344,15 @@ impl Aarch64DisasContext {
             let a = self.read_vreg_lo(ir, rn);
             let b = self.read_vreg_lo(ir, rm);
             let helper = match (opcode, is_double) {
-                (0, true)  => helper_fmul64 as u64,
-                (1, true)  => helper_fdiv64 as u64,
-                (2, true)  => helper_fadd64 as u64,
-                (3, true)  => helper_fsub64 as u64,
-                (4, true)  => helper_fmax64 as u64,
-                (5, true)  => helper_fmin64 as u64,
-                (6, true)  => helper_fmaxnm64 as u64,
-                (7, true)  => helper_fminnm64 as u64,
-                (8, true)  => helper_fnmul64 as u64,  // FNMUL
+                (0, true) => helper_fmul64 as u64,
+                (1, true) => helper_fdiv64 as u64,
+                (2, true) => helper_fadd64 as u64,
+                (3, true) => helper_fsub64 as u64,
+                (4, true) => helper_fmax64 as u64,
+                (5, true) => helper_fmin64 as u64,
+                (6, true) => helper_fmaxnm64 as u64,
+                (7, true) => helper_fminnm64 as u64,
+                (8, true) => helper_fnmul64 as u64, // FNMUL
                 (0, false) => helper_fmul32 as u64,
                 (1, false) => helper_fdiv32 as u64,
                 (2, false) => helper_fadd32 as u64,
@@ -2052,7 +2361,7 @@ impl Aarch64DisasContext {
                 (5, false) => helper_fmin32 as u64,
                 (6, false) => helper_fmaxnm32 as u64,
                 (7, false) => helper_fminnm32 as u64,
-                (8, false) => helper_fnmul32 as u64,  // FNMUL
+                (8, false) => helper_fnmul32 as u64, // FNMUL
                 _ => return None,
             };
             let d = ir.new_temp(Type::I64);
@@ -2444,12 +2753,24 @@ impl Aarch64DisasContext {
             let cond_val = self.eval_cond(ir, cond);
             let zero_const = ir.new_const(Type::I64, 0);
             let cmp_result = ir.new_temp(Type::I64);
-            let fp_helper = if is_double { helper_fcmp64 as u64 } else { helper_fcmp32 as u64 };
+            let fp_helper = if is_double {
+                helper_fcmp64 as u64
+            } else {
+                helper_fcmp32 as u64
+            };
             ir.gen_call(cmp_result, fp_helper, &[a, b]);
             let nzcv_alt = ir.new_const(Type::I64, nzcv_imm << 28);
             let result = ir.new_temp(Type::I64);
-            ir.gen_movcond(Type::I64, result, cond_val, zero_const, cmp_result, nzcv_alt, Cond::Ne);
-            ir.gen_mov(Type::I64, self.nzcv, result);
+            ir.gen_movcond(
+                Type::I64,
+                result,
+                cond_val,
+                zero_const,
+                cmp_result,
+                nzcv_alt,
+                Cond::Ne,
+            );
+            self.set_nzcv_packed(ir, result);
             return Some(true);
         }
         // FMOV Sn, Wn: 0001 1110 0010 0111 0000 00 Rn Rd
@@ -2566,9 +2887,7 @@ impl Aarch64DisasContext {
 
         None
     }
-    fn try_neon_3same_misc(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn try_neon_3same_misc(&mut self, ir: &mut Context, insn: u32) -> bool {
         // AdvSIMD three same: 0 Q U 01110 size 1 Rm opcode 1 Rn Rd
         if insn & 0x9f20_0400 == 0x0e20_0400 {
             let size = (insn >> 22) & 0x3;
@@ -2606,9 +2925,7 @@ impl Aarch64DisasContext {
     }
 
     /// AdvSIMD three different (widening): 0 Q U 01110 size 1 Rm opcode 00 Rn Rd
-    fn neon_3diff(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_3diff(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
         let size = (insn >> 22) & 3;
@@ -2621,8 +2938,16 @@ impl Aarch64DisasContext {
             // SMULL/SMULL2 .2d, .2s/.4s: U=0 size=10 opcode=1100
             (0, 0b10, 0b1100) => {
                 // Q=0: use low halves of Rn,Rm; Q=1: use high halves
-                let n = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
-                let m = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let n = if q == 0 {
+                    self.read_vreg_lo(ir, rn)
+                } else {
+                    self.read_vreg_hi(ir, rn)
+                };
+                let m = if q == 0 {
+                    self.read_vreg_lo(ir, rm)
+                } else {
+                    self.read_vreg_hi(ir, rm)
+                };
                 let d_lo = ir.new_temp(Type::I64);
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_lo, helper_smull32_lo as u64, &[n, m]);
@@ -2633,7 +2958,11 @@ impl Aarch64DisasContext {
             }
             // SADDW/SADDW2: U=0 size=01 opcode=0001 — .4S += sign-extend(.4H)
             (0, 0b01, 0b0001) => {
-                let src = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let src = if q == 0 {
+                    self.read_vreg_lo(ir, rm)
+                } else {
+                    self.read_vreg_hi(ir, rm)
+                };
                 let n_lo = self.read_vreg_lo(ir, rn);
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let d_lo = ir.new_temp(Type::I64);
@@ -2646,7 +2975,11 @@ impl Aarch64DisasContext {
             }
             // UADDW/UADDW2: U=1 size=01 opcode=0001 — .4S += zero-extend(.4H)
             (1, 0b01, 0b0001) => {
-                let src = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let src = if q == 0 {
+                    self.read_vreg_lo(ir, rm)
+                } else {
+                    self.read_vreg_hi(ir, rm)
+                };
                 let n_lo = self.read_vreg_lo(ir, rn);
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let d_lo = ir.new_temp(Type::I64);
@@ -2659,7 +2992,11 @@ impl Aarch64DisasContext {
             }
             // SADDW/SADDW2 .2D += sign-extend(.2S): size=10
             (0, 0b10, 0b0001) => {
-                let src = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let src = if q == 0 {
+                    self.read_vreg_lo(ir, rm)
+                } else {
+                    self.read_vreg_hi(ir, rm)
+                };
                 let n_lo = self.read_vreg_lo(ir, rn);
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let d_lo = ir.new_temp(Type::I64);
@@ -2672,8 +3009,16 @@ impl Aarch64DisasContext {
             }
             // USUBL/USUBL2: U=1 size=01 opcode=0010 — Vd.4S = zext(Vn.4H) - zext(Vm.4H)
             (1, 0b01, 0b0010) => {
-                let n = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
-                let m = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let n = if q == 0 {
+                    self.read_vreg_lo(ir, rn)
+                } else {
+                    self.read_vreg_hi(ir, rn)
+                };
+                let m = if q == 0 {
+                    self.read_vreg_lo(ir, rm)
+                } else {
+                    self.read_vreg_hi(ir, rm)
+                };
                 let d_lo = ir.new_temp(Type::I64);
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_lo, helper_usubl16_lo as u64, &[n, m]);
@@ -2684,8 +3029,16 @@ impl Aarch64DisasContext {
             }
             // SMLAL/SMLAL2 .2D, .2S, .2S: U=0 size=10 opcode=1000
             (0, 0b10, 0b1000) => {
-                let n = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
-                let m = if q == 0 { self.read_vreg_lo(ir, rm) } else { self.read_vreg_hi(ir, rm) };
+                let n = if q == 0 {
+                    self.read_vreg_lo(ir, rn)
+                } else {
+                    self.read_vreg_hi(ir, rn)
+                };
+                let m = if q == 0 {
+                    self.read_vreg_lo(ir, rm)
+                } else {
+                    self.read_vreg_hi(ir, rm)
+                };
                 let acc_lo = self.read_vreg_lo(ir, rd);
                 let acc_hi = self.read_vreg_hi(ir, rd);
                 let d_lo = ir.new_temp(Type::I64);
@@ -2701,7 +3054,9 @@ impl Aarch64DisasContext {
     }
 
     fn neon_indexed_element(
-        &mut self, ir: &mut Context, insn: u32,
+        &mut self,
+        ir: &mut Context,
+        insn: u32,
     ) -> Option<bool> {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
@@ -2719,7 +3074,11 @@ impl Aarch64DisasContext {
             // 32-bit element: index = H:L, Rm = M:Rm
             let idx = ((h << 1) | l) as usize;
             let vrm = (m << 4) as usize | rm;
-            let half = if idx < 2 { self.read_vreg_lo(ir, vrm) } else { self.read_vreg_hi(ir, vrm) };
+            let half = if idx < 2 {
+                self.read_vreg_lo(ir, vrm)
+            } else {
+                self.read_vreg_hi(ir, vrm)
+            };
             let bit_off = (idx % 2) * 32;
             let elem = ir.new_temp(Type::I64);
             if bit_off > 0 {
@@ -2755,7 +3114,11 @@ impl Aarch64DisasContext {
         if u == 1 && size == 0b10 && opcode == 0b0000 {
             let idx = ((h << 1) | l) as usize;
             let vrm = (m << 4) as usize | rm;
-            let half = if idx < 2 { self.read_vreg_lo(ir, vrm) } else { self.read_vreg_hi(ir, vrm) };
+            let half = if idx < 2 {
+                self.read_vreg_lo(ir, vrm)
+            } else {
+                self.read_vreg_hi(ir, vrm)
+            };
             let bit_off = (idx % 2) * 32;
             let elem = ir.new_temp(Type::I64);
             if bit_off > 0 {
@@ -2781,7 +3144,11 @@ impl Aarch64DisasContext {
                 let d_hi = self.read_vreg_hi(ir, rd);
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let r_hi = ir.new_temp(Type::I64);
-                ir.gen_call(r_hi, helper_mla32_elem as u64, &[d_hi, n_hi, scalar]);
+                ir.gen_call(
+                    r_hi,
+                    helper_mla32_elem as u64,
+                    &[d_hi, n_hi, scalar],
+                );
                 self.write_vreg_hi(ir, rd, r_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
@@ -2793,7 +3160,11 @@ impl Aarch64DisasContext {
             // 32-bit float element: index = H:L, Rm = M:Rm (4-bit)
             let idx = ((h << 1) | l) as usize;
             let vrm = (m << 4) as usize | rm;
-            let half = if idx < 2 { self.read_vreg_lo(ir, vrm) } else { self.read_vreg_hi(ir, vrm) };
+            let half = if idx < 2 {
+                self.read_vreg_lo(ir, vrm)
+            } else {
+                self.read_vreg_hi(ir, vrm)
+            };
             let bit_off = (idx % 2) * 32;
             let elem = ir.new_temp(Type::I64);
             if bit_off > 0 {
@@ -2831,9 +3202,7 @@ impl Aarch64DisasContext {
     }
 
     /// AdvSIMD permute: UZP1/UZP2/ZIP1/ZIP2/TRN1/TRN2
-    fn neon_permute(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_permute(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let size = (insn >> 22) & 3;
         let rm = ((insn >> 16) & 0x1f) as usize;
@@ -3161,25 +3530,41 @@ fn vfp_expand_imm32(imm8: u64) -> u32 {
 // ── Division helper functions ────────────────────────────
 
 unsafe extern "C" fn helper_udiv64(n: u64, m: u64) -> u64 {
-    if m == 0 { 0 } else { n / m }
+    if m == 0 {
+        0
+    } else {
+        n / m
+    }
 }
 
 unsafe extern "C" fn helper_udiv32(n: u64, m: u64) -> u64 {
     let n = n as u32;
     let m = m as u32;
-    if m == 0 { 0 } else { (n / m) as u64 }
+    if m == 0 {
+        0
+    } else {
+        (n / m) as u64
+    }
 }
 
 unsafe extern "C" fn helper_sdiv64(n: u64, m: u64) -> u64 {
     let n = n as i64;
     let m = m as i64;
-    if m == 0 { 0 } else { (n / m) as u64 }
+    if m == 0 {
+        0
+    } else {
+        (n / m) as u64
+    }
 }
 
 unsafe extern "C" fn helper_sdiv32(n: u64, m: u64) -> u64 {
     let n = n as u32 as i32;
     let m = m as u32 as i32;
-    if m == 0 { 0 } else { (n / m) as i64 as u64 }
+    if m == 0 {
+        0
+    } else {
+        (n / m) as i64 as u64
+    }
 }
 
 unsafe extern "C" fn helper_rbit64(a: u64) -> u64 {
@@ -3197,7 +3582,9 @@ unsafe extern "C" fn helper_cmeq8(a: u64, b: u64) -> u64 {
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
         let bb = (b >> (i * 8)) & 0xff;
-        if ab == bb { r |= 0xffu64 << (i * 8); }
+        if ab == bb {
+            r |= 0xffu64 << (i * 8);
+        }
     }
     r
 }
@@ -3208,7 +3595,9 @@ unsafe extern "C" fn helper_cmtst8(a: u64, b: u64) -> u64 {
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
         let bb = (b >> (i * 8)) & 0xff;
-        if ab & bb != 0 { r |= 0xffu64 << (i * 8); }
+        if ab & bb != 0 {
+            r |= 0xffu64 << (i * 8);
+        }
     }
     r
 }
@@ -3219,7 +3608,9 @@ unsafe extern "C" fn helper_cmhs8(a: u64, b: u64) -> u64 {
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
         let bb = (b >> (i * 8)) & 0xff;
-        if ab >= bb { r |= 0xffu64 << (i * 8); }
+        if ab >= bb {
+            r |= 0xffu64 << (i * 8);
+        }
     }
     r
 }
@@ -3416,11 +3807,15 @@ unsafe extern "C" fn helper_smaxv16_pair(lo: u64, hi: u64) -> u64 {
     let mut m = i16::MIN;
     for i in 0..4 {
         let e = ((lo >> (i * 16)) & 0xffff) as i16;
-        if e > m { m = e; }
+        if e > m {
+            m = e;
+        }
     }
     for i in 0..4 {
         let e = ((hi >> (i * 16)) & 0xffff) as i16;
-        if e > m { m = e; }
+        if e > m {
+            m = e;
+        }
     }
     m as u16 as u64
 }
@@ -3429,35 +3824,55 @@ unsafe extern "C" fn helper_sminv16_pair(lo: u64, hi: u64) -> u64 {
     let mut m = i16::MAX;
     for i in 0..4 {
         let e = ((lo >> (i * 16)) & 0xffff) as i16;
-        if e < m { m = e; }
+        if e < m {
+            m = e;
+        }
     }
     for i in 0..4 {
         let e = ((hi >> (i * 16)) & 0xffff) as i16;
-        if e < m { m = e; }
+        if e < m {
+            m = e;
+        }
     }
     m as u16 as u64
 }
 unsafe extern "C" fn helper_cmeq32(a: u64, b: u64) -> u64 {
     let lo: u32 = if a as u32 == b as u32 { !0 } else { 0 };
-    let hi: u32 = if (a >> 32) as u32 == (b >> 32) as u32 { !0 } else { 0 };
+    let hi: u32 = if (a >> 32) as u32 == (b >> 32) as u32 {
+        !0
+    } else {
+        0
+    };
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMHS 32-bit: unsigned higher or same
 unsafe extern "C" fn helper_cmhs32(a: u64, b: u64) -> u64 {
     let lo: u32 = if a as u32 >= b as u32 { !0 } else { 0 };
-    let hi: u32 = if (a >> 32) as u32 >= (b >> 32) as u32 { !0 } else { 0 };
+    let hi: u32 = if (a >> 32) as u32 >= (b >> 32) as u32 {
+        !0
+    } else {
+        0
+    };
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMGT 32-bit: signed greater than
 unsafe extern "C" fn helper_cmgt32(a: u64, b: u64) -> u64 {
     let lo: u32 = if (a as i32) > (b as i32) { !0 } else { 0 };
-    let hi: u32 = if ((a >> 32) as i32) > ((b >> 32) as i32) { !0 } else { 0 };
+    let hi: u32 = if ((a >> 32) as i32) > ((b >> 32) as i32) {
+        !0
+    } else {
+        0
+    };
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMGE 32-bit: signed greater than or equal
 unsafe extern "C" fn helper_cmge32(a: u64, b: u64) -> u64 {
     let lo: u32 = if (a as i32) >= (b as i32) { !0 } else { 0 };
-    let hi: u32 = if ((a >> 32) as i32) >= ((b >> 32) as i32) { !0 } else { 0 };
+    let hi: u32 = if ((a >> 32) as i32) >= ((b >> 32) as i32) {
+        !0
+    } else {
+        0
+    };
     lo as u64 | ((hi as u64) << 32)
 }
 unsafe extern "C" fn helper_ushr32(a: u64, shift: u64) -> u64 {
@@ -3650,7 +4065,13 @@ unsafe extern "C" fn helper_rev64_16(a: u64) -> u64 {
 }
 /// TBL: byte-level table lookup. table is up to 4 x 128-bit regs (passed as 64-bit halves).
 /// For 2-reg TBL: table has 32 bytes (t0_lo, t0_hi, t1_lo, t1_hi), indices in idx.
-unsafe extern "C" fn helper_tbl2(t0_lo: u64, t0_hi: u64, t1_lo: u64, t1_hi: u64, idx: u64) -> u64 {
+unsafe extern "C" fn helper_tbl2(
+    t0_lo: u64,
+    t0_hi: u64,
+    t1_lo: u64,
+    t1_hi: u64,
+    idx: u64,
+) -> u64 {
     let table: [u8; 32] = {
         let mut t = [0u8; 32];
         let vals = [t0_lo, t0_hi, t1_lo, t1_hi];
@@ -3706,17 +4127,33 @@ unsafe extern "C" fn helper_tbl1(t_lo: u64, t_hi: u64, idx: u64) -> u64 {
 }
 
 unsafe extern "C" fn helper_cmge_scalar(a: u64) -> u64 {
-    if (a as i64) >= 0 { !0u64 } else { 0 }
+    if (a as i64) >= 0 {
+        !0u64
+    } else {
+        0
+    }
 }
 unsafe extern "C" fn helper_cmgt_scalar(a: u64) -> u64 {
-    if (a as i64) > 0 { !0u64 } else { 0 }
+    if (a as i64) > 0 {
+        !0u64
+    } else {
+        0
+    }
 }
 unsafe extern "C" fn helper_cmle_scalar(a: u64) -> u64 {
-    if (a as i64) <= 0 { !0u64 } else { 0 }
+    if (a as i64) <= 0 {
+        !0u64
+    } else {
+        0
+    }
 }
 unsafe extern "C" fn helper_fcmgt_zero_scalar(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f > 0.0 { !0u64 } else { 0 }
+    if f > 0.0 {
+        !0u64
+    } else {
+        0
+    }
 }
 /// MUL vector × scalar element (32-bit): multiply two 32-bit elements by a single 32-bit scalar
 unsafe extern "C" fn helper_mul32_elem(a: u64, scalar: u64) -> u64 {
@@ -3729,19 +4166,26 @@ unsafe extern "C" fn helper_mul32_elem(a: u64, scalar: u64) -> u64 {
 unsafe extern "C" fn helper_mla32_elem(vd: u64, vn: u64, scalar: u64) -> u64 {
     let s = scalar as u32;
     let lo = (vd as u32).wrapping_add((vn as u32).wrapping_mul(s)) as u64;
-    let hi = ((vd >> 32) as u32).wrapping_add(((vn >> 32) as u32).wrapping_mul(s)) as u64;
+    let hi = ((vd >> 32) as u32)
+        .wrapping_add(((vn >> 32) as u32).wrapping_mul(s)) as u64;
     lo | (hi << 32)
 }
 /// MLA 32-bit: Vd += Vn * Vm (element-wise)
 unsafe extern "C" fn helper_mla32(vd: u64, vn: u64, vm: u64) -> u64 {
-    let lo = (vd as u32).wrapping_add((vn as u32).wrapping_mul(vm as u32)) as u64;
-    let hi = ((vd >> 32) as u32).wrapping_add(((vn >> 32) as u32).wrapping_mul((vm >> 32) as u32)) as u64;
+    let lo =
+        (vd as u32).wrapping_add((vn as u32).wrapping_mul(vm as u32)) as u64;
+    let hi = ((vd >> 32) as u32)
+        .wrapping_add(((vn >> 32) as u32).wrapping_mul((vm >> 32) as u32))
+        as u64;
     lo | (hi << 32)
 }
 /// MLS 32-bit: Vd = Vd - Vn * Vm per 32-bit element
 unsafe extern "C" fn helper_mls32(vd: u64, vn: u64, vm: u64) -> u64 {
-    let lo = (vd as u32).wrapping_sub((vn as u32).wrapping_mul(vm as u32)) as u64;
-    let hi = ((vd >> 32) as u32).wrapping_sub(((vn >> 32) as u32).wrapping_mul((vm >> 32) as u32)) as u64;
+    let lo =
+        (vd as u32).wrapping_sub((vn as u32).wrapping_mul(vm as u32)) as u64;
+    let hi = ((vd >> 32) as u32)
+        .wrapping_sub(((vn >> 32) as u32).wrapping_mul((vm >> 32) as u32))
+        as u64;
     lo | (hi << 32)
 }
 /// SCVTF scalar d,d: signed 64-bit int → double
@@ -3945,7 +4389,11 @@ unsafe extern "C" fn helper_faddp32(n: u64, m: u64) -> u64 {
 }
 /// shl vector: shift left each 64-bit lane by shift amount
 unsafe extern "C" fn helper_shl64(a: u64, shift: u64) -> u64 {
-    if shift >= 64 { 0 } else { a << shift }
+    if shift >= 64 {
+        0
+    } else {
+        a << shift
+    }
 }
 /// ucvtf vector: convert 2x u32 to 2x f32
 #[allow(dead_code)]
@@ -4055,19 +4503,51 @@ unsafe extern "C" fn helper_fcmp32(a: u64, b: u64) -> u64 {
 }
 unsafe extern "C" fn helper_fcvtms_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a).floor();
-    if f.is_nan() { 0 } else if f >= i32::MAX as f64 { i32::MAX as u64 } else if f <= i32::MIN as f64 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i32::MAX as f64 {
+        i32::MAX as u64
+    } else if f <= i32::MIN as f64 {
+        i32::MIN as u32 as u64
+    } else {
+        f as i32 as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtms_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a).floor();
-    if f.is_nan() { 0 } else if f >= i64::MAX as f64 { i64::MAX as u64 } else if f <= i64::MIN as f64 { i64::MIN as u64 } else { f as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i64::MAX as f64 {
+        i64::MAX as u64
+    } else if f <= i64::MIN as f64 {
+        i64::MIN as u64
+    } else {
+        f as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtms_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).floor();
-    if f.is_nan() { 0 } else if f >= i32::MAX as f32 { i32::MAX as u64 } else if f <= i32::MIN as f32 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i32::MAX as f32 {
+        i32::MAX as u64
+    } else if f <= i32::MIN as f32 {
+        i32::MIN as u32 as u64
+    } else {
+        f as i32 as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtms_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).floor();
-    if f.is_nan() { 0 } else if f >= i64::MAX as f32 { i64::MAX as u64 } else if f <= i64::MIN as f32 { i64::MIN as u64 } else { f as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i64::MAX as f32 {
+        i64::MAX as u64
+    } else if f <= i64::MIN as f32 {
+        i64::MIN as u64
+    } else {
+        f as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_neg8(a: u64) -> u64 {
     let mut r = 0u64;
@@ -4098,7 +4578,7 @@ unsafe extern "C" fn helper_rev64_2s(a: u64) -> u64 {
 // REV64 .4H: reverse 4 halfwords within a 64-bit lane
 #[allow(dead_code)]
 unsafe extern "C" fn helper_rev64_4h(a: u64) -> u64 {
-    let h0 = (a      ) as u16 as u64;
+    let h0 = (a) as u16 as u64;
     let h1 = (a >> 16) as u16 as u64;
     let h2 = (a >> 32) as u16 as u64;
     let h3 = (a >> 48) as u16 as u64;
@@ -4110,12 +4590,20 @@ unsafe extern "C" fn helper_ushl32(vn: u64, vm: u64) -> u64 {
     let shift1 = ((vm >> 32) as i8) as i32;
     let n0 = vn as u32;
     let n1 = (vn >> 32) as u32;
-    let r0 = if shift0 >= 32 || shift0 <= -32 { 0u32 }
-             else if shift0 >= 0 { n0.wrapping_shl(shift0 as u32) }
-             else { n0.wrapping_shr((-shift0) as u32) };
-    let r1 = if shift1 >= 32 || shift1 <= -32 { 0u32 }
-             else if shift1 >= 0 { n1.wrapping_shl(shift1 as u32) }
-             else { n1.wrapping_shr((-shift1) as u32) };
+    let r0 = if shift0 >= 32 || shift0 <= -32 {
+        0u32
+    } else if shift0 >= 0 {
+        n0.wrapping_shl(shift0 as u32)
+    } else {
+        n0.wrapping_shr((-shift0) as u32)
+    };
+    let r1 = if shift1 >= 32 || shift1 <= -32 {
+        0u32
+    } else if shift1 >= 0 {
+        n1.wrapping_shl(shift1 as u32)
+    } else {
+        n1.wrapping_shr((-shift1) as u32)
+    };
     (r0 as u64) | ((r1 as u64) << 32)
 }
 // SSHL .2S: signed shift each 32-bit lane by signed amount in corresponding lane of Vm
@@ -4124,14 +4612,24 @@ unsafe extern "C" fn helper_sshl32(vn: u64, vm: u64) -> u64 {
     let shift1 = ((vm >> 32) as i8) as i32;
     let n0 = vn as u32 as i32;
     let n1 = (vn >> 32) as u32 as i32;
-    let r0 = if shift0 >= 32 { 0i32 }
-             else if shift0 <= -32 { n0 >> 31 }
-             else if shift0 >= 0 { n0.wrapping_shl(shift0 as u32) }
-             else { n0 >> (-shift0) };
-    let r1 = if shift1 >= 32 { 0i32 }
-             else if shift1 <= -32 { n1 >> 31 }
-             else if shift1 >= 0 { n1.wrapping_shl(shift1 as u32) }
-             else { n1 >> (-shift1) };
+    let r0 = if shift0 >= 32 {
+        0i32
+    } else if shift0 <= -32 {
+        n0 >> 31
+    } else if shift0 >= 0 {
+        n0.wrapping_shl(shift0 as u32)
+    } else {
+        n0 >> (-shift0)
+    };
+    let r1 = if shift1 >= 32 {
+        0i32
+    } else if shift1 <= -32 {
+        n1 >> 31
+    } else if shift1 >= 0 {
+        n1.wrapping_shl(shift1 as u32)
+    } else {
+        n1 >> (-shift1)
+    };
     (r0 as u32 as u64) | ((r1 as u32 as u64) << 32)
 }
 // SADDW .4S += sext(.4H): add each of 4 signed 16-bit lanes from src into 4 32-bit lanes of acc
@@ -4155,12 +4653,14 @@ unsafe extern "C" fn helper_saddw16_hi(acc: u64, src: u64) -> u64 {
 }
 unsafe extern "C" fn helper_uaddw16_lo(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32).wrapping_add((src as u16) as u32) as u64;
-    let a1 = ((acc >> 32) as u32).wrapping_add(((src >> 16) as u16) as u32) as u64;
+    let a1 =
+        ((acc >> 32) as u32).wrapping_add(((src >> 16) as u16) as u32) as u64;
     a0 | (a1 << 32)
 }
 unsafe extern "C" fn helper_uaddw16_hi(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32).wrapping_add(((src >> 32) as u16) as u32) as u64;
-    let a1 = ((acc >> 32) as u32).wrapping_add(((src >> 48) as u16) as u32) as u64;
+    let a1 =
+        ((acc >> 32) as u32).wrapping_add(((src >> 48) as u16) as u32) as u64;
     a0 | (a1 << 32)
 }
 // SADDW .2D += sext(.2S)
@@ -4176,7 +4676,9 @@ unsafe extern "C" fn helper_cmhi8(a: u64, b: u64) -> u64 {
     for i in 0..8 {
         let va = ((a >> (i * 8)) & 0xff) as u8;
         let vb = ((b >> (i * 8)) & 0xff) as u8;
-        if va > vb { r |= 0xffu64 << (i * 8); }
+        if va > vb {
+            r |= 0xffu64 << (i * 8);
+        }
     }
     r
 }
@@ -4186,7 +4688,9 @@ unsafe extern "C" fn helper_cmgt8(a: u64, b: u64) -> u64 {
     for i in 0..8 {
         let va = ((a >> (i * 8)) & 0xff) as u8 as i8;
         let vb = ((b >> (i * 8)) & 0xff) as u8 as i8;
-        if va > vb { r |= 0xffu64 << (i * 8); }
+        if va > vb {
+            r |= 0xffu64 << (i * 8);
+        }
     }
     r
 }
@@ -4234,53 +4738,149 @@ unsafe extern "C" fn helper_fnmul32(a: u64, b: u64) -> u64 {
     (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))).to_bits() as u64
 }
 unsafe extern "C" fn helper_fmax64(a: u64, b: u64) -> u64 {
-    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
+    let fa = f64::from_bits(a);
+    let fb = f64::from_bits(b);
     // IEEE 754: FMAX returns the larger, treating NaN from sNaN specially
-    if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.max(fb).to_bits() }
+    if fa.is_nan() {
+        fb.to_bits()
+    } else if fb.is_nan() {
+        fa.to_bits()
+    } else {
+        fa.max(fb).to_bits()
+    }
 }
 unsafe extern "C" fn helper_fmin64(a: u64, b: u64) -> u64 {
-    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
-    if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.min(fb).to_bits() }
+    let fa = f64::from_bits(a);
+    let fb = f64::from_bits(b);
+    if fa.is_nan() {
+        fb.to_bits()
+    } else if fb.is_nan() {
+        fa.to_bits()
+    } else {
+        fa.min(fb).to_bits()
+    }
 }
 unsafe extern "C" fn helper_fmaxnm64(a: u64, b: u64) -> u64 {
-    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
-    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.max(fb).to_bits() }
+    let fa = f64::from_bits(a);
+    let fb = f64::from_bits(b);
+    if fa.is_nan() && fb.is_nan() {
+        a
+    } else if fa.is_nan() {
+        fb.to_bits()
+    } else if fb.is_nan() {
+        fa.to_bits()
+    } else {
+        fa.max(fb).to_bits()
+    }
 }
 unsafe extern "C" fn helper_fminnm64(a: u64, b: u64) -> u64 {
-    let fa = f64::from_bits(a); let fb = f64::from_bits(b);
-    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() } else if fb.is_nan() { fa.to_bits() } else { fa.min(fb).to_bits() }
+    let fa = f64::from_bits(a);
+    let fb = f64::from_bits(b);
+    if fa.is_nan() && fb.is_nan() {
+        a
+    } else if fa.is_nan() {
+        fb.to_bits()
+    } else if fb.is_nan() {
+        fa.to_bits()
+    } else {
+        fa.min(fb).to_bits()
+    }
 }
 unsafe extern "C" fn helper_fmax32(a: u64, b: u64) -> u64 {
-    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
-    if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.max(fb).to_bits() as u64 }
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    if fa.is_nan() {
+        fb.to_bits() as u64
+    } else if fb.is_nan() {
+        fa.to_bits() as u64
+    } else {
+        fa.max(fb).to_bits() as u64
+    }
 }
 unsafe extern "C" fn helper_fmin32(a: u64, b: u64) -> u64 {
-    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
-    if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.min(fb).to_bits() as u64 }
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    if fa.is_nan() {
+        fb.to_bits() as u64
+    } else if fb.is_nan() {
+        fa.to_bits() as u64
+    } else {
+        fa.min(fb).to_bits() as u64
+    }
 }
 unsafe extern "C" fn helper_fmaxnm32(a: u64, b: u64) -> u64 {
-    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
-    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.max(fb).to_bits() as u64 }
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    if fa.is_nan() && fb.is_nan() {
+        a
+    } else if fa.is_nan() {
+        fb.to_bits() as u64
+    } else if fb.is_nan() {
+        fa.to_bits() as u64
+    } else {
+        fa.max(fb).to_bits() as u64
+    }
 }
 unsafe extern "C" fn helper_fminnm32(a: u64, b: u64) -> u64 {
-    let fa = f32::from_bits(a as u32); let fb = f32::from_bits(b as u32);
-    if fa.is_nan() && fb.is_nan() { a } else if fa.is_nan() { fb.to_bits() as u64 } else if fb.is_nan() { fa.to_bits() as u64 } else { fa.min(fb).to_bits() as u64 }
+    let fa = f32::from_bits(a as u32);
+    let fb = f32::from_bits(b as u32);
+    if fa.is_nan() && fb.is_nan() {
+        a
+    } else if fa.is_nan() {
+        fb.to_bits() as u64
+    } else if fb.is_nan() {
+        fa.to_bits() as u64
+    } else {
+        fa.min(fb).to_bits() as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtps_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a).ceil();
-    if f.is_nan() { 0 } else if f >= i32::MAX as f64 { i32::MAX as u64 } else if f <= i32::MIN as f64 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i32::MAX as f64 {
+        i32::MAX as u64
+    } else if f <= i32::MIN as f64 {
+        i32::MIN as u32 as u64
+    } else {
+        f as i32 as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtps_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a).ceil();
-    if f.is_nan() { 0 } else if f >= i64::MAX as f64 { i64::MAX as u64 } else if f <= i64::MIN as f64 { i64::MIN as u64 } else { f as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i64::MAX as f64 {
+        i64::MAX as u64
+    } else if f <= i64::MIN as f64 {
+        i64::MIN as u64
+    } else {
+        f as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtps_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).ceil();
-    if f.is_nan() { 0 } else if f >= i32::MAX as f32 { i32::MAX as u64 } else if f <= i32::MIN as f32 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i32::MAX as f32 {
+        i32::MAX as u64
+    } else if f <= i32::MIN as f32 {
+        i32::MIN as u32 as u64
+    } else {
+        f as i32 as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtps_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).ceil();
-    if f.is_nan() { 0 } else if f >= i64::MAX as f32 { i64::MAX as u64 } else if f <= i64::MIN as f32 { i64::MIN as u64 } else { f as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i64::MAX as f32 {
+        i64::MAX as u64
+    } else if f <= i64::MIN as f32 {
+        i64::MIN as u64
+    } else {
+        f as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_fabd64(a: u64, b: u64) -> u64 {
     let r = f64::from_bits(a) - f64::from_bits(b);
@@ -4306,10 +4906,14 @@ unsafe extern "C" fn helper_fmsub64(a: u64, b: u64, c: u64) -> u64 {
     (-(f64::from_bits(a) * f64::from_bits(b)) + f64::from_bits(c)).to_bits()
 }
 unsafe extern "C" fn helper_fmadd32(a: u64, b: u64, c: u64) -> u64 {
-    (f32::from_bits(a as u32) * f32::from_bits(b as u32) + f32::from_bits(c as u32)).to_bits() as u64
+    (f32::from_bits(a as u32) * f32::from_bits(b as u32)
+        + f32::from_bits(c as u32))
+    .to_bits() as u64
 }
 unsafe extern "C" fn helper_fmsub32(a: u64, b: u64, c: u64) -> u64 {
-    (-(f32::from_bits(a as u32) * f32::from_bits(b as u32)) + f32::from_bits(c as u32)).to_bits() as u64
+    (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))
+        + f32::from_bits(c as u32))
+    .to_bits() as u64
 }
 unsafe extern "C" fn helper_fnmadd64(a: u64, b: u64, c: u64) -> u64 {
     (-(f64::from_bits(a) * f64::from_bits(b)) - f64::from_bits(c)).to_bits()
@@ -4318,10 +4922,14 @@ unsafe extern "C" fn helper_fnmsub64(a: u64, b: u64, c: u64) -> u64 {
     (f64::from_bits(a) * f64::from_bits(b) - f64::from_bits(c)).to_bits()
 }
 unsafe extern "C" fn helper_fnmadd32(a: u64, b: u64, c: u64) -> u64 {
-    (-(f32::from_bits(a as u32) * f32::from_bits(b as u32)) - f32::from_bits(c as u32)).to_bits() as u64
+    (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))
+        - f32::from_bits(c as u32))
+    .to_bits() as u64
 }
 unsafe extern "C" fn helper_fnmsub32(a: u64, b: u64, c: u64) -> u64 {
-    (f32::from_bits(a as u32) * f32::from_bits(b as u32) - f32::from_bits(c as u32)).to_bits() as u64
+    (f32::from_bits(a as u32) * f32::from_bits(b as u32)
+        - f32::from_bits(c as u32))
+    .to_bits() as u64
 }
 unsafe extern "C" fn helper_fadd32(a: u64, b: u64) -> u64 {
     (f32::from_bits(a as u32) + f32::from_bits(b as u32)).to_bits() as u64
@@ -4370,51 +4978,111 @@ unsafe extern "C" fn helper_ucvtf_s_s(a: u64) -> u64 {
 // FCVTZx single-precision float to integer
 unsafe extern "C" fn helper_fcvtzu_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
-    if f.is_nan() || f <= 0.0 { 0 } else if f >= u32::MAX as f32 { u32::MAX as u64 } else { f as u32 as u64 }
+    if f.is_nan() || f <= 0.0 {
+        0
+    } else if f >= u32::MAX as f32 {
+        u32::MAX as u64
+    } else {
+        f as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzu_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
-    if f.is_nan() || f <= 0.0 { 0 } else if f >= u64::MAX as f32 { u64::MAX } else { f as u64 }
+    if f.is_nan() || f <= 0.0 {
+        0
+    } else if f >= u64::MAX as f32 {
+        u64::MAX
+    } else {
+        f as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzs_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
-    if f.is_nan() { 0 } else if f >= i32::MAX as f32 { i32::MAX as u64 } else if f <= i32::MIN as f32 { i32::MIN as u32 as u64 } else { f as i32 as u32 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i32::MAX as f32 {
+        i32::MAX as u64
+    } else if f <= i32::MIN as f32 {
+        i32::MIN as u32 as u64
+    } else {
+        f as i32 as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzs_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
-    if f.is_nan() { 0 } else if f >= i64::MAX as f32 { i64::MAX as u64 } else if f <= i64::MIN as f32 { i64::MIN as u64 } else { f as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else if f >= i64::MAX as f32 {
+        i64::MAX as u64
+    } else if f <= i64::MIN as f32 {
+        i64::MIN as u64
+    } else {
+        f as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtas_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
-    if f.is_nan() { 0 } else { f.round() as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else {
+        f.round() as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtas_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
-    if f.is_nan() { 0 } else { f.round() as i32 as u64 }
+    if f.is_nan() {
+        0
+    } else {
+        f.round() as i32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzu_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f.is_nan() || f < 0.0 { 0 } else { f as u64 }
+    if f.is_nan() || f < 0.0 {
+        0
+    } else {
+        f as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzu_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f.is_nan() || f < 0.0 { 0 } else { (f as u32) as u64 }
+    if f.is_nan() || f < 0.0 {
+        0
+    } else {
+        (f as u32) as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzs_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f.is_nan() { 0 } else { (f as i32) as u32 as u64 }
+    if f.is_nan() {
+        0
+    } else {
+        (f as i32) as u32 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtzs_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f.is_nan() { 0 } else { (f as i64) as u64 }
+    if f.is_nan() {
+        0
+    } else {
+        (f as i64) as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtas_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f.is_nan() { 0 } else { f.round() as i64 as u64 }
+    if f.is_nan() {
+        0
+    } else {
+        f.round() as i64 as u64
+    }
 }
 unsafe extern "C" fn helper_fcvtas_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
-    if f.is_nan() { 0 } else { f.round() as i32 as u64 }
+    if f.is_nan() {
+        0
+    } else {
+        f.round() as i32 as u64
+    }
 }
 unsafe extern "C" fn helper_frinta_d(a: u64) -> u64 {
     f64::from_bits(a).round().to_bits()
@@ -4434,7 +5102,11 @@ unsafe extern "C" fn helper_frintn_d(a: u64) -> u64 {
     let rounded = f.round();
     // Check ties (exactly 0.5): use banker's rounding
     if (f - rounded).abs() == 0.5 {
-        let even = if (rounded as i64) % 2 == 0 { rounded } else { rounded - rounded.signum() };
+        let even = if (rounded as i64) % 2 == 0 {
+            rounded
+        } else {
+            rounded - rounded.signum()
+        };
         even.to_bits()
     } else {
         rounded.to_bits()
@@ -4444,8 +5116,14 @@ unsafe extern "C" fn helper_frintn_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     let rounded = f.round();
     let result = if (f - rounded).abs() == 0.5 {
-        if (rounded as i32) % 2 == 0 { rounded } else { rounded - rounded.signum() }
-    } else { rounded };
+        if (rounded as i32) % 2 == 0 {
+            rounded
+        } else {
+            rounded - rounded.signum()
+        }
+    } else {
+        rounded
+    };
     result.to_bits() as u64
 }
 unsafe extern "C" fn helper_frintz_d(a: u64) -> u64 {
@@ -4475,8 +5153,12 @@ unsafe extern "C" fn helper_fcmp64(a: u64, b: u64) -> u64 {
 impl Aarch64DisasContext {
     /// Helper: apply a per-u64-half operation on vector registers.
     fn neon_binop_halves(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize, rm: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
         f: fn(&mut Context, TempIdx, TempIdx) -> TempIdx,
     ) {
         let an = self.read_vreg_lo(ir, rn);
@@ -4495,8 +5177,12 @@ impl Aarch64DisasContext {
 
     /// Helper: call a 2-arg helper on each u64 half.
     fn neon_call2_halves(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize, rm: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
         helper: unsafe extern "C" fn(u64, u64) -> u64,
     ) {
         let an = self.read_vreg_lo(ir, rn);
@@ -4516,8 +5202,11 @@ impl Aarch64DisasContext {
     }
 
     fn neon_call1_halves(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
         helper: unsafe extern "C" fn(u64) -> u64,
     ) {
         let an = self.read_vreg_lo(ir, rn);
@@ -4536,9 +5225,7 @@ impl Aarch64DisasContext {
 
     /// AdvSIMD scalar three same: 01 U 11110 size 1 Rm opcode 1 Rn Rd
     /// Scalar 64-bit integer operations on D registers.
-    fn neon_scalar_3same(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_scalar_3same(&mut self, ir: &mut Context, insn: u32) -> bool {
         let u = (insn >> 29) & 1;
         let size = (insn >> 22) & 3;
         let rm = ((insn >> 16) & 0x1f) as usize;
@@ -4555,11 +5242,41 @@ impl Aarch64DisasContext {
             // FP ops: sz = size & 1 (0=f32, 1=f64)
             let sz = size & 1;
             let helper: u64 = match (u, opcode) {
-                (0, 0b11010) => if sz == 1 { helper_fadd64 as u64 } else { helper_fadd32 as u64 }, // FADD
-                (0, 0b11101) => if sz == 1 { helper_fsub64 as u64 } else { helper_fsub32 as u64 }, // FSUB
-                (0, 0b11011) | (1, 0b11011) => if sz == 1 { helper_fmul64 as u64 } else { helper_fmul32 as u64 }, // FMUL
-                (1, 0b11111) => if sz == 1 { helper_fdiv64 as u64 } else { helper_fdiv32 as u64 }, // FDIV
-                (1, 0b11010) => if sz == 1 { helper_fabd64 as u64 } else { helper_fabd32 as u64 }, // FABD (abs diff)
+                (0, 0b11010) => {
+                    if sz == 1 {
+                        helper_fadd64 as u64
+                    } else {
+                        helper_fadd32 as u64
+                    }
+                } // FADD
+                (0, 0b11101) => {
+                    if sz == 1 {
+                        helper_fsub64 as u64
+                    } else {
+                        helper_fsub32 as u64
+                    }
+                } // FSUB
+                (0, 0b11011) | (1, 0b11011) => {
+                    if sz == 1 {
+                        helper_fmul64 as u64
+                    } else {
+                        helper_fmul32 as u64
+                    }
+                } // FMUL
+                (1, 0b11111) => {
+                    if sz == 1 {
+                        helper_fdiv64 as u64
+                    } else {
+                        helper_fdiv32 as u64
+                    }
+                } // FDIV
+                (1, 0b11010) => {
+                    if sz == 1 {
+                        helper_fabd64 as u64
+                    } else {
+                        helper_fabd32 as u64
+                    }
+                } // FABD (abs diff)
                 _ => return false,
             };
             ir.gen_call(d, helper, &[n, m]);
@@ -4574,29 +5291,36 @@ impl Aarch64DisasContext {
         }
 
         match (u, opcode) {
-            (0, 0b10000) => { // ADD d,d,d
+            (0, 0b10000) => {
+                // ADD d,d,d
                 ir.gen_add(Type::I64, d, n, m);
             }
-            (1, 0b10000) => { // SUB d,d,d
+            (1, 0b10000) => {
+                // SUB d,d,d
                 ir.gen_sub(Type::I64, d, n, m);
             }
-            (1, 0b10001) => { // CMEQ d,d,d
+            (1, 0b10001) => {
+                // CMEQ d,d,d
                 ir.gen_setcond(Type::I64, d, n, m, Cond::Eq);
                 ir.gen_neg(Type::I64, d, d);
             }
-            (0, 0b00110) => { // CMGT d,d,d (signed >)
+            (0, 0b00110) => {
+                // CMGT d,d,d (signed >)
                 ir.gen_setcond(Type::I64, d, n, m, Cond::Gt);
                 ir.gen_neg(Type::I64, d, d);
             }
-            (1, 0b00110) => { // CMHI d,d,d (unsigned >)
+            (1, 0b00110) => {
+                // CMHI d,d,d (unsigned >)
                 ir.gen_setcond(Type::I64, d, n, m, Cond::Gtu);
                 ir.gen_neg(Type::I64, d, d);
             }
-            (0, 0b00111) => { // CMGE d,d,d (signed >=)
+            (0, 0b00111) => {
+                // CMGE d,d,d (signed >=)
                 ir.gen_setcond(Type::I64, d, n, m, Cond::Ge);
                 ir.gen_neg(Type::I64, d, d);
             }
-            (1, 0b00111) => { // CMHS d,d,d (unsigned >=)
+            (1, 0b00111) => {
+                // CMHS d,d,d (unsigned >=)
                 ir.gen_setcond(Type::I64, d, n, m, Cond::Geu);
                 ir.gen_neg(Type::I64, d, d);
             }
@@ -4613,9 +5337,7 @@ impl Aarch64DisasContext {
     ///          fmax=11110, fmin=11000, fmaxnm=11100, fminnm=11001,
     ///          fcmeq=11100(U=0), fcmge=11100(U=1), fcmgt=11101(U=1),
     ///          fmla=11001(U=0), fmls=11001(U=1), frsqrts=11111(U=0)
-    fn neon_fp_3same(
-        &mut self, ir: &mut Context, insn: u32, sz: u32,
-    ) -> bool {
+    fn neon_fp_3same(&mut self, ir: &mut Context, insn: u32, sz: u32) -> bool {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
         let rm = ((insn >> 16) & 0x1f) as usize;
@@ -4638,7 +5360,12 @@ impl Aarch64DisasContext {
                 _ => None,
             };
             if let Some(h) = helper {
-                self.neon_call2_halves(ir, q, rd, rn, rm, unsafe { std::mem::transmute::<u64, unsafe extern "C" fn(u64, u64) -> u64>(h) });
+                self.neon_call2_halves(ir, q, rd, rn, rm, unsafe {
+                    std::mem::transmute::<
+                        u64,
+                        unsafe extern "C" fn(u64, u64) -> u64,
+                    >(h)
+                });
                 return true;
             }
             // FMLA: d = d + n*m
@@ -4654,7 +5381,11 @@ impl Aarch64DisasContext {
                     let n_hi = self.read_vreg_hi(ir, rn);
                     let m_hi = self.read_vreg_hi(ir, rm);
                     let r_hi = ir.new_temp(Type::I64);
-                    ir.gen_call(r_hi, helper_vfmla32 as u64, &[d_hi, n_hi, m_hi]);
+                    ir.gen_call(
+                        r_hi,
+                        helper_vfmla32 as u64,
+                        &[d_hi, n_hi, m_hi],
+                    );
                     self.write_vreg_hi(ir, rd, r_hi);
                 }
                 return true;
@@ -4672,7 +5403,11 @@ impl Aarch64DisasContext {
                     let n_hi = self.read_vreg_hi(ir, rn);
                     let m_hi = self.read_vreg_hi(ir, rm);
                     let r_hi = ir.new_temp(Type::I64);
-                    ir.gen_call(r_hi, helper_vfmls32 as u64, &[d_hi, n_hi, m_hi]);
+                    ir.gen_call(
+                        r_hi,
+                        helper_vfmls32 as u64,
+                        &[d_hi, n_hi, m_hi],
+                    );
                     self.write_vreg_hi(ir, rd, r_hi);
                 }
                 return true;
@@ -4732,9 +5467,7 @@ impl Aarch64DisasContext {
     }
 
     /// AdvSIMD three same: 0 Q U 01110 size 1 Rm opcode 1 Rn Rd
-    fn neon_3same(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_3same(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
         let size = (insn >> 22) & 0x3;
@@ -4746,36 +5479,67 @@ impl Aarch64DisasContext {
         // Bitwise ops (size encodes sub-op, not element size)
         if opcode == 0b00011 {
             return match (u, size) {
-                (0, 0b00) => { // AND
-                    self.neon_binop_halves(ir, q, rd, rn, rm,
-                        |ir, a, b| { let d = ir.new_temp(Type::I64); ir.gen_and(Type::I64, d, a, b); d });
+                (0, 0b00) => {
+                    // AND
+                    self.neon_binop_halves(ir, q, rd, rn, rm, |ir, a, b| {
+                        let d = ir.new_temp(Type::I64);
+                        ir.gen_and(Type::I64, d, a, b);
+                        d
+                    });
                     true
                 }
-                (0, 0b01) => { // BIC
-                    self.neon_binop_halves(ir, q, rd, rn, rm,
-                        |ir, a, b| { let nb = ir.new_temp(Type::I64); ir.gen_not(Type::I64, nb, b);
-                            let d = ir.new_temp(Type::I64); ir.gen_and(Type::I64, d, a, nb); d });
+                (0, 0b01) => {
+                    // BIC
+                    self.neon_binop_halves(ir, q, rd, rn, rm, |ir, a, b| {
+                        let nb = ir.new_temp(Type::I64);
+                        ir.gen_not(Type::I64, nb, b);
+                        let d = ir.new_temp(Type::I64);
+                        ir.gen_and(Type::I64, d, a, nb);
+                        d
+                    });
                     true
                 }
-                (0, 0b10) => { // ORR
-                    self.neon_binop_halves(ir, q, rd, rn, rm,
-                        |ir, a, b| { let d = ir.new_temp(Type::I64); ir.gen_or(Type::I64, d, a, b); d });
+                (0, 0b10) => {
+                    // ORR
+                    self.neon_binop_halves(ir, q, rd, rn, rm, |ir, a, b| {
+                        let d = ir.new_temp(Type::I64);
+                        ir.gen_or(Type::I64, d, a, b);
+                        d
+                    });
                     true
                 }
-                (0, 0b11) => { // ORN
-                    self.neon_binop_halves(ir, q, rd, rn, rm,
-                        |ir, a, b| { let nb = ir.new_temp(Type::I64); ir.gen_not(Type::I64, nb, b);
-                            let d = ir.new_temp(Type::I64); ir.gen_or(Type::I64, d, a, nb); d });
+                (0, 0b11) => {
+                    // ORN
+                    self.neon_binop_halves(ir, q, rd, rn, rm, |ir, a, b| {
+                        let nb = ir.new_temp(Type::I64);
+                        ir.gen_not(Type::I64, nb, b);
+                        let d = ir.new_temp(Type::I64);
+                        ir.gen_or(Type::I64, d, a, nb);
+                        d
+                    });
                     true
                 }
-                (1, 0b00) => { // EOR
-                    self.neon_binop_halves(ir, q, rd, rn, rm,
-                        |ir, a, b| { let d = ir.new_temp(Type::I64); ir.gen_xor(Type::I64, d, a, b); d });
+                (1, 0b00) => {
+                    // EOR
+                    self.neon_binop_halves(ir, q, rd, rn, rm, |ir, a, b| {
+                        let d = ir.new_temp(Type::I64);
+                        ir.gen_xor(Type::I64, d, a, b);
+                        d
+                    });
                     true
                 }
-                (1, 0b01) => { self.neon_bsl(ir, q, rd, rn, rm); true } // BSL
-                (1, 0b10) => { self.neon_bit(ir, q, rd, rn, rm); true } // BIT
-                (1, 0b11) => { self.neon_bif(ir, q, rd, rn, rm); true } // BIF
+                (1, 0b01) => {
+                    self.neon_bsl(ir, q, rd, rn, rm);
+                    true
+                } // BSL
+                (1, 0b10) => {
+                    self.neon_bit(ir, q, rd, rn, rm);
+                    true
+                } // BIT
+                (1, 0b11) => {
+                    self.neon_bif(ir, q, rd, rn, rm);
+                    true
+                } // BIF
                 _ => false,
             };
         }
@@ -4783,34 +5547,98 @@ impl Aarch64DisasContext {
         // Byte-level ops (size=00)
         if size == 0b00 {
             return match (u, opcode) {
-                (0, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_add8); true }
-                (1, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub8); true }
-                (1, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq8); true }
-                (0, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst8); true } // CMTST
-                (1, 0b00111) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs8); true }
-                (1, 0b00110) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhi8); true } // CMHI .8B/.16B
-                (0, 0b00110) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt8); true } // CMGT .8B/.16B
-                (1, 0b10100) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_umaxp8); true }
-                (1, 0b10101) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_uminp8); true }
-                (0, 0b10111) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_addp8); true }
+                (0, 0b10000) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_add8);
+                    true
+                }
+                (1, 0b10000) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub8);
+                    true
+                }
+                (1, 0b10001) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq8);
+                    true
+                }
+                (0, 0b10001) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst8);
+                    true
+                } // CMTST
+                (1, 0b00111) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs8);
+                    true
+                }
+                (1, 0b00110) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhi8);
+                    true
+                } // CMHI .8B/.16B
+                (0, 0b00110) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt8);
+                    true
+                } // CMGT .8B/.16B
+                (1, 0b10100) => {
+                    self.neon_pairwise(ir, q, rd, rn, rm, helper_umaxp8);
+                    true
+                }
+                (1, 0b10101) => {
+                    self.neon_pairwise(ir, q, rd, rn, rm, helper_uminp8);
+                    true
+                }
+                (0, 0b10111) => {
+                    self.neon_pairwise(ir, q, rd, rn, rm, helper_addp8);
+                    true
+                }
                 _ => false,
             };
         }
         // 32-bit element ops (size=10)
         if size == 0b10 {
             return match (u, opcode) {
-                (0, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_add32); true }
-                (1, 0b10000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub32); true }
-                (0, 0b10011) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_mul32); true }
-                (0, 0b01100) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_smax32); true } // SMAX
-                (0, 0b01101) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_smin32); true } // SMIN
-                (1, 0b01100) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_umax32); true } // UMAX
-                (1, 0b01101) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_umin32); true } // UMIN
-                (1, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq32); true } // CMEQ
-                (1, 0b00111) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs32); true } // CMHS
-                (0, 0b00110) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt32); true } // CMGT
-                (0, 0b00111) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmge32); true } // CMGE
-                (0, 0b10010) => { // MLA .4S/.2S
+                (0, 0b10000) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_add32);
+                    true
+                }
+                (1, 0b10000) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub32);
+                    true
+                }
+                (0, 0b10011) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_mul32);
+                    true
+                }
+                (0, 0b01100) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_smax32);
+                    true
+                } // SMAX
+                (0, 0b01101) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_smin32);
+                    true
+                } // SMIN
+                (1, 0b01100) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_umax32);
+                    true
+                } // UMAX
+                (1, 0b01101) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_umin32);
+                    true
+                } // UMIN
+                (1, 0b10001) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq32);
+                    true
+                } // CMEQ
+                (1, 0b00111) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs32);
+                    true
+                } // CMHS
+                (0, 0b00110) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt32);
+                    true
+                } // CMGT
+                (0, 0b00111) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmge32);
+                    true
+                } // CMGE
+                (0, 0b10010) => {
+                    // MLA .4S/.2S
                     let d_lo = self.read_vreg_lo(ir, rd);
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
@@ -4822,12 +5650,17 @@ impl Aarch64DisasContext {
                         let n_hi = self.read_vreg_hi(ir, rn);
                         let m_hi = self.read_vreg_hi(ir, rm);
                         let r_hi = ir.new_temp(Type::I64);
-                        ir.gen_call(r_hi, helper_mla32 as u64, &[d_hi, n_hi, m_hi]);
+                        ir.gen_call(
+                            r_hi,
+                            helper_mla32 as u64,
+                            &[d_hi, n_hi, m_hi],
+                        );
                         self.write_vreg_hi(ir, rd, r_hi);
                     }
                     true
                 }
-                (1, 0b10010) => { // MLS .4S/.2S
+                (1, 0b10010) => {
+                    // MLS .4S/.2S
                     let d_lo = self.read_vreg_lo(ir, rd);
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
@@ -4839,41 +5672,65 @@ impl Aarch64DisasContext {
                         let n_hi = self.read_vreg_hi(ir, rn);
                         let m_hi = self.read_vreg_hi(ir, rm);
                         let r_hi = ir.new_temp(Type::I64);
-                        ir.gen_call(r_hi, helper_mls32 as u64, &[d_hi, n_hi, m_hi]);
+                        ir.gen_call(
+                            r_hi,
+                            helper_mls32 as u64,
+                            &[d_hi, n_hi, m_hi],
+                        );
                         self.write_vreg_hi(ir, rd, r_hi);
                     }
                     true
                 }
-                (0, 0b10111) => { self.neon_pairwise(ir, q, rd, rn, rm, helper_addp32); true } // ADDP .4S/.2S
-                (0, 0b10001) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst32); true } // CMTST .4S/.2S
-                (1, 0b01000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_ushl32); true } // USHL .2S/.4S
-                (0, 0b01000) => { self.neon_call2_halves(ir, q, rd, rn, rm, helper_sshl32); true } // SSHL .2S/.4S
+                (0, 0b10111) => {
+                    self.neon_pairwise(ir, q, rd, rn, rm, helper_addp32);
+                    true
+                } // ADDP .4S/.2S
+                (0, 0b10001) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst32);
+                    true
+                } // CMTST .4S/.2S
+                (1, 0b01000) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_ushl32);
+                    true
+                } // USHL .2S/.4S
+                (0, 0b01000) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_sshl32);
+                    true
+                } // SSHL .2S/.4S
                 _ => false,
             };
         }
         // 64-bit element ops (size=11, .2D / .1D)
         if size == 0b11 {
             return match (u, opcode) {
-                (0, 0b10000) | (1, 0b10000) => { // ADD/SUB .2D
+                (0, 0b10000) | (1, 0b10000) => {
+                    // ADD/SUB .2D
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let d_lo = ir.new_temp(Type::I64);
-                    if u == 0 { ir.gen_add(Type::I64, d_lo, n_lo, m_lo); }
-                    else { ir.gen_sub(Type::I64, d_lo, n_lo, m_lo); }
+                    if u == 0 {
+                        ir.gen_add(Type::I64, d_lo, n_lo, m_lo);
+                    } else {
+                        ir.gen_sub(Type::I64, d_lo, n_lo, m_lo);
+                    }
                     self.write_vreg_lo(ir, rd, d_lo);
                     if q != 0 {
                         let n_hi = self.read_vreg_hi(ir, rn);
                         let m_hi = self.read_vreg_hi(ir, rm);
                         let d_hi = ir.new_temp(Type::I64);
-                        if u == 0 { ir.gen_add(Type::I64, d_hi, n_hi, m_hi); }
-                        else { ir.gen_sub(Type::I64, d_hi, n_hi, m_hi); }
+                        if u == 0 {
+                            ir.gen_add(Type::I64, d_hi, n_hi, m_hi);
+                        } else {
+                            ir.gen_sub(Type::I64, d_hi, n_hi, m_hi);
+                        }
                         self.write_vreg_hi(ir, rd, d_hi);
                     } else {
                         self.clear_vreg_hi(ir, rd);
                     }
                     true
                 }
-                (1, 0b10001) => { // CMEQ .2D
+                (1, 0b10001) => {
+                    // CMEQ .2D
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let d_lo = ir.new_temp(Type::I64);
@@ -4892,7 +5749,8 @@ impl Aarch64DisasContext {
                     }
                     true
                 }
-                (0, 0b10001) => { // CMTST .2D: if (a & b) != 0 then -1 else 0 per lane
+                (0, 0b10001) => {
+                    // CMTST .2D: if (a & b) != 0 then -1 else 0 per lane
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let t_lo = ir.new_temp(Type::I64);
@@ -4901,7 +5759,15 @@ impl Aarch64DisasContext {
                     let all_ones = ir.new_const(Type::I64, !0u64);
                     let zero2 = ir.new_const(Type::I64, 0);
                     let d_lo = ir.new_temp(Type::I64);
-                    ir.gen_movcond(Type::I64, d_lo, t_lo, zero, all_ones, zero2, Cond::Ne);
+                    ir.gen_movcond(
+                        Type::I64,
+                        d_lo,
+                        t_lo,
+                        zero,
+                        all_ones,
+                        zero2,
+                        Cond::Ne,
+                    );
                     self.write_vreg_lo(ir, rd, d_lo);
                     if q != 0 {
                         let n_hi = self.read_vreg_hi(ir, rn);
@@ -4912,7 +5778,15 @@ impl Aarch64DisasContext {
                         let all_ones2 = ir.new_const(Type::I64, !0u64);
                         let zero4 = ir.new_const(Type::I64, 0);
                         let d_hi = ir.new_temp(Type::I64);
-                        ir.gen_movcond(Type::I64, d_hi, t_hi, zero3, all_ones2, zero4, Cond::Ne);
+                        ir.gen_movcond(
+                            Type::I64,
+                            d_hi,
+                            t_hi,
+                            zero3,
+                            all_ones2,
+                            zero4,
+                            Cond::Ne,
+                        );
                         self.write_vreg_hi(ir, rd, d_hi);
                     } else {
                         self.clear_vreg_hi(ir, rd);
@@ -4928,8 +5802,12 @@ impl Aarch64DisasContext {
     // BIT/BIF/BSL helpers and pairwise, 2-reg-misc, shift-imm, across, EXT
 
     fn neon_bit(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize, rm: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
     ) {
         let vd = self.read_vreg_lo(ir, rd);
         let vn = self.read_vreg_lo(ir, rn);
@@ -4948,8 +5826,12 @@ impl Aarch64DisasContext {
     }
 
     fn neon_bif(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize, rm: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
     ) {
         let vd = self.read_vreg_lo(ir, rd);
         let vn = self.read_vreg_lo(ir, rn);
@@ -4968,8 +5850,12 @@ impl Aarch64DisasContext {
     }
 
     fn neon_bsl(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize, rm: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
     ) {
         let vd = self.read_vreg_lo(ir, rd);
         let vn = self.read_vreg_lo(ir, rn);
@@ -4988,8 +5874,12 @@ impl Aarch64DisasContext {
     }
 
     fn neon_pairwise(
-        &mut self, ir: &mut Context, q: u32,
-        rd: usize, rn: usize, rm: usize,
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
         helper: unsafe extern "C" fn(u64, u64) -> u64,
     ) {
         if q != 0 {
@@ -5014,9 +5904,7 @@ impl Aarch64DisasContext {
     }
 
     /// AdvSIMD two-reg misc: 0 Q U 01110 size 10000 opcode 10 Rn Rd
-    fn neon_2reg_misc(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_2reg_misc(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
         let size = (insn >> 22) & 0x3;
@@ -5037,7 +5925,9 @@ impl Aarch64DisasContext {
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, helper_cmeq8 as u64, &[hi, zero]);
                     self.write_vreg_hi(ir, rd, d_hi);
-                } else { self.clear_vreg_hi(ir, rd); }
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             // CNT .8B/.16B: U=0 size=00 opcode=00101
@@ -5051,7 +5941,9 @@ impl Aarch64DisasContext {
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, helper_cnt8 as u64, &[hi]);
                     self.write_vreg_hi(ir, rd, d_hi);
-                } else { self.clear_vreg_hi(ir, rd); }
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             // REV64 .2S/.4S: U=0 size=10 opcode=00000 — swap two 32-bit words in each 64-bit lane
@@ -5065,7 +5957,9 @@ impl Aarch64DisasContext {
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, helper_rev64_2s as u64, &[hi]);
                     self.write_vreg_hi(ir, rd, d_hi);
-                } else { self.clear_vreg_hi(ir, rd); }
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             // REV64 .8B/.16B: U=0 size=00 opcode=00000
@@ -5079,7 +5973,9 @@ impl Aarch64DisasContext {
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_bswap64(Type::I64, d_hi, hi, 0);
                     self.write_vreg_hi(ir, rd, d_hi);
-                } else { self.clear_vreg_hi(ir, rd); }
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             // XTN .8B: U=0 size=00 opcode=10010 (narrow)
@@ -5163,7 +6059,11 @@ impl Aarch64DisasContext {
             (1, 0b01, 0b10011) => {
                 // Q=0 (shll): widen low 4×16-bit → 4×32-bit shifted left 16
                 // Q=1 (shll2): widen high 4×16-bit → 4×32-bit shifted left 16
-                let src = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+                let src = if q == 0 {
+                    self.read_vreg_lo(ir, rn)
+                } else {
+                    self.read_vreg_hi(ir, rn)
+                };
                 let sh = ir.new_const(Type::I64, 16);
                 let d_lo = ir.new_temp(Type::I64);
                 ir.gen_call(d_lo, helper_ushll16 as u64, &[src, sh]);
@@ -5179,7 +6079,11 @@ impl Aarch64DisasContext {
             }
             // SHLL/SHLL2 .8H, .8B/.16B, #8: U=1 size=00 opcode=10011
             (1, 0b00, 0b10011) => {
-                let src = if q == 0 { self.read_vreg_lo(ir, rn) } else { self.read_vreg_hi(ir, rn) };
+                let src = if q == 0 {
+                    self.read_vreg_lo(ir, rn)
+                } else {
+                    self.read_vreg_hi(ir, rn)
+                };
                 let sh = ir.new_const(Type::I64, 8);
                 let d_lo = ir.new_temp(Type::I64);
                 ir.gen_call(d_lo, helper_ushll8 as u64, &[src, sh]);
@@ -5200,7 +6104,15 @@ impl Aarch64DisasContext {
                 let all_ones = ir.new_const(Type::I64, !0u64);
                 let zero2 = ir.new_const(Type::I64, 0);
                 let d_lo = ir.new_temp(Type::I64);
-                ir.gen_movcond(Type::I64, d_lo, lo, zero, all_ones, zero2, Cond::Eq);
+                ir.gen_movcond(
+                    Type::I64,
+                    d_lo,
+                    lo,
+                    zero,
+                    all_ones,
+                    zero2,
+                    Cond::Eq,
+                );
                 self.write_vreg_lo(ir, rd, d_lo);
                 if q != 0 {
                     let hi = self.read_vreg_hi(ir, rn);
@@ -5208,7 +6120,15 @@ impl Aarch64DisasContext {
                     let all_ones2 = ir.new_const(Type::I64, !0u64);
                     let zero4 = ir.new_const(Type::I64, 0);
                     let d_hi = ir.new_temp(Type::I64);
-                    ir.gen_movcond(Type::I64, d_hi, hi, zero3, all_ones2, zero4, Cond::Eq);
+                    ir.gen_movcond(
+                        Type::I64,
+                        d_hi,
+                        hi,
+                        zero3,
+                        all_ones2,
+                        zero4,
+                        Cond::Eq,
+                    );
                     self.write_vreg_hi(ir, rd, d_hi);
                 } else {
                     self.clear_vreg_hi(ir, rd);
@@ -5238,8 +6158,11 @@ impl Aarch64DisasContext {
             }
             // MVN/NOT .8B/.16B: U=1 size=00 opcode=00101
             (1, 0b00, 0b00101) => {
-                self.neon_binop_halves(ir, q, rd, rn, rn,
-                    |ir, a, _b| { let d = ir.new_temp(Type::I64); ir.gen_not(Type::I64, d, a); d });
+                self.neon_binop_halves(ir, q, rd, rn, rn, |ir, a, _b| {
+                    let d = ir.new_temp(Type::I64);
+                    ir.gen_not(Type::I64, d, a);
+                    d
+                });
                 true
             }
             // NEG .8B/.16B: U=1 size=00 opcode=01011
@@ -5285,7 +6208,9 @@ impl Aarch64DisasContext {
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, helper_vscvtf64 as u64, &[hi]);
                     self.write_vreg_hi(ir, rd, d_hi);
-                } else { self.clear_vreg_hi(ir, rd); }
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             // FCVTZS .2D: U=0 size=11 opcode=11011 — vector f64-to-i64 (round toward zero)
@@ -5299,15 +6224,15 @@ impl Aarch64DisasContext {
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, helper_vfcvtzs64 as u64, &[hi]);
                     self.write_vreg_hi(ir, rd, d_hi);
-                } else { self.clear_vreg_hi(ir, rd); }
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             _ => false,
         }
     }
-    fn neon_shift_imm(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_shift_imm(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
         let immh = (insn >> 19) & 0xf;
@@ -5352,7 +6277,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_shl8 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5369,7 +6296,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_shl16 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5386,7 +6315,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_shl32 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5403,7 +6334,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_shl64 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5420,7 +6353,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_ushr32 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5437,7 +6372,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_ushr16 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5455,7 +6392,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_ushr8 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5472,7 +6411,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_sshr32 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5491,7 +6432,9 @@ impl Aarch64DisasContext {
                 let r_hi = ir.new_temp(Type::I64);
                 ir.gen_call(r_hi, helper_ssra32 as u64, &[d_hi, n_hi, sh]);
                 self.write_vreg_hi(ir, rd, r_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5508,7 +6451,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_sshr16 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5525,7 +6470,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_sshr8 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5670,7 +6617,9 @@ impl Aarch64DisasContext {
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_vfcvtzs32_fixedpt as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
-            } else { self.clear_vreg_hi(ir, rd); }
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
             return true;
         }
 
@@ -5678,9 +6627,7 @@ impl Aarch64DisasContext {
     }
 
     /// AdvSIMD across lanes: 0 Q U 01110 size 11000 opcode 10 Rn Rd
-    fn neon_across_lanes(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    fn neon_across_lanes(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
         let u = (insn >> 29) & 1;
         let size = (insn >> 22) & 0x3;
@@ -5759,7 +6706,11 @@ impl Aarch64DisasContext {
         // SMAXV .8H / SMINV .8H: size=01
         if u == 0 && size == 0b01 && opcode == 0b01010 {
             let lo = self.read_vreg_lo(ir, rn);
-            let hi = if q != 0 { self.read_vreg_hi(ir, rn) } else { ir.new_const(Type::I64, i16::MAX as u64) };
+            let hi = if q != 0 {
+                self.read_vreg_hi(ir, rn)
+            } else {
+                ir.new_const(Type::I64, i16::MAX as u64)
+            };
             let t = ir.new_temp(Type::I64);
             ir.gen_call(t, helper_smaxv16_pair as u64, &[lo, hi]);
             self.write_vreg_lo(ir, rd, t);
@@ -5768,7 +6719,11 @@ impl Aarch64DisasContext {
         }
         if u == 0 && size == 0b01 && opcode == 0b11010 {
             let lo = self.read_vreg_lo(ir, rn);
-            let hi = if q != 0 { self.read_vreg_hi(ir, rn) } else { ir.new_const(Type::I64, i16::MIN as u64) };
+            let hi = if q != 0 {
+                self.read_vreg_hi(ir, rn)
+            } else {
+                ir.new_const(Type::I64, i16::MIN as u64)
+            };
             let t = ir.new_temp(Type::I64);
             ir.gen_call(t, helper_sminv16_pair as u64, &[lo, hi]);
             self.write_vreg_lo(ir, rd, t);
@@ -5795,9 +6750,7 @@ impl Aarch64DisasContext {
 
 impl Aarch64DisasContext {
     /// EXT: 0 Q 10 1110 000 Rm 0 imm4 0 Rn Rd
-    pub(crate) fn try_neon_ext(
-        &mut self, ir: &mut Context, insn: u32,
-    ) -> bool {
+    pub(crate) fn try_neon_ext(&mut self, ir: &mut Context, insn: u32) -> bool {
         if insn & 0xbfe0_8400 != 0x2e00_0000 {
             return false;
         }
@@ -5808,9 +6761,17 @@ impl Aarch64DisasContext {
         let rd = (insn & 0x1f) as usize;
 
         let n_lo = self.read_vreg_lo(ir, rn);
-        let n_hi = if q != 0 { self.read_vreg_hi(ir, rn) } else { ir.new_const(Type::I64, 0) };
+        let n_hi = if q != 0 {
+            self.read_vreg_hi(ir, rn)
+        } else {
+            ir.new_const(Type::I64, 0)
+        };
         let m_lo = self.read_vreg_lo(ir, rm);
-        let m_hi = if q != 0 { self.read_vreg_hi(ir, rm) } else { ir.new_const(Type::I64, 0) };
+        let m_hi = if q != 0 {
+            self.read_vreg_hi(ir, rm)
+        } else {
+            ir.new_const(Type::I64, 0)
+        };
 
         // EXT concatenates Vm:Vn and extracts starting at byte imm4
         let pos = ir.new_const(Type::I64, imm4);
@@ -5843,9 +6804,7 @@ impl Aarch64DisasContext {
 impl Decode<Context> for Aarch64DisasContext {
     // -- Add/Sub immediate --
 
-    fn trans_ADD_i(
-        &mut self, ir: &mut Context, a: &ArgsRriSh,
-    ) -> bool {
+    fn trans_ADD_i(&mut self, ir: &mut Context, a: &ArgsRriSh) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = if a.shift == 1 {
@@ -5862,9 +6821,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SUB_i(
-        &mut self, ir: &mut Context, a: &ArgsRriSh,
-    ) -> bool {
+    fn trans_SUB_i(&mut self, ir: &mut Context, a: &ArgsRriSh) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = if a.shift == 1 {
@@ -5881,9 +6838,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_ADDS_i(
-        &mut self, ir: &mut Context, a: &ArgsRriSh,
-    ) -> bool {
+    fn trans_ADDS_i(&mut self, ir: &mut Context, a: &ArgsRriSh) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = if a.shift == 1 {
@@ -5901,9 +6856,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SUBS_i(
-        &mut self, ir: &mut Context, a: &ArgsRriSh,
-    ) -> bool {
+    fn trans_SUBS_i(&mut self, ir: &mut Context, a: &ArgsRriSh) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = if a.shift == 1 {
@@ -5923,13 +6876,14 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Logical immediate --
 
-    fn trans_AND_i(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_AND_i(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = match decode_bitmask_imm(
-            sf, a.nbit as u32, a.immr as u32, a.imms as u32,
+            sf,
+            a.nbit as u32,
+            a.immr as u32,
+            a.imms as u32,
         ) {
             Some(v) => v,
             None => return false,
@@ -5943,13 +6897,14 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_ORR_i(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_ORR_i(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = match decode_bitmask_imm(
-            sf, a.nbit as u32, a.immr as u32, a.imms as u32,
+            sf,
+            a.nbit as u32,
+            a.immr as u32,
+            a.imms as u32,
         ) {
             Some(v) => v,
             None => return false,
@@ -5963,13 +6918,14 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_EOR_i(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_EOR_i(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = match decode_bitmask_imm(
-            sf, a.nbit as u32, a.immr as u32, a.imms as u32,
+            sf,
+            a.nbit as u32,
+            a.immr as u32,
+            a.imms as u32,
         ) {
             Some(v) => v,
             None => return false,
@@ -5983,13 +6939,14 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_ANDS_i(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_ANDS_i(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imm = match decode_bitmask_imm(
-            sf, a.nbit as u32, a.immr as u32, a.imms as u32,
+            sf,
+            a.nbit as u32,
+            a.immr as u32,
+            a.imms as u32,
         ) {
             Some(v) => v,
             None => return false,
@@ -6006,19 +6963,17 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Move wide immediate --
 
-    fn trans_MOVZ(
-        &mut self, ir: &mut Context, a: &ArgsRi16,
-    ) -> bool {
+    fn trans_MOVZ(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
         let val = (a.imm as u64) << (a.hw * 16);
         let c = ir.new_const(Type::I64, val);
         self.write_xreg(ir, a.rd, c);
         true
     }
 
-    fn trans_MOVK(
-        &mut self, ir: &mut Context, a: &ArgsRi16,
-    ) -> bool {
-        if a.rd == 31 { return true; }
+    fn trans_MOVK(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
+        if a.rd == 31 {
+            return true;
+        }
         let shift = a.hw * 16;
         let mask = !(0xffffu64 << shift);
         let bits = (a.imm as u64) << shift;
@@ -6033,9 +6988,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_MOVN(
-        &mut self, ir: &mut Context, a: &ArgsRi16,
-    ) -> bool {
+    fn trans_MOVN(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
         let sf = a.sf != 0;
         let val = !((a.imm as u64) << (a.hw * 16));
         let val = if !sf { val & 0xffff_ffff } else { val };
@@ -6046,9 +6999,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- PC-relative addressing --
 
-    fn trans_ADR(
-        &mut self, ir: &mut Context, a: &ArgsPcrel,
-    ) -> bool {
+    fn trans_ADR(&mut self, ir: &mut Context, a: &ArgsPcrel) -> bool {
         // ADR immediate: immhi = bits[23:5], immlo = bits[30:29]
         let insn = self.opcode;
         let immlo = ((insn >> 29) & 0x3) as i64;
@@ -6056,16 +7007,13 @@ impl Decode<Context> for Aarch64DisasContext {
         // Sign-extend from 19 bits
         let immhi = ((immhi_raw << 13) >> 13) as i64;
         let imm = (immhi << 2) | immlo;
-        let target =
-            (self.base.pc_next as i64 + imm) as u64;
+        let target = (self.base.pc_next as i64 + imm) as u64;
         let c = ir.new_const(Type::I64, target);
         self.write_xreg(ir, a.rd, c);
         true
     }
 
-    fn trans_ADRP(
-        &mut self, ir: &mut Context, a: &ArgsPcrel,
-    ) -> bool {
+    fn trans_ADRP(&mut self, ir: &mut Context, a: &ArgsPcrel) -> bool {
         // ADRP immediate: immhi = bits[23:5], immlo = bits[30:29]
         let insn = self.opcode;
         let immlo = ((insn >> 29) & 0x3) as i64;
@@ -6083,9 +7031,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Bitfield --
 
-    fn trans_SBFM(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_SBFM(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src = self.read_xreg(ir, a.rn);
@@ -6112,8 +7058,7 @@ impl Decode<Context> for Aarch64DisasContext {
                 let sar_amt = bits - len;
                 let d = ir.new_temp(ty);
                 if shl_amt > 0 {
-                    let sh1 =
-                        ir.new_const(ty, shl_amt as u64);
+                    let sh1 = ir.new_const(ty, shl_amt as u64);
                     ir.gen_shl(ty, d, src, sh1);
                 } else {
                     ir.gen_mov(ty, d, src);
@@ -6150,9 +7095,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_BFM(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_BFM(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src = self.read_xreg(ir, a.rn);
@@ -6163,7 +7106,9 @@ impl Decode<Context> for Aarch64DisasContext {
         if imms >= immr {
             // BFXIL: extract len bits from src at immr, insert at bit 0 of dst
             let len = imms - immr + 1;
-            if a.rd == 31 { return true; }
+            if a.rd == 31 {
+                return true;
+            }
             let dst = self.read_xreg(ir, a.rd);
             let dst = Self::trunc32(ir, dst, sf);
             // Shift src right by immr to get the extracted bits at position 0
@@ -6175,29 +7120,25 @@ impl Decode<Context> for Aarch64DisasContext {
             } else {
                 src
             };
-            let d = Self::deposit(
-                ir, ty, dst, extracted, 0, len, sf,
-            );
+            let d = Self::deposit(ir, ty, dst, extracted, 0, len, sf);
             self.write_xreg_sz(ir, a.rd, d, sf);
         } else {
             // BFI
             let len = imms + 1;
             let bits = if sf { 64u32 } else { 32u32 };
             let pos = bits - immr;
-            if a.rd == 31 { return true; }
+            if a.rd == 31 {
+                return true;
+            }
             let dst = self.read_xreg(ir, a.rd);
             let dst = Self::trunc32(ir, dst, sf);
-            let d = Self::deposit(
-                ir, ty, dst, src, pos, len, sf,
-            );
+            let d = Self::deposit(ir, ty, dst, src, pos, len, sf);
             self.write_xreg_sz(ir, a.rd, d, sf);
         }
         true
     }
 
-    fn trans_UBFM(
-        &mut self, ir: &mut Context, a: &ArgsLogicImm,
-    ) -> bool {
+    fn trans_UBFM(&mut self, ir: &mut Context, a: &ArgsLogicImm) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src = self.read_xreg(ir, a.rn);
@@ -6212,7 +7153,11 @@ impl Decode<Context> for Aarch64DisasContext {
             // Extract = (src >> immr) & mask
             let d = if immr == 0 {
                 let mask_val = if len >= bits {
-                    if sf { u64::MAX } else { 0xffff_ffff }
+                    if sf {
+                        u64::MAX
+                    } else {
+                        0xffff_ffff
+                    }
                 } else {
                     (1u64 << len) - 1
                 };
@@ -6225,7 +7170,11 @@ impl Decode<Context> for Aarch64DisasContext {
                 let shifted = ir.new_temp(ty);
                 ir.gen_shr(ty, shifted, src, sh);
                 let mask_val = if len >= bits {
-                    if sf { u64::MAX } else { 0xffff_ffff }
+                    if sf {
+                        u64::MAX
+                    } else {
+                        0xffff_ffff
+                    }
                 } else {
                     (1u64 << len) - 1
                 };
@@ -6259,28 +7208,22 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Branches --
 
-    fn trans_B(
-        &mut self, ir: &mut Context, _a: &ArgsBranch,
-    ) -> bool {
+    fn trans_B(&mut self, ir: &mut Context, _a: &ArgsBranch) -> bool {
         // imm26 = bits[25:0], sign-extended, *4
         let insn = self.opcode;
         let imm26 = (insn & 0x03ff_ffff) as i32;
         let imm = ((imm26 << 6) >> 6) as i64; // sign-extend
-        let target =
-            (self.base.pc_next as i64 + imm * 4) as u64;
+        let target = (self.base.pc_next as i64 + imm * 4) as u64;
         self.gen_direct_branch(ir, target, 0);
         self.base.is_jmp = DisasJumpType::NoReturn;
         true
     }
 
-    fn trans_BL(
-        &mut self, ir: &mut Context, _a: &ArgsBranch,
-    ) -> bool {
+    fn trans_BL(&mut self, ir: &mut Context, _a: &ArgsBranch) -> bool {
         let insn = self.opcode;
         let imm26 = (insn & 0x03ff_ffff) as i32;
         let imm = ((imm26 << 6) >> 6) as i64;
-        let target =
-            (self.base.pc_next as i64 + imm * 4) as u64;
+        let target = (self.base.pc_next as i64 + imm * 4) as u64;
         let link = self.base.pc_next + 4;
         let c = ir.new_const(Type::I64, link);
         self.write_xreg(ir, 30, c);
@@ -6289,18 +7232,14 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_BR(
-        &mut self, ir: &mut Context, a: &ArgsBr,
-    ) -> bool {
+    fn trans_BR(&mut self, ir: &mut Context, a: &ArgsBr) -> bool {
         let addr = self.read_xreg(ir, a.rn);
         self.gen_indirect_branch(ir, addr);
         self.base.is_jmp = DisasJumpType::NoReturn;
         true
     }
 
-    fn trans_BLR(
-        &mut self, ir: &mut Context, a: &ArgsBr,
-    ) -> bool {
+    fn trans_BLR(&mut self, ir: &mut Context, a: &ArgsBr) -> bool {
         let addr = self.read_xreg(ir, a.rn);
         let link = self.base.pc_next + 4;
         let c = ir.new_const(Type::I64, link);
@@ -6310,20 +7249,15 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_RET(
-        &mut self, ir: &mut Context, a: &ArgsBr,
-    ) -> bool {
+    fn trans_RET(&mut self, ir: &mut Context, a: &ArgsBr) -> bool {
         let addr = self.read_xreg(ir, a.rn);
         self.gen_indirect_branch(ir, addr);
         self.base.is_jmp = DisasJumpType::NoReturn;
         true
     }
 
-    fn trans_B_cond(
-        &mut self, ir: &mut Context, a: &ArgsBcond,
-    ) -> bool {
-        let target =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+    fn trans_B_cond(&mut self, ir: &mut Context, a: &ArgsBcond) -> bool {
+        let target = (self.base.pc_next as i64 + a.imm * 4) as u64;
         let next_pc = self.base.pc_next + 4;
 
         if a.cond == 0xe {
@@ -6336,9 +7270,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let cond_val = self.eval_cond(ir, a.cond);
         let zero = ir.new_const(Type::I64, 0);
         let taken = ir.new_label();
-        ir.gen_brcond(
-            Type::I64, cond_val, zero, Cond::Ne, taken,
-        );
+        ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
 
         let c = ir.new_const(Type::I64, next_pc);
         ir.gen_mov(Type::I64, self.pc, c);
@@ -6355,13 +7287,10 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_CBZ(
-        &mut self, ir: &mut Context, a: &ArgsCb,
-    ) -> bool {
+    fn trans_CBZ(&mut self, ir: &mut Context, a: &ArgsCb) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
-        let target =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+        let target = (self.base.pc_next as i64 + a.imm * 4) as u64;
         let next_pc = self.base.pc_next + 4;
 
         let val = self.read_xreg(ir, a.rn);
@@ -6385,13 +7314,10 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_CBNZ(
-        &mut self, ir: &mut Context, a: &ArgsCb,
-    ) -> bool {
+    fn trans_CBNZ(&mut self, ir: &mut Context, a: &ArgsCb) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
-        let target =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+        let target = (self.base.pc_next as i64 + a.imm * 4) as u64;
         let next_pc = self.base.pc_next + 4;
 
         let val = self.read_xreg(ir, a.rn);
@@ -6415,9 +7341,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_TBZ(
-        &mut self, ir: &mut Context, a: &ArgsTb,
-    ) -> bool {
+    fn trans_TBZ(&mut self, ir: &mut Context, a: &ArgsTb) -> bool {
         // TBZ: bit number is encoded in sf:imm5 from insn
         // The decoder gives us sf and rn; we extract bit
         // from the raw opcode.
@@ -6427,8 +7351,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let bit = (b5 << 5) | b40;
         let imm14 = ((insn >> 5) & 0x3fff) as i32;
         let offset = ((imm14 << 18) >> 18) as i64 * 4;
-        let target =
-            (self.base.pc_next as i64 + offset) as u64;
+        let target = (self.base.pc_next as i64 + offset) as u64;
         let next_pc = self.base.pc_next + 4;
 
         let val = self.read_xreg(ir, a.rn);
@@ -6454,17 +7377,14 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_TBNZ(
-        &mut self, ir: &mut Context, a: &ArgsTb,
-    ) -> bool {
+    fn trans_TBNZ(&mut self, ir: &mut Context, a: &ArgsTb) -> bool {
         let insn = self.opcode;
         let b5 = (insn >> 31) & 1;
         let b40 = (insn >> 19) & 0x1f;
         let bit = (b5 << 5) | b40;
         let imm14 = ((insn >> 5) & 0x3fff) as i32;
         let offset = ((imm14 << 18) >> 18) as i64 * 4;
-        let target =
-            (self.base.pc_next as i64 + offset) as u64;
+        let target = (self.base.pc_next as i64 + offset) as u64;
         let next_pc = self.base.pc_next + 4;
 
         let val = self.read_xreg(ir, a.rn);
@@ -6492,9 +7412,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Add/Sub shifted register --
 
-    fn trans_ADD_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_ADD_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6502,18 +7420,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_add(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_SUB_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_SUB_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6521,18 +7435,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_sub(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_ADDS_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_ADDS_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6540,9 +7450,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_add(ty, d, src1, b);
         self.gen_nzcv_add_sub(ir, src1, b, d, sf, false);
@@ -6550,9 +7458,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SUBS_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_SUBS_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6560,9 +7466,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_sub(ty, d, src1, b);
         self.gen_nzcv_add_sub(ir, src1, b, d, sf, true);
@@ -6572,76 +7476,54 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Add/Sub extended register --
 
-    fn trans_ADD_ext(
-        &mut self, ir: &mut Context, a: &ArgsExtReg,
-    ) -> bool {
+    fn trans_ADD_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
         let _sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(
-            ir, src2, a.option, a.imm,
-        );
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, d, src1, ext);
         self.write_xreg_sp(ir, a.rd, d);
         true
     }
 
-    fn trans_SUB_ext(
-        &mut self, ir: &mut Context, a: &ArgsExtReg,
-    ) -> bool {
+    fn trans_SUB_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
         let src1 = self.read_xreg_sp(ir, a.rn);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(
-            ir, src2, a.option, a.imm,
-        );
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_sub(Type::I64, d, src1, ext);
         self.write_xreg_sp(ir, a.rd, d);
         true
     }
 
-    fn trans_ADDS_ext(
-        &mut self, ir: &mut Context, a: &ArgsExtReg,
-    ) -> bool {
+    fn trans_ADDS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
         let _sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(
-            ir, src2, a.option, a.imm,
-        );
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, d, src1, ext);
-        self.gen_nzcv_add_sub(
-            ir, src1, ext, d, true, false,
-        );
+        self.gen_nzcv_add_sub(ir, src1, ext, d, true, false);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_SUBS_ext(
-        &mut self, ir: &mut Context, a: &ArgsExtReg,
-    ) -> bool {
+    fn trans_SUBS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
         let _sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext = Self::extend_reg(
-            ir, src2, a.option, a.imm,
-        );
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_sub(Type::I64, d, src1, ext);
-        self.gen_nzcv_add_sub(
-            ir, src1, ext, d, true, true,
-        );
+        self.gen_nzcv_add_sub(ir, src1, ext, d, true, true);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
     // -- Logical shifted register --
 
-    fn trans_AND_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_AND_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6649,18 +7531,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_and(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_BIC_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_BIC_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6668,18 +7546,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_andc(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_ORR_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_ORR_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6687,18 +7561,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_or(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_ORN_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_ORN_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6706,9 +7576,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let nb = ir.new_temp(ty);
         ir.gen_not(ty, nb, b);
         let d = ir.new_temp(ty);
@@ -6717,9 +7585,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_EOR_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_EOR_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6727,18 +7593,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_xor(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_EON_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_EON_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6746,18 +7608,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_eqv(ty, d, src1, b);
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
-    fn trans_ANDS_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_ANDS_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6765,9 +7623,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_and(ty, d, src1, b);
         self.gen_nzcv_logic(ir, d, sf);
@@ -6775,9 +7631,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_BICS_r(
-        &mut self, ir: &mut Context, a: &ArgsShiftReg,
-    ) -> bool {
+    fn trans_BICS_r(&mut self, ir: &mut Context, a: &ArgsShiftReg) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let src1 = self.read_xreg(ir, a.rn);
@@ -6785,9 +7639,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
-        let b = Self::apply_shift(
-            ir, ty, src2, a.shift, imm6 as i64,
-        );
+        let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_andc(ty, d, src1, b);
         self.gen_nzcv_logic(ir, d, sf);
@@ -6797,9 +7649,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Multiply --
 
-    fn trans_MADD(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_MADD(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
@@ -6816,9 +7666,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_MSUB(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_MSUB(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
@@ -6835,9 +7683,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SMADDL(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_SMADDL(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         // Xd = sext(Wn) * sext(Wm) + Xa
         let n = self.read_xreg(ir, a.rn);
         let n32 = ir.new_temp(Type::I32);
@@ -6858,9 +7704,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SMSUBL(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_SMSUBL(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         // Xd = Xa - sext(Wn) * sext(Wm)
         let n = self.read_xreg(ir, a.rn);
         let n32 = ir.new_temp(Type::I32);
@@ -6881,9 +7725,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_UMADDL(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_UMADDL(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         // Xd = zext(Wn) * zext(Wm) + Xa
         let n = self.read_xreg(ir, a.rn);
         let nz = ir.new_temp(Type::I64);
@@ -6901,9 +7743,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_UMSUBL(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_UMSUBL(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         // Xd = Xa - zext(Wn) * zext(Wm)
         let n = self.read_xreg(ir, a.rn);
         let nz = ir.new_temp(Type::I64);
@@ -6921,9 +7761,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_UMULH(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_UMULH(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         // Xd = (Xn * Xm) >> 64 (unsigned)
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
@@ -6934,9 +7772,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SMULH(
-        &mut self, ir: &mut Context, a: &ArgsRrrrS,
-    ) -> bool {
+    fn trans_SMULH(&mut self, ir: &mut Context, a: &ArgsRrrrS) -> bool {
         // Xd = (Xn * Xm) >> 64 (signed)
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
@@ -6949,18 +7785,12 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Divide --
 
-    fn trans_ADC(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_ADC(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
-        let c29 = ir.new_const(Type::I64, 29);
-        let one = ir.new_const(Type::I64, 1);
-        let c = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, c, self.nzcv, c29);
-        ir.gen_and(Type::I64, c, c, one);
+        let c = self.eval_c_flag(ir);
         let d = ir.new_temp(Type::I64);
         ir.gen_add(ty, d, n, m);
         ir.gen_add(ty, d, d, c);
@@ -6968,19 +7798,13 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SBC(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_SBC(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
-        // Extract C flag (bit 29 of nzcv)
-        let c29 = ir.new_const(Type::I64, 29);
         let one = ir.new_const(Type::I64, 1);
-        let c = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, c, self.nzcv, c29);
-        ir.gen_and(Type::I64, c, c, one);
+        let c = self.eval_c_flag(ir);
         // SBC: Rd = Rn - Rm - (1 - C) = Rn - Rm - 1 + C
         let d = ir.new_temp(Type::I64);
         ir.gen_sub(ty, d, n, m);
@@ -6990,9 +7814,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_UDIV(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_UDIV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
@@ -7006,9 +7828,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_SDIV(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_SDIV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
@@ -7024,9 +7844,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Variable shifts --
 
-    fn trans_LSLV(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_LSLV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
@@ -7039,9 +7857,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_LSRV(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_LSRV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
@@ -7054,9 +7870,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_ASRV(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_ASRV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
@@ -7069,9 +7883,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_RORV(
-        &mut self, ir: &mut Context, a: &ArgsRrrS,
-    ) -> bool {
+    fn trans_RORV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
@@ -7086,9 +7898,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Bit manipulation --
 
-    fn trans_CLZ(
-        &mut self, ir: &mut Context, a: &ArgsRrS,
-    ) -> bool {
+    fn trans_CLZ(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let bits = if sf { 64u64 } else { 32u64 };
@@ -7101,9 +7911,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_RBIT(
-        &mut self, ir: &mut Context, a: &ArgsRrS,
-    ) -> bool {
+    fn trans_RBIT(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
         let sf = a.sf != 0;
         let src = self.read_xreg(ir, a.rn);
         let d = ir.new_temp(Type::I64);
@@ -7116,9 +7924,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_REV(
-        &mut self, ir: &mut Context, a: &ArgsRrS,
-    ) -> bool {
+    fn trans_REV(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
         let sf = a.sf != 0;
         let src = self.read_xreg(ir, a.rn);
         if sf {
@@ -7137,32 +7943,24 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_REV16(
-        &mut self, _ir: &mut Context, _a: &ArgsRrS,
-    ) -> bool {
+    fn trans_REV16(&mut self, _ir: &mut Context, _a: &ArgsRrS) -> bool {
         false
     }
 
-    fn trans_REV32(
-        &mut self, _ir: &mut Context, _a: &ArgsRrS,
-    ) -> bool {
+    fn trans_REV32(&mut self, _ir: &mut Context, _a: &ArgsRrS) -> bool {
         false
     }
 
     // -- Conditional select --
 
-    fn trans_CSEL(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CSEL(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
         let zero = ir.new_const(Type::I64, 0);
         let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(
-            Type::I64, d, cond_val, zero, n, m, Cond::Ne,
-        );
+        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m, Cond::Ne);
         if sf {
             self.write_xreg(ir, a.rd, d);
         } else {
@@ -7171,9 +7969,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_CSINC(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CSINC(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
@@ -7183,10 +7979,7 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(Type::I64, m_inc, m, one);
         let zero = ir.new_const(Type::I64, 0);
         let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(
-            Type::I64, d, cond_val, zero,
-            n, m_inc, Cond::Ne,
-        );
+        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m_inc, Cond::Ne);
         if sf {
             self.write_xreg(ir, a.rd, d);
         } else {
@@ -7195,9 +7988,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_CSINV(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CSINV(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
@@ -7206,10 +7997,7 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_not(Type::I64, m_inv, m);
         let zero = ir.new_const(Type::I64, 0);
         let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(
-            Type::I64, d, cond_val, zero,
-            n, m_inv, Cond::Ne,
-        );
+        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m_inv, Cond::Ne);
         if sf {
             self.write_xreg(ir, a.rd, d);
         } else {
@@ -7218,9 +8006,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_CSNEG(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CSNEG(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
@@ -7229,10 +8015,7 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_neg(Type::I64, m_neg, m);
         let zero = ir.new_const(Type::I64, 0);
         let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(
-            Type::I64, d, cond_val, zero,
-            n, m_neg, Cond::Ne,
-        );
+        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m_neg, Cond::Ne);
         if sf {
             self.write_xreg(ir, a.rd, d);
         } else {
@@ -7243,222 +8026,156 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Loads: unsigned immediate offset --
 
-    fn trans_LDR_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDR_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRB_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDRB_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::ub().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::ub().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRH_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDRH_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let offset = a.imm << 1;
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::uw().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::uw().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSB_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDRSB_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sb().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSH_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDRSH_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let offset = a.imm << 1;
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sw().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSW_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDRSW_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let offset = a.imm << 2;
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sl().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sl().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
     // -- Stores: unsigned immediate offset --
 
-    fn trans_STR_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STR_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         true
     }
 
-    fn trans_STRB_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STRB_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, MemOp::ub().bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, MemOp::ub().bits() as u32);
         true
     }
 
-    fn trans_STRH_i(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STRH_i(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let offset = a.imm << 1;
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, MemOp::uw().bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, MemOp::uw().bits() as u32);
         true
     }
 
     // -- Loads: register offset --
 
-    fn trans_LDR_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
+    fn trans_LDR_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let s = (self.opcode >> 12) & 1;
         let shift = if s != 0 {
-            if sf { 3 } else { 2 }
-        } else { 0 };
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, shift,
-        );
+            if sf {
+                3
+            } else {
+                2
+            }
+        } else {
+            0
+        };
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRB_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, 0,
-        );
+    fn trans_LDRB_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, 0);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::ub().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::ub().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRH_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
+    fn trans_LDRH_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let s = (self.opcode >> 12) & 1;
         let shift = if s != 0 { 1 } else { 0 };
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, shift,
-        );
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::uw().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::uw().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSH_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
+    fn trans_LDRSH_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let s = (self.opcode >> 12) & 1;
         let shift = if s != 0 { 1 } else { 0 };
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, shift,
-        );
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sw().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSW_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
+    fn trans_LDRSW_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let s = (self.opcode >> 12) & 1;
         let shift = if s != 0 { 2 } else { 0 };
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, shift,
-        );
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sl().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sl().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSB_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, 0,
-        );
+    fn trans_LDRSB_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, 0);
         let d = ir.new_temp(Type::I64);
         // sf field (bit22 inverted): sf=0 in decode means 64-bit target (sign-extend to X),
         // sf=1 means 32-bit target (sign-extend to W, zero-extend to X)
         // But we use MemOp::sb() which sign-extends to 64-bit, then mask if needed
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sb().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
         if a.sf != 0 {
             // 32-bit target: mask to 32 bits
             let mask = ir.new_const(Type::I64, 0xffff_ffff);
@@ -7470,147 +8187,107 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Stores: register offset --
 
-    fn trans_STR_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
+    fn trans_STR_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let s = (self.opcode >> 12) & 1;
         let shift = if s != 0 {
-            if sf { 3 } else { 2 }
-        } else { 0 };
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, shift,
-        );
+            if sf {
+                3
+            } else {
+                2
+            }
+        } else {
+            0
+        };
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         true
     }
 
-    fn trans_STRB_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, 0,
-        );
+    fn trans_STRB_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, 0);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, MemOp::ub().bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, MemOp::ub().bits() as u32);
         true
     }
 
-    fn trans_STRH_r(
-        &mut self, ir: &mut Context, a: &ArgsLdstReg,
-    ) -> bool {
+    fn trans_STRH_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let s = (self.opcode >> 12) & 1;
         let shift = if s != 0 { 1 } else { 0 };
-        let addr = self.compute_addr_reg(
-            ir, a.rn, a.rm, a.option, shift,
-        );
+        let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, MemOp::uw().bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, MemOp::uw().bits() as u32);
         true
     }
 
     // -- PC-relative literal loads --
 
-    fn trans_LDR_lit(
-        &mut self, ir: &mut Context, a: &ArgsLdstLit,
-    ) -> bool {
+    fn trans_LDR_lit(&mut self, ir: &mut Context, a: &ArgsLdstLit) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::sl() };
-        let addr_val =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+        let addr_val = (self.base.pc_next as i64 + a.imm * 4) as u64;
         let addr = ir.new_const(Type::I64, addr_val);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDRSW_lit(
-        &mut self, ir: &mut Context, a: &ArgsLdstLit,
-    ) -> bool {
-        let addr_val =
-            (self.base.pc_next as i64 + a.imm * 4) as u64;
+    fn trans_LDRSW_lit(&mut self, ir: &mut Context, a: &ArgsLdstLit) -> bool {
+        let addr_val = (self.base.pc_next as i64 + a.imm * 4) as u64;
         let addr = ir.new_const(Type::I64, addr_val);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sl().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sl().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
     // -- Pre/post-index loads/stores --
 
-    fn trans_LDR_pre(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDR_pre(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         // Writeback
         self.write_xreg_sp(ir, a.rn, addr);
         true
     }
 
-    fn trans_STR_pre(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STR_pre(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         self.write_xreg_sp(ir, a.rn, addr);
         true
     }
 
-    fn trans_LDR_post(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDR_post(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, base, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, base, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         // Writeback: base + offset
-        let new_base =
-            self.compute_addr_imm(ir, a.rn, a.imm);
+        let new_base = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, new_base);
         true
     }
 
-    fn trans_STR_post(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STR_post(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let base = self.read_xreg_sp(ir, a.rn);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, base, memop.bits() as u32,
-        );
-        let new_base =
-            self.compute_addr_imm(ir, a.rn, a.imm);
+        ir.gen_qemu_st(Type::I64, val, base, memop.bits() as u32);
+        let new_base = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, new_base);
         true
     }
@@ -7733,9 +8410,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Load/Store pair --
 
-    fn trans_LDP(
-        &mut self, ir: &mut Context, a: &ArgsLdstPair,
-    ) -> bool {
+    fn trans_LDP(&mut self, ir: &mut Context, a: &ArgsLdstPair) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
@@ -7743,24 +8418,18 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d1 = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d1, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d1, addr, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, addr, off2);
         let d2 = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d2, addr2, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d2, addr2, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d1);
         self.write_xreg(ir, a.ra, d2);
         true
     }
 
-    fn trans_STP(
-        &mut self, ir: &mut Context, a: &ArgsLdstPair,
-    ) -> bool {
+    fn trans_STP(&mut self, ir: &mut Context, a: &ArgsLdstPair) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
@@ -7768,22 +8437,16 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let v1 = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, v1, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, v1, addr, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, addr, off2);
         let v2 = self.read_xreg(ir, a.ra);
-        ir.gen_qemu_st(
-            Type::I64, v2, addr2, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, v2, addr2, memop.bits() as u32);
         true
     }
 
-    fn trans_LDP_pre(
-        &mut self, ir: &mut Context, a: &ArgsLdstPair,
-    ) -> bool {
+    fn trans_LDP_pre(&mut self, ir: &mut Context, a: &ArgsLdstPair) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
@@ -7791,25 +8454,19 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d1 = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d1, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d1, addr, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, addr, off2);
         let d2 = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d2, addr2, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d2, addr2, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d1);
         self.write_xreg(ir, a.ra, d2);
         self.write_xreg_sp(ir, a.rn, addr);
         true
     }
 
-    fn trans_STP_pre(
-        &mut self, ir: &mut Context, a: &ArgsLdstPair,
-    ) -> bool {
+    fn trans_STP_pre(&mut self, ir: &mut Context, a: &ArgsLdstPair) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
@@ -7817,23 +8474,17 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let v1 = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, v1, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, v1, addr, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, addr, off2);
         let v2 = self.read_xreg(ir, a.ra);
-        ir.gen_qemu_st(
-            Type::I64, v2, addr2, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, v2, addr2, memop.bits() as u32);
         self.write_xreg_sp(ir, a.rn, addr);
         true
     }
 
-    fn trans_LDP_post(
-        &mut self, ir: &mut Context, a: &ArgsLdstPair,
-    ) -> bool {
+    fn trans_LDP_post(&mut self, ir: &mut Context, a: &ArgsLdstPair) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
@@ -7841,27 +8492,20 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let base = self.read_xreg_sp(ir, a.rn);
         let d1 = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d1, base, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d1, base, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, base, off2);
         let d2 = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d2, addr2, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d2, addr2, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d1);
         self.write_xreg(ir, a.ra, d2);
-        let new_base =
-            self.compute_addr_imm(ir, a.rn, offset);
+        let new_base = self.compute_addr_imm(ir, a.rn, offset);
         self.write_xreg_sp(ir, a.rn, new_base);
         true
     }
 
-    fn trans_STP_post(
-        &mut self, ir: &mut Context, a: &ArgsLdstPair,
-    ) -> bool {
+    fn trans_STP_post(&mut self, ir: &mut Context, a: &ArgsLdstPair) -> bool {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
@@ -7869,33 +8513,24 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let base = self.read_xreg_sp(ir, a.rn);
         let v1 = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, v1, base, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, v1, base, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, base, off2);
         let v2 = self.read_xreg(ir, a.ra);
-        ir.gen_qemu_st(
-            Type::I64, v2, addr2, memop.bits() as u32,
-        );
-        let new_base =
-            self.compute_addr_imm(ir, a.rn, offset);
+        ir.gen_qemu_st(Type::I64, v2, addr2, memop.bits() as u32);
+        let new_base = self.compute_addr_imm(ir, a.rn, offset);
         self.write_xreg_sp(ir, a.rn, new_base);
         true
     }
 
     // -- System --
 
-    fn trans_NOP(
-        &mut self, _ir: &mut Context, _a: &ArgsEmpty,
-    ) -> bool {
+    fn trans_NOP(&mut self, _ir: &mut Context, _a: &ArgsEmpty) -> bool {
         true
     }
 
-    fn trans_SVC(
-        &mut self, ir: &mut Context, _a: &ArgsSys,
-    ) -> bool {
+    fn trans_SVC(&mut self, ir: &mut Context, _a: &ArgsSys) -> bool {
         let pc = ir.new_const(Type::I64, self.base.pc_next);
         ir.gen_mov(Type::I64, self.pc, pc);
         ir.gen_exit_tb(EXCP_ECALL);
@@ -7903,9 +8538,7 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_MRS(
-        &mut self, ir: &mut Context, a: &ArgsSys,
-    ) -> bool {
+    fn trans_MRS(&mut self, ir: &mut Context, a: &ArgsSys) -> bool {
         // Decode system register from raw opcode.
         let insn = self.opcode;
         let op0 = ((insn >> 19) & 0x1) + 2;
@@ -7915,60 +8548,42 @@ impl Decode<Context> for Aarch64DisasContext {
         let op2 = (insn >> 5) & 0x7;
 
         // TPIDR_EL0
-        if op0 == 3 && op1 == 3 && crn == 13
-            && crm == 0 && op2 == 2
-        {
+        if op0 == 3 && op1 == 3 && crn == 13 && crm == 0 && op2 == 2 {
             let v = ir.new_temp(Type::I64);
-            ir.gen_ld(
-                Type::I64, v, self.env, TPIDR_EL0_OFFSET,
-            );
+            ir.gen_ld(Type::I64, v, self.env, TPIDR_EL0_OFFSET);
             self.write_xreg(ir, a.rd, v);
             return true;
         }
         // NZCV
-        if op0 == 3 && op1 == 3 && crn == 4
-            && crm == 2 && op2 == 0
-        {
+        if op0 == 3 && op1 == 3 && crn == 4 && crm == 2 && op2 == 0 {
             let v = self.nzcv;
             self.write_xreg(ir, a.rd, v);
             return true;
         }
         // FPCR
-        if op0 == 3 && op1 == 3 && crn == 4
-            && crm == 4 && op2 == 0
-        {
+        if op0 == 3 && op1 == 3 && crn == 4 && crm == 4 && op2 == 0 {
             let v = ir.new_temp(Type::I64);
-            ir.gen_ld(
-                Type::I64, v, self.env, FPCR_OFFSET,
-            );
+            ir.gen_ld(Type::I64, v, self.env, FPCR_OFFSET);
             self.write_xreg(ir, a.rd, v);
             return true;
         }
         // FPSR
-        if op0 == 3 && op1 == 3 && crn == 4
-            && crm == 4 && op2 == 1
-        {
+        if op0 == 3 && op1 == 3 && crn == 4 && crm == 4 && op2 == 1 {
             let v = ir.new_temp(Type::I64);
-            ir.gen_ld(
-                Type::I64, v, self.env, FPSR_OFFSET,
-            );
+            ir.gen_ld(Type::I64, v, self.env, FPSR_OFFSET);
             self.write_xreg(ir, a.rd, v);
             return true;
         }
         // DCZID_EL0: op0=3, op1=3, CRn=0, CRm=0, op2=7
         // Return DZP=1 (bit4) to disable DC ZVA usage.
-        if op0 == 3 && op1 == 3 && crn == 0
-            && crm == 0 && op2 == 7
-        {
+        if op0 == 3 && op1 == 3 && crn == 0 && crm == 0 && op2 == 7 {
             let v = ir.new_const(Type::I64, 0x10);
             self.write_xreg(ir, a.rd, v);
             return true;
         }
         // CTR_EL0: op0=3, op1=3, CRn=0, CRm=0, op2=1
         // Return a reasonable cache geometry.
-        if op0 == 3 && op1 == 3 && crn == 0
-            && crm == 0 && op2 == 1
-        {
+        if op0 == 3 && op1 == 3 && crn == 0 && crm == 0 && op2 == 1 {
             // IminLine=4 (16 words = 64 bytes), DminLine=4,
             // L1Ip=3 (PIPT), bits: 0x80038003
             let v = ir.new_const(Type::I64, 0x80038003);
@@ -7978,9 +8593,7 @@ impl Decode<Context> for Aarch64DisasContext {
         false
     }
 
-    fn trans_MSR(
-        &mut self, ir: &mut Context, a: &ArgsSys,
-    ) -> bool {
+    fn trans_MSR(&mut self, ir: &mut Context, a: &ArgsSys) -> bool {
         let insn = self.opcode;
         let op0 = ((insn >> 19) & 0x1) + 2;
         let op1 = (insn >> 16) & 0x7;
@@ -7990,38 +8603,23 @@ impl Decode<Context> for Aarch64DisasContext {
         let val = self.read_xreg(ir, a.rd);
 
         // TPIDR_EL0
-        if op0 == 3 && op1 == 3 && crn == 13
-            && crm == 0 && op2 == 2
-        {
-            ir.gen_st(
-                Type::I64, val, self.env,
-                TPIDR_EL0_OFFSET,
-            );
+        if op0 == 3 && op1 == 3 && crn == 13 && crm == 0 && op2 == 2 {
+            ir.gen_st(Type::I64, val, self.env, TPIDR_EL0_OFFSET);
             return true;
         }
         // NZCV
-        if op0 == 3 && op1 == 3 && crn == 4
-            && crm == 2 && op2 == 0
-        {
-            ir.gen_mov(Type::I64, self.nzcv, val);
+        if op0 == 3 && op1 == 3 && crn == 4 && crm == 2 && op2 == 0 {
+            self.set_nzcv_packed(ir, val);
             return true;
         }
         // FPCR
-        if op0 == 3 && op1 == 3 && crn == 4
-            && crm == 4 && op2 == 0
-        {
-            ir.gen_st(
-                Type::I64, val, self.env, FPCR_OFFSET,
-            );
+        if op0 == 3 && op1 == 3 && crn == 4 && crm == 4 && op2 == 0 {
+            ir.gen_st(Type::I64, val, self.env, FPCR_OFFSET);
             return true;
         }
         // FPSR
-        if op0 == 3 && op1 == 3 && crn == 4
-            && crm == 4 && op2 == 1
-        {
-            ir.gen_st(
-                Type::I64, val, self.env, FPSR_OFFSET,
-            );
+        if op0 == 3 && op1 == 3 && crn == 4 && crm == 4 && op2 == 1 {
+            ir.gen_st(Type::I64, val, self.env, FPSR_OFFSET);
             return true;
         }
         false
@@ -8029,119 +8627,81 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Unscaled loads/stores (LDUR/STUR) --
 
-    fn trans_LDUR(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDUR(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_STUR(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STUR(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         true
     }
 
-    fn trans_LDURB(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDURB(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::ub().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::ub().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_STURB(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STURB(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, MemOp::ub().bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, MemOp::ub().bits() as u32);
         true
     }
-    fn trans_LDURH(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDURH(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::uw().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::uw().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_STURH(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STURH(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, MemOp::uw().bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, MemOp::uw().bits() as u32);
         true
     }
 
-    fn trans_LDURSW(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDURSW(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sl().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sl().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDURSH(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDURSH(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sw().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDURSB(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDURSB(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, MemOp::sb().bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
     // -- Conditional compare (CCMP/CCMN) --
 
-    fn trans_CCMP(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CCMP(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let nzcv_imm = (self.opcode & 0xf) as u64;
@@ -8149,12 +8709,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let zero = ir.new_const(Type::I64, 0);
         let taken = ir.new_label();
         let done = ir.new_label();
-        ir.gen_brcond(
-            Type::I64, cond_val, zero, Cond::Ne, taken,
-        );
+        ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         // Condition false: set NZCV to immediate
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        self.set_nzcv_packed(ir, imm_c);
         ir.gen_br(done);
         // Condition true: do CMP (SUBS discarding result)
         ir.gen_set_label(taken);
@@ -8166,12 +8724,12 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_sub(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, true);
         ir.gen_set_label(done);
+        // Resulting NZCV is path-dependent; keep only architectural source.
+        self.nzcv_src = NzcvSource::Unknown;
         true
     }
 
-    fn trans_CCMN(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CCMN(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let nzcv_imm = (self.opcode & 0xf) as u64;
@@ -8179,11 +8737,9 @@ impl Decode<Context> for Aarch64DisasContext {
         let zero = ir.new_const(Type::I64, 0);
         let taken = ir.new_label();
         let done = ir.new_label();
-        ir.gen_brcond(
-            Type::I64, cond_val, zero, Cond::Ne, taken,
-        );
+        ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        self.set_nzcv_packed(ir, imm_c);
         ir.gen_br(done);
         ir.gen_set_label(taken);
         let src = self.read_xreg(ir, a.rn);
@@ -8194,12 +8750,12 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, false);
         ir.gen_set_label(done);
+        // Resulting NZCV is path-dependent; keep only architectural source.
+        self.nzcv_src = NzcvSource::Unknown;
         true
     }
 
-    fn trans_CCMP_i(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CCMP_i(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let nzcv_imm = (self.opcode & 0xf) as u64;
@@ -8208,11 +8764,9 @@ impl Decode<Context> for Aarch64DisasContext {
         let zero = ir.new_const(Type::I64, 0);
         let taken = ir.new_label();
         let done = ir.new_label();
-        ir.gen_brcond(
-            Type::I64, cond_val, zero, Cond::Ne, taken,
-        );
+        ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        self.set_nzcv_packed(ir, imm_c);
         ir.gen_br(done);
         ir.gen_set_label(taken);
         let src = self.read_xreg(ir, a.rn);
@@ -8222,12 +8776,12 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_sub(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, true);
         ir.gen_set_label(done);
+        // Resulting NZCV is path-dependent; keep only architectural source.
+        self.nzcv_src = NzcvSource::Unknown;
         true
     }
 
-    fn trans_CCMN_i(
-        &mut self, ir: &mut Context, a: &ArgsCsel,
-    ) -> bool {
+    fn trans_CCMN_i(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let nzcv_imm = (self.opcode & 0xf) as u64;
@@ -8236,11 +8790,9 @@ impl Decode<Context> for Aarch64DisasContext {
         let zero = ir.new_const(Type::I64, 0);
         let taken = ir.new_label();
         let done = ir.new_label();
-        ir.gen_brcond(
-            Type::I64, cond_val, zero, Cond::Ne, taken,
-        );
+        ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        ir.gen_mov(Type::I64, self.nzcv, imm_c);
+        self.set_nzcv_packed(ir, imm_c);
         ir.gen_br(done);
         ir.gen_set_label(taken);
         let src = self.read_xreg(ir, a.rn);
@@ -8250,14 +8802,14 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, false);
         ir.gen_set_label(done);
+        // Resulting NZCV is path-dependent; keep only architectural source.
+        self.nzcv_src = NzcvSource::Unknown;
         true
     }
 
     // -- Extract (EXTR) --
 
-    fn trans_EXTR(
-        &mut self, ir: &mut Context, a: &ArgsRrrSf,
-    ) -> bool {
+    fn trans_EXTR(&mut self, ir: &mut Context, a: &ArgsRrrSf) -> bool {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imms = ((self.opcode >> 10) & 0x3f) as u64;
@@ -8290,96 +8842,78 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Load-Acquire / Store-Release --
 
-    fn trans_LDAR(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDAR(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let memop = match a.opc_lo {
-            29 => MemOp::ub(),  // LDARB
-            30 => MemOp::uw(),  // LDARH
-            _ => if a.sf != 0 { MemOp::uq() } else { MemOp::ul() },
+            29 => MemOp::ub(), // LDARB
+            30 => MemOp::uw(), // LDARH
+            _ => {
+                if a.sf != 0 {
+                    MemOp::uq()
+                } else {
+                    MemOp::ul()
+                }
+            }
         };
         let addr = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDAXR(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDAXR(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         // Simplified: treat as regular load (no exclusives)
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_LDXR(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_LDXR(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         // Simplified: treat as regular load (no exclusives
         // in single-threaded mode)
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
-        ir.gen_qemu_ld(
-            Type::I64, d, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_ld(Type::I64, d, addr, memop.bits() as u32);
         self.write_xreg(ir, a.rd, d);
         true
     }
 
-    fn trans_STLR(
-        &mut self, ir: &mut Context, a: &ArgsLdstImm,
-    ) -> bool {
+    fn trans_STLR(&mut self, ir: &mut Context, a: &ArgsLdstImm) -> bool {
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.read_xreg_sp(ir, a.rn);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         true
     }
 
-    fn trans_STXR(
-        &mut self, ir: &mut Context, a: &ArgsStx,
-    ) -> bool {
+    fn trans_STXR(&mut self, ir: &mut Context, a: &ArgsStx) -> bool {
         // Simplified: always succeeds (single-threaded)
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.read_xreg_sp(ir, a.rn);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         // Write 0 (success) to status register Rs
         let zero = ir.new_const(Type::I64, 0);
         self.write_xreg(ir, a.rs, zero);
         true
     }
 
-    fn trans_STLXR(
-        &mut self, ir: &mut Context, a: &ArgsStx,
-    ) -> bool {
+    fn trans_STLXR(&mut self, ir: &mut Context, a: &ArgsStx) -> bool {
         // Same as STXR — store-release exclusive, always
         // succeeds in single-threaded mode
         let sf = a.sf != 0;
         let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr = self.read_xreg_sp(ir, a.rn);
         let val = self.read_xreg(ir, a.rd);
-        ir.gen_qemu_st(
-            Type::I64, val, addr, memop.bits() as u32,
-        );
+        ir.gen_qemu_st(Type::I64, val, addr, memop.bits() as u32);
         // Write 0 (success) to status register Rs
         let zero = ir.new_const(Type::I64, 0);
         self.write_xreg(ir, a.rs, zero);
@@ -8388,9 +8922,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     // -- Barriers --
 
-    fn trans_DMB(
-        &mut self, _ir: &mut Context, _a: &ArgsSys,
-    ) -> bool {
+    fn trans_DMB(&mut self, _ir: &mut Context, _a: &ArgsSys) -> bool {
         // Single-threaded: barriers are NOPs
         true
     }
