@@ -381,12 +381,44 @@ fn decode_bitmask_64(insn: u32) -> Option<u64> {
     let levels = size - 1;
     let s = imms & levels;
     let r = immr & levels;
-    let welem = (1u64 << (s + 1)) - 1;
-    let elem = if r == 0 { welem } else { (welem >> r) | (welem << (size - r)) };
+    let elem_mask = if size == 64 {
+        u64::MAX
+    } else {
+        (1u64 << size) - 1
+    };
+    let welem = if s == 63 {
+        u64::MAX
+    } else {
+        (1u64 << (s + 1)) - 1
+    };
+    let elem = if r == 0 {
+        welem
+    } else if size == 64 {
+        welem.rotate_right(r)
+    } else {
+        ((welem >> r) | (welem << (size - r))) & elem_mask
+    };
     let mask = (0..64).step_by(size as usize).fold(0u64, |acc, sh| {
-        acc | ((elem & ((1u64 << size) - 1)) << sh)
+        acc | ((elem & elem_mask) << sh)
     });
     Some(mask)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_bitmask_64;
+
+    #[test]
+    fn decode_bitmask_full_width() {
+        let insn = (1 << 22) | (63 << 10);
+        assert_eq!(decode_bitmask_64(insn), Some(u64::MAX));
+    }
+
+    #[test]
+    fn decode_bitmask_full_width_rotated() {
+        let insn = (1 << 22) | (7 << 16) | (63 << 10);
+        assert_eq!(decode_bitmask_64(insn), Some(u64::MAX));
+    }
 }
 
 fn save_profile<B: tcg_backend::HostCodeGen>(

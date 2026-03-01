@@ -5,7 +5,7 @@
 
 [QEMU](https://www.qemu.org/) **TCG**（Tiny Code Generator）的 Rust 重新实现——一个动态二进制翻译引擎，在运行时将客户架构指令转换为宿主机器码。
 
-> **状态**：完整的翻译流水线已端到端可工作——RISC-V 客户指令通过 decode 生成的解码器解码，翻译为 TCG IR，经 IR 优化（常量折叠、拷贝传播、代数简化）和活跃性分析，寄存器分配后编译为 x86-64 机器码并执行。MTTCG 执行、直接 TB 链路和 linux-user ELF 加载与 syscall 仿真均已可用。差分测试框架可对比 QEMU 验证正确性。
+> **状态**：完整的翻译流水线已端到端可工作——RISC-V 客户指令通过 decode 生成的解码器解码，翻译为 TCG IR，经 IR 优化（常量折叠、拷贝传播、代数简化）和活跃性分析，寄存器分配后编译为 x86-64 机器码并执行。MTTCG 执行、直接 TB 链路和 linux-user ELF 加载与 syscall 仿真均已可用。差分测试框架可对比 QEMU 验证正确性。AArch64 guest 的 linux-user 运行器（`tcg-aarch64`）也已接通，可运行 CoreMark 和初步 SPEC2006 冒烟用例。
 
 ## 概述
 
@@ -27,7 +27,7 @@ tcg-rs 旨在提供一个干净、安全、模块化的 QEMU TCG 子系统 Rust 
 | `tcg-core` | 已实现 | IR 定义（opcodes、types、temps、ops、context、labels、TBs）+ IR 构建器（`gen_*` 方法） |
 | `tcg-backend` | 已实现 | IR 优化器、活跃性分析、约束系统、寄存器分配器、x86-64 代码生成、翻译流水线 |
 | `tcg-exec` | 已实现 | 支持 MTTCG 的执行循环、TB 存储、直接链路、每 vCPU 跳转缓存、执行统计 |
-| `tcg-linux-user` | 已实现 | ELF 加载、guest 地址空间、Linux syscall 仿真、`tcg-riscv64` 运行器 |
+| `tcg-linux-user` | 已实现 | ELF 加载、guest 地址空间、Linux syscall 仿真、`tcg-riscv64` 和 `tcg-aarch64` 运行器 |
 | `decode` | 已实现 | QEMU 风格 `.decode` 文件解析器和 Rust 代码生成器，用于生成指令解码器 |
 | `tcg-frontend` | 已实现 | 客户指令解码框架 + RISC-V RV64IMAFDC 前端（184 条指令） |
 | `tcg-tests` | 已实现 | 816 个测试：单元、后端回归、前端翻译、difftest、MTTCG、linux-user 端到端 |
@@ -90,7 +90,7 @@ cargo fmt --check            # 格式检查
 - **ELF 加载与栈布局**：支持 guest argv 透传和基础 auxv 布局。
 - **guest 地址空间管理**：覆盖 mmap/brk 等用户态执行所需内存管理路径。
 - **syscall 仿真**：提供 linux-user 基础系统调用处理。
-- **运行器**：`tcg-riscv64 <elf> [args...]`，用于端到端 guest 运行测试。
+- **运行器**：`tcg-riscv64 <elf> [args...]` 与 `tcg-aarch64 <elf> [args...]`。
 
 ### tcg-tests
 
@@ -142,6 +142,7 @@ cargo fmt --check            # 格式检查
 - [IR Ops](docs/ir-ops.md) — Opcode 目录、Op 结构、IR Builder API
 - [x86-64 后端](docs/x86_64-backend.md) — 指令编码器、约束表、codegen 分派
 - [测试体系](docs/testing.md) — 测试架构、运行方式、差分测试、客户程序
+- [AArch64 Guest 基准](docs/aarch64-guest.md) — CoreMark 与 SPEC2006 的构建/运行说明
 - [代码风格](docs/coding-style.md) — 命名规范、格式规则
 
 ## 许可证

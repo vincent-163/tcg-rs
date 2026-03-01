@@ -29,6 +29,7 @@ const SYS_GETPID: u64 = 172;
 const SYS_GETTID: u64 = 178;
 const SYS_BRK: u64 = 214;
 const SYS_MUNMAP: u64 = 215;
+const SYS_MREMAP: u64 = 216;
 const SYS_MMAP: u64 = 222;
 const SYS_MPROTECT: u64 = 226;
 const SYS_MADVISE: u64 = 233;
@@ -39,6 +40,8 @@ const SYS_RSEQ: u64 = 293;
 const ENOSYS: u64 = (-38i64) as u64;
 const ENOTTY: u64 = (-25i64) as u64;
 const ENOENT: u64 = (-2i64) as u64;
+const ENOMEM: u64 = (-12i64) as u64;
+const EINVAL: u64 = (-22i64) as u64;
 
 /// Handle an AArch64 Linux syscall.
 ///
@@ -57,7 +60,6 @@ pub fn handle_syscall_aarch64(
     let a1 = regs[1];  // X1
     let a2 = regs[2];  // X2
     let a3 = regs[3];  // X3
-    #[allow(unused_variables)]
     let a4 = regs[4];  // X4
     if std::env::var("TCG_SYSCALL").is_ok() {
         eprintln!(
@@ -89,6 +91,9 @@ pub fn handle_syscall_aarch64(
         }
         SYS_BRK => do_brk(space, a0),
         SYS_MMAP => do_mmap(space, a0, a1, a2, mmap_next),
+        SYS_MREMAP => {
+            do_mremap(space, a0, a1, a2, a3, a4, mmap_next)
+        }
         SYS_MPROTECT => {
             let addr = a0;
             let len = a1 as usize;
@@ -209,6 +214,75 @@ fn do_mmap(
             SyscallResult::Continue((-12i64) as u64)
         }
     }
+}
+
+fn do_mremap(
+    space: &mut GuestSpace,
+    old_addr: u64,
+    old_len: u64,
+    new_len: u64,
+    flags: u64,
+    new_addr_arg: u64,
+    mmap_next: &mut u64,
+) -> SyscallResult {
+    const MREMAP_MAYMOVE: u64 = 1;
+    const MREMAP_FIXED: u64 = 2;
+
+    let old_len = crate::guest_space::page_align_up(old_len);
+    let new_len = crate::guest_space::page_align_up(new_len);
+    if old_len == 0 || new_len == 0 {
+        return SyscallResult::Continue(EINVAL);
+    }
+
+    if new_len <= old_len {
+        return SyscallResult::Continue(old_addr);
+    }
+
+    let grow_from = old_addr.saturating_add(old_len);
+    let grow_len = (new_len - old_len) as usize;
+    if space
+        .mmap_fixed(
+            grow_from,
+            grow_len,
+            libc::PROT_READ | libc::PROT_WRITE,
+        )
+        .is_ok()
+    {
+        return SyscallResult::Continue(old_addr);
+    }
+
+    if (flags & MREMAP_MAYMOVE) == 0 {
+        return SyscallResult::Continue(ENOMEM);
+    }
+
+    let new_addr = if (flags & MREMAP_FIXED) != 0 {
+        new_addr_arg
+    } else {
+        let addr = *mmap_next;
+        *mmap_next += new_len;
+        addr
+    };
+
+    if space
+        .mmap_fixed(
+            new_addr,
+            new_len as usize,
+            libc::PROT_READ | libc::PROT_WRITE,
+        )
+        .is_err()
+    {
+        return SyscallResult::Continue(ENOMEM);
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            space.g2h(old_addr) as *const u8,
+            space.g2h(new_addr),
+            old_len as usize,
+        );
+    }
+
+    SyscallResult::Continue(new_addr)
 }
 
 fn do_writev(

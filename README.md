@@ -5,7 +5,7 @@
 
 A Rust reimplementation of [QEMU](https://www.qemu.org/)'s **TCG** (Tiny Code Generator) — the dynamic binary translation engine that converts guest architecture instructions into host machine code at runtime.
 
-> **Status**: The complete translation pipeline is working end-to-end — RISC-V guest instructions are decoded via a decode-generated decoder, translated to TCG IR, optimized (constant folding, copy propagation, algebraic simplification), register-allocated, compiled to x86-64 machine code, and executed. MTTCG execution, direct TB chaining, and linux-user ELF loading with syscall emulation are operational. A differential testing framework validates correctness against QEMU.
+> **Status**: The complete translation pipeline is working end-to-end — RISC-V guest instructions are decoded via a decode-generated decoder, translated to TCG IR, optimized (constant folding, copy propagation, algebraic simplification), register-allocated, compiled to x86-64 machine code, and executed. MTTCG execution, direct TB chaining, and linux-user ELF loading with syscall emulation are operational. A differential testing framework validates correctness against QEMU. AArch64 guest support is also wired in linux-user (`tcg-aarch64`) and is sufficient for CoreMark and initial SPEC2006 smoke runs.
 
 ## Overview
 
@@ -27,7 +27,7 @@ tcg-rs aims to provide a clean, safe, and modular Rust implementation of QEMU's 
 | `tcg-core` | Implemented | IR definitions (opcodes, types, temps, ops, context, labels, TBs) + IR builder (`gen_*` methods) |
 | `tcg-backend` | Implemented | IR optimizer, liveness analysis, constraint system, register allocator, x86-64 codegen, translation pipeline |
 | `tcg-exec` | Implemented | MTTCG-capable execution loop, TB store, direct chaining, per-vCPU jump cache, execution stats |
-| `tcg-linux-user` | Implemented | ELF loader, guest address space, Linux syscall emulation, `tcg-riscv64` runner |
+| `tcg-linux-user` | Implemented | ELF loader, guest address space, Linux syscall emulation, `tcg-riscv64` and `tcg-aarch64` runners |
 | `decode` | Implemented | QEMU-style `.decode` file parser and Rust code generator for instruction decoders |
 | `tcg-frontend` | Implemented | Guest instruction decoding framework + RISC-V RV64IMAFDC frontend (184 instructions) |
 | `tcg-tests` | Implemented | 816 tests: unit, backend regression, frontend translation, difftest (vs QEMU), MTTCG, and linux-user e2e |
@@ -93,7 +93,7 @@ cargo fmt --check            # Format check
   `argv` propagation and auxv essentials.
 - **Guest space management** with mmap/brk handling for user-mode execution.
 - **Syscall emulation** for core Linux user-mode workflows used by tests.
-- **Runner**: `tcg-riscv64 <elf> [args...]`, shared by linux-user e2e tests.
+- **Runners**: `tcg-riscv64 <elf> [args...]` and `tcg-aarch64 <elf> [args...]`.
 
 ### tcg-tests
 
@@ -146,6 +146,7 @@ This project references the following QEMU source files:
 - [IR Ops](docs/ir-ops.md) — Opcode catalog, Op structure, IR builder API
 - [x86-64 Backend](docs/x86_64-backend.md) — Instruction encoder, constraint table, codegen dispatch
 - [Testing](docs/testing.md) — Test architecture, running tests, difftest framework, guest programs
+- [AArch64 Guest Benchmarks](docs/aarch64-guest.md) — CoreMark and SPEC2006 setup/running guide
 - [Coding Style](docs/coding-style.md) — Naming conventions, formatting rules
 
 ## License
