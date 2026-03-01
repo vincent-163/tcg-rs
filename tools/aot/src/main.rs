@@ -570,11 +570,6 @@ fn compile_aot(
         );
     }
 
-    // Build guest VA → file_offset map for peer lookup
-    let all_va_to_offset: HashMap<u64, u64> = all_entries
-        .iter()
-        .map(|&(off, _)| (off + load_vaddr, off))
-        .collect();
     let pc_temp = arch.pc_temp();
 
     let base = unsafe {
@@ -584,11 +579,46 @@ fn compile_aot(
         )
     };
 
+    // Pre-scan: find TBs that contain helper calls (Opcode::Call).
+    // Helper function addresses are absolute host pointers from
+    // the AOT compilation process; they are not relocatable and
+    // would SIGSEGV at runtime under ASLR.  We must exclude these
+    // from the peer-lookup map so that other TBs that would
+    // goto_tb into them fall back to aot_dispatch instead of
+    // emitting an unresolved musttail-call reference.
+    let mut skipped_offsets: HashSet<u64> = HashSet::new();
+    for &(offset, _) in all_entries {
+        let mut ir = Context::new();
+        arch.init_context(&mut ir);
+        ir.tb_ptr = 0;
+        let guest_pc = offset + load_vaddr;
+        let max_insns = TranslationBlock::max_insns(0);
+        arch.translate_tb(&mut ir, guest_pc, base, max_insns);
+        optimize(&mut ir);
+        if ir.ops().iter().any(|op| op.opc == Opcode::Call) {
+            skipped_offsets.insert(offset);
+        }
+    }
+
+    // Build guest VA → file_offset map for peer lookup,
+    // excluding any TBs that will be skipped.
+    let all_va_to_offset: HashMap<u64, u64> = all_entries
+        .iter()
+        .filter(|&&(off, _)| !skipped_offsets.contains(&off))
+        .map(|&(off, _)| (off + load_vaddr, off))
+        .collect();
+
     // Translate all TBs with LLVM
     let mut translated = 0u32;
+    let skipped_call = skipped_offsets.len() as u32;
 
     for &(offset, exported) in all_entries {
         let func_name = format!("tb_{offset:x}");
+
+        // Skip TBs with non-relocatable helper calls.
+        if skipped_offsets.contains(&offset) {
+            continue;
+        }
 
         let mut ir = Context::new();
         arch.init_context(&mut ir);
@@ -649,7 +679,10 @@ fn compile_aot(
         translated += 1;
     }
 
-    eprintln!("[aot] translated {translated} TBs");
+    eprintln!(
+        "[aot] translated {translated} TBs \
+         (skipped {skipped_call} with helper calls)",
+    );
 
     // Post-link: hide non-exported TBs
     unsafe {

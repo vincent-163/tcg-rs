@@ -14,9 +14,9 @@ fn tb_new() {
     drop(jmp);
     assert_eq!(
         tb.exit_target.load(std::sync::atomic::Ordering::Relaxed),
-        EXIT_TARGET_NONE
+        0
     );
-    assert_eq!(tb.hash_next, None);
+    assert_eq!(tb.hash_next, 0);
 }
 
 #[test]
@@ -83,8 +83,9 @@ fn jump_cache_basic() {
     let mut cache = JumpCache::new();
     assert_eq!(cache.lookup(0x1000), None);
 
-    cache.insert(0x1000, 42);
-    assert_eq!(cache.lookup(0x1000), Some(42));
+    let tb = 42 as *mut TranslationBlock;
+    cache.insert(0x1000, tb);
+    assert_eq!(cache.lookup(0x1000), Some(tb));
 
     cache.remove(0x1000);
     assert_eq!(cache.lookup(0x1000), None);
@@ -93,16 +94,20 @@ fn jump_cache_basic() {
 #[test]
 fn jump_cache_overwrite() {
     let mut cache = JumpCache::new();
-    cache.insert(0x1000, 1);
-    cache.insert(0x1000, 2);
-    assert_eq!(cache.lookup(0x1000), Some(2));
+    let tb1 = 1 as *mut TranslationBlock;
+    let tb2 = 2 as *mut TranslationBlock;
+    cache.insert(0x1000, tb1);
+    cache.insert(0x1000, tb2);
+    assert_eq!(cache.lookup(0x1000), Some(tb2));
 }
 
 #[test]
 fn jump_cache_invalidate() {
     let mut cache = JumpCache::new();
-    cache.insert(0x1000, 1);
-    cache.insert(0x2000, 2);
+    let tb1 = 1 as *mut TranslationBlock;
+    let tb2 = 2 as *mut TranslationBlock;
+    cache.insert(0x1000, tb1);
+    cache.insert(0x2000, tb2);
     cache.invalidate();
     assert_eq!(cache.lookup(0x1000), None);
     assert_eq!(cache.lookup(0x2000), None);
@@ -114,8 +119,10 @@ fn jump_cache_collision() {
     // Two PCs that map to the same index will overwrite each other
     let pc1 = 0x0000;
     let pc2 = pc1 + (TB_JMP_CACHE_SIZE as u64 * 4);
-    cache.insert(pc1, 1);
-    cache.insert(pc2, 2);
+    let tb1 = 1 as *mut TranslationBlock;
+    let tb2 = 2 as *mut TranslationBlock;
+    cache.insert(pc1, tb1);
+    cache.insert(pc2, tb2);
     // pc1's entry was overwritten
-    assert_eq!(cache.lookup(pc1), Some(2));
+    assert_eq!(cache.lookup(pc1), Some(tb2));
 }

@@ -1040,10 +1040,10 @@ fn test_exec_control_flow_ops() {
 
         ctx.gen_goto_tb(0);
 
-        ctx.gen_exit_tb(0x1234);
+        ctx.gen_exit_tb(4);
     });
 
-    assert_eq!(exit_val, 0x1234);
+    assert_eq!(exit_val, 4);
     assert_eq!(cpu.regs[10], 1);
     assert_eq!(cpu.regs[11], 1);
 }
