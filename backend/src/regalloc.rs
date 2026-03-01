@@ -413,7 +413,7 @@ fn free_old_reg(
     let temp = ctx.temp(tidx);
     if temp.val_type == TempVal::Reg {
         if let Some(old_r) = temp.reg {
-            if exclude.map_or(true, |ex| old_r != ex) {
+            if exclude != Some(old_r) {
                 state.free_reg(old_r);
             }
         }

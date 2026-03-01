@@ -2,6 +2,10 @@
 //!
 //! Translates decoded A64 instructions into TCG IR opcodes.
 //! Follows the same gen_xxx helper pattern as the RISC-V frontend.
+//!
+// Function pointers are intentionally cast to u64 (not usize) because
+// gen_call() stores helper addresses as u64 IR constants.
+#![allow(clippy::fn_to_numeric_cast)]
 
 use super::cpu::{
     vreg_hi_offset, vreg_lo_offset, FPCR_OFFSET,
@@ -32,7 +36,7 @@ fn decode_bitmask_imm(
     let len = if n != 0 {
         6
     } else {
-        let combined = (!imms & 0x3f) as u32;
+        let combined = !imms & 0x3f;
         if combined == 0 { return None; }
         31 - combined.leading_zeros()
     };
@@ -2557,7 +2561,7 @@ impl Aarch64DisasContext {
         // FCSEL Dd,Dn,Dm,cond: x001 1110 T10 Rm cond 11 Rn Rd
         if insn & 0x5f20_0c00 == 0x1e20_0c00 {
             let rm = ((insn >> 16) & 0x1f) as usize;
-            let cond = ((insn >> 12) & 0xf) as u32;
+            let cond = (insn >> 12) & 0xf;
             let a = self.read_vreg_lo(ir, rn);
             let b = self.read_vreg_lo(ir, rm);
             let cond_val = self.eval_cond(ir, cond as i64);
@@ -2822,6 +2826,45 @@ impl Aarch64DisasContext {
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let r_hi = ir.new_temp(Type::I64);
                 ir.gen_call(r_hi, helper_mla32_elem as u64, &[d_hi, n_hi, scalar]);
+                self.write_vreg_hi(ir, rd, r_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
+            return Some(true);
+        }
+        // FMLA .4S/.2S by element: U=0 size=10 opcode=0001
+        if u == 0 && size == 0b10 && opcode == 0b0001 {
+            // 32-bit float element: index = H:L, Rm = M:Rm (4-bit)
+            let idx = ((h << 1) | l) as usize;
+            let vrm = (m << 4) as usize | rm;
+            let half = if idx < 2 { self.read_vreg_lo(ir, vrm) } else { self.read_vreg_hi(ir, vrm) };
+            let bit_off = (idx % 2) * 32;
+            let elem = ir.new_temp(Type::I64);
+            if bit_off > 0 {
+                let sh = ir.new_const(Type::I64, bit_off as u64);
+                ir.gen_shr(Type::I64, elem, half, sh);
+            } else {
+                ir.gen_mov(Type::I64, elem, half);
+            }
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, elem, elem, mask);
+            // Broadcast scalar into both 32-bit lanes
+            let sh32 = ir.new_const(Type::I64, 32);
+            let scalar = ir.new_temp(Type::I64);
+            let hi_part = ir.new_temp(Type::I64);
+            ir.gen_shl(Type::I64, hi_part, elem, sh32);
+            ir.gen_or(Type::I64, scalar, elem, hi_part);
+
+            let d_lo = self.read_vreg_lo(ir, rd);
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let r_lo = ir.new_temp(Type::I64);
+            ir.gen_call(r_lo, helper_vfmla32 as u64, &[d_lo, n_lo, scalar]);
+            self.write_vreg_lo(ir, rd, r_lo);
+            if q != 0 {
+                let d_hi = self.read_vreg_hi(ir, rd);
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let r_hi = ir.new_temp(Type::I64);
+                ir.gen_call(r_hi, helper_vfmla32 as u64, &[d_hi, n_hi, scalar]);
                 self.write_vreg_hi(ir, rd, r_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
@@ -3588,6 +3631,7 @@ unsafe extern "C" fn helper_zip2_16(a: u64, b: u64) -> u64 {
     a2 | (b2 << 16) | (a3 << 32) | (b3 << 48)
 }
 /// FCVTL: convert 2x f32 (low 64 bits) to 2x f64
+#[allow(dead_code, improper_ctypes_definitions)]
 unsafe extern "C" fn helper_fcvtl_lo(a: u64) -> (u64, u64) {
     let f0 = f32::from_bits(a as u32) as f64;
     let f1 = f32::from_bits((a >> 32) as u32) as f64;
@@ -3915,6 +3959,7 @@ unsafe extern "C" fn helper_vfcmge32(a: u64, b: u64) -> u64 {
     r0 as u64 | ((r1 as u64) << 32)
 }
 /// scvtf vector: convert 2x i32 to 2x f32
+#[allow(dead_code)]
 unsafe extern "C" fn helper_vscvtf32(a: u64) -> u64 {
     let e0 = (a as i32) as f32;
     let e1 = ((a >> 32) as i32) as f32;
@@ -3924,11 +3969,30 @@ unsafe extern "C" fn helper_vscvtf32(a: u64) -> u64 {
 unsafe extern "C" fn helper_vscvtf64(a: u64) -> u64 {
     (a as i64 as f64).to_bits()
 }
+/// fcvtzs vector: convert f64 → i64 (one lane per 64-bit half)
+#[allow(dead_code)]
+unsafe extern "C" fn helper_vfcvtzs64(a: u64) -> u64 {
+    (f64::from_bits(a) as i64) as u64
+}
+/// faddp vector 32-bit: pairwise add adjacent f32 lanes from two halves
+/// Input: n = [n0, n1] (two f32 in u64), m = [m0, m1] (two f32 in u64)
+/// Output: [n0+n1, m0+m1]
+#[allow(dead_code)]
+unsafe extern "C" fn helper_faddp32(n: u64, m: u64) -> u64 {
+    let n0 = f32::from_bits(n as u32);
+    let n1 = f32::from_bits((n >> 32) as u32);
+    let m0 = f32::from_bits(m as u32);
+    let m1 = f32::from_bits((m >> 32) as u32);
+    let r0 = (n0 + n1).to_bits() as u64;
+    let r1 = (m0 + m1).to_bits() as u64;
+    r0 | (r1 << 32)
+}
 /// shl vector: shift left each 64-bit lane by shift amount
 unsafe extern "C" fn helper_shl64(a: u64, shift: u64) -> u64 {
     if shift >= 64 { 0 } else { a << shift }
 }
 /// ucvtf vector: convert 2x u32 to 2x f32
+#[allow(dead_code)]
 unsafe extern "C" fn helper_vucvtf32(a: u64) -> u64 {
     let e0 = (a as u32) as f32;
     let e1 = ((a >> 32) as u32) as f32;
@@ -3959,24 +4023,28 @@ unsafe extern "C" fn helper_smlal32_hi(acc: u64, n: u64, m: u64) -> u64 {
     (acc as i64).wrapping_add(n1.wrapping_mul(m1)) as u64
 }
 /// fabs vector: abs 2x f32
+#[allow(dead_code)]
 unsafe extern "C" fn helper_vfabs32(a: u64) -> u64 {
     let e0 = f32::from_bits(a as u32).abs();
     let e1 = f32::from_bits((a >> 32) as u32).abs();
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// fneg vector: negate 2x f32
+#[allow(dead_code)]
 unsafe extern "C" fn helper_vfneg32(a: u64) -> u64 {
     let e0 = -f32::from_bits(a as u32);
     let e1 = -f32::from_bits((a >> 32) as u32);
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// fsqrt vector: sqrt 2x f32
+#[allow(dead_code)]
 unsafe extern "C" fn helper_vfsqrt32(a: u64) -> u64 {
     let e0 = f32::from_bits(a as u32).sqrt();
     let e1 = f32::from_bits((a >> 32) as u32).sqrt();
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// frecpe vector: reciprocal estimate 2x f32
+#[allow(dead_code)]
 unsafe extern "C" fn helper_vfrecpe32(a: u64) -> u64 {
     let e0 = 1.0f32 / f32::from_bits(a as u32);
     let e1 = 1.0f32 / f32::from_bits((a >> 32) as u32);
@@ -4072,6 +4140,7 @@ unsafe extern "C" fn helper_rev64_2s(a: u64) -> u64 {
     (lo as u64) << 32 | (hi as u64)
 }
 // REV64 .4H: reverse 4 halfwords within a 64-bit lane
+#[allow(dead_code)]
 unsafe extern "C" fn helper_rev64_4h(a: u64) -> u64 {
     let h0 = (a      ) as u16 as u64;
     let h1 = (a >> 16) as u16 as u64;
@@ -4649,6 +4718,29 @@ impl Aarch64DisasContext {
                     let r_hi = ir.new_temp(Type::I64);
                     ir.gen_call(r_hi, helper_vfmls32 as u64, &[d_hi, n_hi, m_hi]);
                     self.write_vreg_hi(ir, rd, r_hi);
+                }
+                return true;
+            }
+            // FADDP .2S/.4S: U=1, opcode=11010 — pairwise add adjacent f32 lanes
+            if (u, opcode) == (1, 0b11010) {
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                if q != 0 {
+                    // .4S: d_lo = faddp(n_lo, n_hi), d_hi = faddp(m_lo, m_hi)
+                    let n_hi = self.read_vreg_hi(ir, rn);
+                    let m_hi = self.read_vreg_hi(ir, rm);
+                    let d_lo = ir.new_temp(Type::I64);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_lo, helper_faddp32 as u64, &[n_lo, n_hi]);
+                    ir.gen_call(d_hi, helper_faddp32 as u64, &[m_lo, m_hi]);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    // .2S: d_lo = faddp(n_lo, m_lo)
+                    let d_lo = ir.new_temp(Type::I64);
+                    ir.gen_call(d_lo, helper_faddp32 as u64, &[n_lo, m_lo]);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    self.clear_vreg_hi(ir, rd);
                 }
                 return true;
             }
@@ -5240,11 +5332,23 @@ impl Aarch64DisasContext {
                 } else { self.clear_vreg_hi(ir, rd); }
                 true
             }
+            // FCVTZS .2D: U=0 size=11 opcode=11011 — vector f64-to-i64 (round toward zero)
+            (0, 0b11, 0b11011) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_vfcvtzs64 as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_vfcvtzs64 as u64, &[hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else { self.clear_vreg_hi(ir, rd); }
+                true
+            }
             _ => false,
         }
     }
-
-    /// AdvSIMD shift by immediate: 0 Q U 011110 immh immb opcode 1 Rn Rd
     fn neon_shift_imm(
         &mut self, ir: &mut Context, insn: u32,
     ) -> bool {
@@ -5259,7 +5363,7 @@ impl Aarch64DisasContext {
 
         // SHRN: U=0 opcode=10000, narrow shift right (16→8)
         // Narrows 8x16-bit (128-bit src) → 8x8-bit (64-bit dst)
-        if u == 0 && opcode == 0b10000 && immh >= 1 && immh < 2 {
+        if u == 0 && opcode == 0b10000 && (1..2).contains(&immh) {
             let shift = 16 - immhb;
             let lo = self.read_vreg_lo(ir, rn);
             let hi = self.read_vreg_hi(ir, rn);
@@ -5280,7 +5384,7 @@ impl Aarch64DisasContext {
         }
 
         // SHL: U=0 opcode=01010 (8-bit)
-        if u == 0 && opcode == 0b01010 && immh >= 1 && immh < 2 {
+        if u == 0 && opcode == 0b01010 && (1..2).contains(&immh) {
             let shift = immhb - 8;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5297,7 +5401,7 @@ impl Aarch64DisasContext {
         }
 
         // SHL: U=0 opcode=01010 (16-bit): immh=001x
-        if u == 0 && opcode == 0b01010 && immh >= 2 && immh < 4 {
+        if u == 0 && opcode == 0b01010 && (2..4).contains(&immh) {
             let shift = immhb - 16;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5314,7 +5418,7 @@ impl Aarch64DisasContext {
         }
 
         // SHL: U=0 opcode=01010 (32-bit): immh=01xx
-        if u == 0 && opcode == 0b01010 && immh >= 4 && immh < 8 {
+        if u == 0 && opcode == 0b01010 && (4..8).contains(&immh) {
             let shift = immhb - 32;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5348,7 +5452,7 @@ impl Aarch64DisasContext {
         }
 
         // USHR 32-bit: U=1 opcode=00000, immh=01xx → shift = 2*32 - immhb = 64 - immhb
-        if u == 1 && opcode == 0b00000 && immh >= 4 && immh < 8 {
+        if u == 1 && opcode == 0b00000 && (4..8).contains(&immh) {
             let shift = 64 - immhb;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5365,7 +5469,7 @@ impl Aarch64DisasContext {
         }
 
         // USHR 16-bit: U=1 opcode=00000, immh=001x → shift = 32 - immhb
-        if u == 1 && opcode == 0b00000 && immh >= 2 && immh < 4 {
+        if u == 1 && opcode == 0b00000 && (2..4).contains(&immh) {
             let shift = 32 - immhb;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5382,7 +5486,7 @@ impl Aarch64DisasContext {
         }
 
         // USHR 8-bit: U=1 opcode=00000, immh=0001 → shift = 16 - immhb
-        if u == 1 && opcode == 0b00000 && immh >= 1 && immh < 2 {
+        if u == 1 && opcode == 0b00000 && (1..2).contains(&immh) {
             let shift = 16 - immhb;
             // reuse helper_sshr8 with logical mask
             let sh = ir.new_const(Type::I64, shift as u64);
@@ -5400,7 +5504,7 @@ impl Aarch64DisasContext {
         }
 
         // SSHR 32-bit: U=0 opcode=00000, immh=01xx → shift = 64 - immhb
-        if u == 0 && opcode == 0b00000 && immh >= 4 && immh < 8 {
+        if u == 0 && opcode == 0b00000 && (4..8).contains(&immh) {
             let shift = 64 - immhb;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5417,7 +5521,7 @@ impl Aarch64DisasContext {
         }
 
         // SSRA 32-bit: U=0 opcode=00010, immh=01xx → shift = 64 - immhb
-        if u == 0 && opcode == 0b00010 && immh >= 4 && immh < 8 {
+        if u == 0 && opcode == 0b00010 && (4..8).contains(&immh) {
             let shift = 64 - immhb;
             let sh = ir.new_const(Type::I64, shift as u64);
             let d_lo = self.read_vreg_lo(ir, rd);
@@ -5436,7 +5540,7 @@ impl Aarch64DisasContext {
         }
 
         // SSHR 16-bit: U=0 opcode=00000, immh=001x → shift = 32 - immhb
-        if u == 0 && opcode == 0b00000 && immh >= 2 && immh < 4 {
+        if u == 0 && opcode == 0b00000 && (2..4).contains(&immh) {
             let shift = 32 - immhb;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5453,7 +5557,7 @@ impl Aarch64DisasContext {
         }
 
         // SSHR 8-bit: U=0 opcode=00000, immh=0001 → shift = 16 - immhb
-        if u == 0 && opcode == 0b00000 && immh >= 1 && immh < 2 {
+        if u == 0 && opcode == 0b00000 && (1..2).contains(&immh) {
             let shift = 16 - immhb;
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
@@ -5470,7 +5574,7 @@ impl Aarch64DisasContext {
         }
 
         // USHLL/UXTL: U=1 opcode=10100, immh=0001 → 8→16 bit
-        if u == 1 && opcode == 0b10100 && immh >= 1 && immh < 2 {
+        if u == 1 && opcode == 0b10100 && (1..2).contains(&immh) {
             let shift = immhb - 8;
             let src = self.read_vreg_lo(ir, rn);
             let d_lo = ir.new_temp(Type::I64);
@@ -5488,7 +5592,7 @@ impl Aarch64DisasContext {
         }
 
         // USHLL/UXTL: U=1 opcode=10100, immh=001x → 16→32 bit
-        if u == 1 && opcode == 0b10100 && immh >= 2 && immh < 4 {
+        if u == 1 && opcode == 0b10100 && (2..4).contains(&immh) {
             let shift = immhb - 16;
             let src = self.read_vreg_lo(ir, rn);
             let d_lo = ir.new_temp(Type::I64);
@@ -5507,7 +5611,7 @@ impl Aarch64DisasContext {
 
         // USHLL/UXTL: U=1 opcode=10100, widen unsigned (e.g. 32→64)
         // immh=01xx → 32→64 bit, shift = immhb - 32
-        if u == 1 && opcode == 0b10100 && immh >= 4 && immh < 8 {
+        if u == 1 && opcode == 0b10100 && (4..8).contains(&immh) {
             let shift = immhb - 32;
             let src = self.read_vreg_lo(ir, rn);
             // Low 32 bits → element 0 of result (lo half)
@@ -5533,7 +5637,7 @@ impl Aarch64DisasContext {
 
         // SSHLL/SXTL: U=0 opcode=10100, widen signed
         // immh=0001 → 8→16 bit, shift = immhb - 8
-        if u == 0 && opcode == 0b10100 && immh >= 1 && immh < 2 {
+        if u == 0 && opcode == 0b10100 && (1..2).contains(&immh) {
             let shift = immhb - 8;
             let src = self.read_vreg_lo(ir, rn);
             let d = ir.new_temp(Type::I64);
@@ -5551,7 +5655,7 @@ impl Aarch64DisasContext {
         }
 
         // SSHLL/SXTL: U=0 opcode=10100, immh=001x → 16→32 bit
-        if u == 0 && opcode == 0b10100 && immh >= 2 && immh < 4 {
+        if u == 0 && opcode == 0b10100 && (2..4).contains(&immh) {
             let shift = immhb - 16;
             let src = self.read_vreg_lo(ir, rn);
             let d_lo = ir.new_temp(Type::I64);
@@ -5569,7 +5673,7 @@ impl Aarch64DisasContext {
         }
 
         // SSHLL/SXTL: U=0 opcode=10100, immh=01xx → 32→64 bit
-        if u == 0 && opcode == 0b10100 && immh >= 4 && immh < 8 {
+        if u == 0 && opcode == 0b10100 && (4..8).contains(&immh) {
             let shift = immhb - 32;
             let src = self.read_vreg_lo(ir, rn);
             // Low 32 bits → sign-extend to 64, shift left
@@ -5598,7 +5702,7 @@ impl Aarch64DisasContext {
         }
 
         // FCVTZS (vector, fixed-point) 32-bit: U=0 opcode=11111, immh=01xx
-        if u == 0 && opcode == 0b11111 && immh >= 4 && immh < 8 {
+        if u == 0 && opcode == 0b11111 && (4..8).contains(&immh) {
             let fbits = 64 - immhb; // number of fractional bits
             let sh = ir.new_const(Type::I64, fbits as u64);
             let lo = self.read_vreg_lo(ir, rn);

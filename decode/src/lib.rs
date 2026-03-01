@@ -500,7 +500,11 @@ fn emit_extract_field(
             }
         } else {
             let mask = (1u32 << s.len) - 1;
-            writeln!(w, "    let val = (insn >> {}) & {:#x};", s.pos, mask)?;
+            if s.pos == 0 {
+                writeln!(w, "    let val = insn & {:#x};", mask)?;
+            } else {
+                writeln!(w, "    let val = (insn >> {}) & {:#x};", s.pos, mask)?;
+            }
         }
     } else {
         // Multi-segment: first may be signed
@@ -526,21 +530,39 @@ fn emit_extract_field(
             }
         } else {
             let mask = (1u32 << s0.len) - 1;
-            writeln!(
-                w,
-                "    let mut val: i64 = \
-                 ((insn >> {}) & {:#x}) as i64;",
-                s0.pos, mask
-            )?;
+            if s0.pos == 0 {
+                writeln!(
+                    w,
+                    "    let mut val: i64 = \
+                     (insn & {:#x}) as i64;",
+                    mask
+                )?;
+            } else {
+                writeln!(
+                    w,
+                    "    let mut val: i64 = \
+                     ((insn >> {}) & {:#x}) as i64;",
+                    s0.pos, mask
+                )?;
+            }
         }
         for s in &segs[1..] {
             let mask = (1u32 << s.len) - 1;
-            writeln!(
-                w,
-                "    val = (val << {}) \
-                 | ((insn >> {}) & {:#x}) as i64;",
-                s.len, s.pos, mask
-            )?;
+            if s.pos == 0 {
+                writeln!(
+                    w,
+                    "    val = (val << {}) \
+                     | (insn & {:#x}) as i64;",
+                    s.len, mask
+                )?;
+            } else {
+                writeln!(
+                    w,
+                    "    val = (val << {}) \
+                     | ((insn >> {}) & {:#x}) as i64;",
+                    s.len, s.pos, mask
+                )?;
+            }
         }
     }
     let cast = if segs.len() == 1 { "val as i64" } else { "val" };
@@ -616,7 +638,11 @@ fn emit_field_expr(
                 )?;
             } else {
                 let mask = (1u32 << len) - 1;
-                write!(w, "((insn >> {pos}) & {mask:#x}) as i64")?;
+                if *pos == 0 {
+                    write!(w, "(insn & {mask:#x}) as i64")?;
+                } else {
+                    write!(w, "((insn >> {pos}) & {mask:#x}) as i64")?;
+                }
             }
         }
         FieldMapping::Const(c) => {

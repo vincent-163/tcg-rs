@@ -148,6 +148,9 @@ impl<B: HostCodeGen> SharedState<B> {
         unsafe { &*self.code_buf.get() }
     }
 
+    /// # Safety
+    /// Caller must ensure no other threads are concurrently writing to the
+    /// code buffer.
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn code_buf_mut(&self) -> &mut CodeBuffer {
         &mut *self.code_buf.get()
