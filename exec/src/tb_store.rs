@@ -6,7 +6,7 @@ use tcg_backend::code_buffer::CodeBuffer;
 use tcg_backend::HostCodeGen;
 use tcg_core::tb::{TranslationBlock, TB_HASH_SIZE};
 
-const MAX_TBS: usize = 65536;
+pub const MAX_TBS: usize = 65536;
 
 /// Thread-safe storage and hash-table lookup for TBs.
 ///
@@ -77,6 +77,7 @@ impl TbStore {
     }
 
     /// Lookup a valid TB by (pc, flags) in the hash table.
+    /// Only returns TBs that have been translated (host_size > 0).
     pub fn lookup(&self, pc: u64, flags: u32) -> Option<usize> {
         let hash = self.hash.lock().unwrap();
         let bucket = TranslationBlock::hash(pc, flags);
@@ -86,6 +87,7 @@ impl TbStore {
             if !tb.invalid.load(Ordering::Acquire)
                 && tb.pc == pc
                 && tb.flags == flags
+                && tb.host_size > 0
             {
                 return Some(idx);
             }

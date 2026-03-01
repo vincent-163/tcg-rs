@@ -61,9 +61,8 @@ where B: HostCodeGen, C: GuestCpu,
             }
         };
 
-        if shared.profiling {
-            shared.tb_profile(tb_idx).exec_count.fetch_add(1, Ordering::Relaxed);
-        }
+        // Profiling counter is now incremented inside the JIT code at TB start
+        // to ensure it's counted even when TBs chain to each other
 
         let raw_exit = cpu_tb_exec(shared, cpu, tb_idx);
         let (last_tb, exit_code) = decode_tb_exit(raw_exit);
@@ -92,13 +91,20 @@ where B: HostCodeGen, C: GuestCpu,
                 let cached = stb.exit_target.load(Ordering::Relaxed);
                 if cached != EXIT_TARGET_NONE {
                     let tb = shared.tb_store.get(cached);
-                    if !tb.invalid.load(Ordering::Acquire) && tb.pc == pc && tb.flags == flags {
+                    if !tb.invalid.load(Ordering::Acquire)
+                        && tb.pc == pc
+                        && tb.flags == flags
+                        && tb.host_size > 0
+                    {
+                        per_cpu.stats.exit_target_hit += 1;
                         if shared.profiling {
-                            shared.tb_profile(cached).indirect_count.fetch_add(1, Ordering::Relaxed);
+                            shared.tb_profile(cached).indirect_count
+                                .fetch_add(1, Ordering::Relaxed);
                         }
                         next_tb_hint = Some(cached);
                         continue;
                     }
+                    per_cpu.stats.exit_target_miss += 1;
                 }
 
                 let dst = match tb_find(shared, per_cpu, cpu, pc, flags) {
@@ -106,7 +112,8 @@ where B: HostCodeGen, C: GuestCpu,
                     None => return ExitReason::BufferFull,
                 };
                 if shared.profiling {
-                    shared.tb_profile(dst).indirect_count.fetch_add(1, Ordering::Relaxed);
+                    shared.tb_profile(dst).indirect_count
+                        .fetch_add(1, Ordering::Relaxed);
                 }
                 stb.exit_target.store(dst, Ordering::Relaxed);
                 next_tb_hint = Some(dst);
@@ -126,7 +133,11 @@ where B: HostCodeGen, C: GuestCpu,
 {
     if let Some(idx) = per_cpu.jump_cache.lookup(pc) {
         let tb = shared.tb_store.get(idx);
-        if !tb.invalid.load(Ordering::Acquire) && tb.pc == pc && tb.flags == flags {
+        if !tb.invalid.load(Ordering::Acquire)
+            && tb.pc == pc
+            && tb.flags == flags
+            && tb.host_size > 0
+        {
             per_cpu.stats.jc_hit += 1;
             return Some(idx);
         }
@@ -205,15 +216,36 @@ where B: HostCodeGen, C: GuestCpu,
                 Err(_) => true,
             };
             if use_llvm {
+                let prof_addr = if shared.profiling {
+                    let tb_profile = shared.tb_profile(tb_idx);
+                    std::ptr::addr_of!((*tb_profile).exec_count) as u64
+                } else {
+                    0
+                };
                 tcg_backend::translate::translate_llvm(
                     ir_ctx, llvm_jit.as_mut().unwrap(), code_buf_mut, shared.backend.epilogue_offset(),
+                    if shared.profiling { Some(prof_addr) } else { None },
                 )
             } else {
-                translate(ir_ctx, &shared.backend, code_buf_mut)
+                let prof_addr = if shared.profiling {
+                    let tb_profile = shared.tb_profile(tb_idx);
+                    std::ptr::addr_of!((*tb_profile).exec_count) as u64
+                } else {
+                    0
+                };
+                translate(ir_ctx, &shared.backend, code_buf_mut, if shared.profiling { Some(prof_addr) } else { None })
             }
         }
         #[cfg(not(feature = "llvm"))]
-        { translate(&mut guard.ir_ctx, &shared.backend, code_buf_mut) }
+        {
+            let prof_addr = if shared.profiling {
+                let tb_profile = shared.tb_profile(tb_idx);
+                std::ptr::addr_of!((*tb_profile).exec_count) as u64
+            } else {
+                0
+            };
+            translate(&mut guard.ir_ctx, &shared.backend, code_buf_mut, if shared.profiling { Some(prof_addr) } else { None })
+        }
     };
 
     let host_size = shared.code_buf().offset() - host_offset;
@@ -275,9 +307,9 @@ fn tb_add_jump<B: HostCodeGen>(
     let mut dst_jmp = dst_tb.jmp.lock().unwrap();
     dst_jmp.jmp_list.push((src, slot));
 
-    // Profile: track chain source count
     if shared.profiling {
-        shared.tb_profile(dst).chain_source_count.fetch_add(1, Ordering::Relaxed);
+        shared.tb_profile(dst).chain_source_count
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     per_cpu.stats.chain_patched += 1;
