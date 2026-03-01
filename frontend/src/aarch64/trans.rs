@@ -413,46 +413,87 @@ impl Aarch64DisasContext {
 
     // -- Condition evaluation --
     fn eval_cond(&self, ir: &mut Context, cond: i64) -> TempIdx {
-        let zero = ir.new_const(Type::I64, 0);
         let base_cond = (cond >> 1) as u32;
-        let result = match base_cond {
-            0 => self.eval_z_flag(ir), // EQ/NE: Z==1
-            1 => self.eval_c_flag(ir), // CS/CC: C==1
-            2 => self.eval_n_flag(ir), // MI/PL: N==1
-            3 => self.eval_v_flag(ir), // VS/VC: V==1
-            4 => {
-                // HI/LS: C==1 && Z==0
-                let c = self.eval_c_flag(ir);
-                let z = self.eval_z_flag(ir);
-                let t = ir.new_temp(Type::I64);
-                ir.gen_andc(Type::I64, t, c, z);
+        let result = match (base_cond, self.nzcv_src) {
+            // For CMP/SUBS-derived flags, these conditions map directly to
+            // signed/unsigned compares on (a, b), avoiding NZCV reconstruction.
+            (
+                4,
+                NzcvSource::AddSub {
+                    a,
+                    b,
+                    ty,
+                    is_sub: true,
+                    ..
+                },
+            ) => {
                 let r = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, r, t, zero, Cond::Ne);
+                ir.gen_setcond(ty, r, a, b, Cond::Gtu);
                 r
             }
-            5 => {
-                // GE/LT: N==V
-                let n = self.eval_n_flag(ir);
-                let v = self.eval_v_flag(ir);
+            (
+                5,
+                NzcvSource::AddSub {
+                    a,
+                    b,
+                    ty,
+                    is_sub: true,
+                    ..
+                },
+            ) => {
                 let r = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, r, n, v, Cond::Eq);
+                ir.gen_setcond(ty, r, a, b, Cond::Ge);
                 r
             }
-            6 => {
-                // GT/LE: N==V && Z==0
-                let n = self.eval_n_flag(ir);
-                let v = self.eval_v_flag(ir);
-                let nv = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, nv, n, v, Cond::Eq);
-                let z = self.eval_z_flag(ir);
-                let t = ir.new_temp(Type::I64);
-                ir.gen_andc(Type::I64, t, nv, z);
+            (
+                6,
+                NzcvSource::AddSub {
+                    a,
+                    b,
+                    ty,
+                    is_sub: true,
+                    ..
+                },
+            ) => {
                 let r = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, r, t, zero, Cond::Ne);
+                ir.gen_setcond(ty, r, a, b, Cond::Gt);
                 r
             }
-            7 => ir.new_const(Type::I64, 1), // AL
-            _ => unreachable!(),
+            _ => match base_cond {
+                0 => self.eval_z_flag(ir), // EQ/NE: Z==1
+                1 => self.eval_c_flag(ir), // CS/CC: C==1
+                2 => self.eval_n_flag(ir), // MI/PL: N==1
+                3 => self.eval_v_flag(ir), // VS/VC: V==1
+                4 => {
+                    // HI/LS: C==1 && Z==0
+                    let c = self.eval_c_flag(ir);
+                    let z = self.eval_z_flag(ir);
+                    let t = ir.new_temp(Type::I64);
+                    ir.gen_andc(Type::I64, t, c, z);
+                    t
+                }
+                5 => {
+                    // GE/LT: N==V
+                    let n = self.eval_n_flag(ir);
+                    let v = self.eval_v_flag(ir);
+                    let r = ir.new_temp(Type::I64);
+                    ir.gen_setcond(Type::I64, r, n, v, Cond::Eq);
+                    r
+                }
+                6 => {
+                    // GT/LE: N==V && Z==0
+                    let n = self.eval_n_flag(ir);
+                    let v = self.eval_v_flag(ir);
+                    let nv = ir.new_temp(Type::I64);
+                    ir.gen_setcond(Type::I64, nv, n, v, Cond::Eq);
+                    let z = self.eval_z_flag(ir);
+                    let t = ir.new_temp(Type::I64);
+                    ir.gen_andc(Type::I64, t, nv, z);
+                    t
+                }
+                7 => ir.new_const(Type::I64, 1), // AL
+                _ => unreachable!(),
+            },
         };
         // Invert if low bit set (and not AL/NV).
         if (cond & 1) != 0 && cond != 0xf {
