@@ -201,21 +201,18 @@ fn interp_one(
 
     // LSR Xd, Xn, #imm (UBFM alias: sf=1, N=1, immr=shift, imms=63)
     if insn & 0xffc0_0000 == 0xd340_0000 {
-        let immr = ((insn >> 16) & 0x3f) as u32;
+        let immr = (insn >> 16) & 0x3f;
         regs[rd] = regs[rn] >> immr;
         return true;
     }
 
     // UBFX Xd, Xn, #lsb, #width (UBFM: sf=1, N=1)
-    if insn & 0xffc0_0000 == 0xd340_0000 {
-        // Already handled by LSR above
-        return true;
-    }
+    // Note: duplicate check removed — already handled by LSR above.
 
     // UBFM general (sf=1, N=1): 1101 0011 01 immr imms Rn Rd
-    if insn & 0xff80_0000 == 0xd340_0000 {
-        let immr = ((insn >> 16) & 0x3f) as u32;
-        let imms = ((insn >> 10) & 0x3f) as u32;
+    if insn & 0xff00_0000 == 0xd300_0000 {
+        let immr = (insn >> 16) & 0x3f;
+        let imms = (insn >> 10) & 0x3f;
         let width = imms + 1;
         let mask = (1u64 << width) - 1;
         regs[rd] = (regs[rn] >> immr) & mask;
@@ -266,7 +263,7 @@ fn interp_one(
 
     // CMP Wn, #imm12 (SUBS WZR, Wn, #imm12, sf=0)
     if insn & 0xff00_0000 == 0x7100_0000 {
-        let imm12 = ((insn >> 10) & 0xfff) as u32;
+        let imm12 = (insn >> 10) & 0xfff;
         let a = regs[rn] as u32;
         let result = a.wrapping_sub(imm12);
         *nzcv = 0;
@@ -279,14 +276,14 @@ fn interp_one(
     // CSEL Xd, Xn, Xm, cond
     if insn & 0xffe0_0c00 == 0x9a80_0000 {
         let rm = ((insn >> 16) & 0x1f) as usize;
-        let cond = ((insn >> 12) & 0xf) as u32;
+        let cond = (insn >> 12) & 0xf;
         regs[rd] = if cond_holds(*nzcv, cond) { regs[rn] } else { regs[rm] };
         return true;
     }
 
     // B.cond #imm19
     if insn & 0xff00_0010 == 0x5400_0000 {
-        let cond = (insn & 0xf) as u32;
+        let cond = insn & 0xf;
         if cond_holds(*nzcv, cond) {
             let imm19 = ((insn >> 5) & 0x7ffff) as i32;
             let offset = ((imm19 << 13) >> 13) as i64 * 4;
@@ -332,8 +329,8 @@ fn interp_one(
     // CCMP Xn, #imm5, #nzcv, cond
     if insn & 0xffe0_0c10 == 0xfa40_0800 {
         let imm5 = ((insn >> 16) & 0x1f) as u64;
-        let cond = ((insn >> 12) & 0xf) as u32;
-        let alt_nzcv = (insn & 0xf) as u32;
+        let cond = (insn >> 12) & 0xf;
+        let alt_nzcv = insn & 0xf;
         if cond_holds(*nzcv, cond) {
             let a = regs[rn];
             let result = a.wrapping_sub(imm5);
@@ -376,8 +373,8 @@ fn cond_holds(nzcv: u32, cond: u32) -> bool {
 
 fn decode_bitmask_64(insn: u32) -> Option<u64> {
     let n = (insn >> 22) & 1;
-    let immr = ((insn >> 16) & 0x3f) as u32;
-    let imms = ((insn >> 10) & 0x3f) as u32;
+    let immr = (insn >> 16) & 0x3f;
+    let imms = (insn >> 10) & 0x3f;
     let len = 63 - (((!((imms as u64) | (!n as u64) << 6)) << 57) >> 57).leading_zeros();
     if len > 6 { return None; }
     let size = 1u32 << len;
@@ -530,10 +527,11 @@ fn main() {
                 let pc = *rbp.add(31);
                 let sp = *rbp.add(32);
                 let gb = *rbp.add(33);
-                let nzcv = *rbp.add(34);
+                let lb = *rbp.add(34);
+                let nzcv = *rbp.add(35);
                 eprintln!(
-                    "pc={:#018x} sp={:#018x} gb={:#018x} nzcv={:#018x}",
-                    pc, sp, gb, nzcv,
+                    "pc={:#018x} sp={:#018x} gb={:#018x} lb={:#018x} nzcv={:#018x}",
+                    pc, sp, gb, lb, nzcv,
                 );
             } else {
                 eprintln!("RBP invalid, cannot dump guest state");

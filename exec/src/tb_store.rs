@@ -101,7 +101,11 @@ impl TbStore {
     /// Insert a TB into the hash table (prepend to bucket).
     ///
     /// Must be called after the TB's `pc`, `flags`, and `host_size` are set.
-    pub fn insert(&self, tb_ptr: *mut TranslationBlock) {
+    ///
+    /// # Safety
+    /// `tb_ptr` must be a valid pointer previously returned by `alloc` and
+    /// not yet freed by `flush`.
+    pub unsafe fn insert(&self, tb_ptr: *mut TranslationBlock) {
         let mut guard = self.owned.lock().unwrap();
         let tb = unsafe { &mut *tb_ptr };
         let bucket = TranslationBlock::hash(tb.pc, tb.flags);
@@ -114,7 +118,11 @@ impl TbStore {
 
     /// Mark a TB as invalid, unlink all chained jumps, and remove it from
     /// the hash chain.
-    pub fn invalidate<B: HostCodeGen>(
+    ///
+    /// # Safety
+    /// `tb_ptr` must be a valid pointer previously returned by `alloc` and
+    /// not yet freed by `flush`.
+    pub unsafe fn invalidate<B: HostCodeGen>(
         &self,
         tb_ptr: *mut TranslationBlock,
         code_buf: &CodeBuffer,

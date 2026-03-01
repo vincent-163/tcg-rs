@@ -17,6 +17,12 @@ impl TbProfile {
     }
 }
 
+impl Default for TbProfile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub const DEFAULT_HOT_THRESHOLD: u64 = 10;
 
 const MAGIC: &[u8; 8] = b"TCGPROF\0";
