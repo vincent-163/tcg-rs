@@ -30,6 +30,7 @@ use tcg_linux_user::syscall_aarch64::handle_syscall_aarch64;
 struct LinuxCpu {
     cpu: Aarch64Cpu,
     single_step: bool,
+    max_insns_override: Option<u32>,
 }
 
 impl GuestCpu for LinuxCpu {
@@ -47,7 +48,10 @@ impl GuestCpu for LinuxCpu {
         pc: u64,
         max_insns: u32,
     ) -> u32 {
-        let max_insns = if self.single_step { 1 } else { max_insns };
+        let mut max_insns = if self.single_step { 1 } else { max_insns };
+        if let Some(v) = self.max_insns_override {
+            max_insns = max_insns.min(v.max(1));
+        }
         let base = self.cpu.guest_base as *const u8;
         if ir.nb_globals() == 0 {
             let mut d =
@@ -512,9 +516,14 @@ fn main() {
 
     // Set up CPU
     let single_step = env::var("TCG_SINGLE").is_ok();
+    let max_insns_override = env::var("TCG_MAX_INSNS")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|&v| v > 0);
     let mut lcpu = LinuxCpu {
         cpu: Aarch64Cpu::new(),
         single_step,
+        max_insns_override,
     };
     lcpu.cpu.pc = info.entry;
     lcpu.cpu.sp = info.sp;
@@ -561,9 +570,16 @@ fn main() {
                 let gb = *rbp.add(33);
                 let lb = *rbp.add(34);
                 let nzcv = *rbp.add(35);
+                let fpcr = *rbp.add(36);
+                let fpsr = *rbp.add(37);
+                let tpidr = *rbp.add(38);
                 eprintln!(
                     "pc={:#018x} sp={:#018x} gb={:#018x} lb={:#018x} nzcv={:#018x}",
                     pc, sp, gb, lb, nzcv,
+                );
+                eprintln!(
+                    "fpcr={:#018x} fpsr={:#018x} tpidr_el0={:#018x}",
+                    fpcr, fpsr, tpidr,
                 );
             } else {
                 eprintln!("RBP invalid, cannot dump guest state");
@@ -622,14 +638,16 @@ fn main() {
     // the resolver by interpreting its code directly: the resolvers
     // check AT_HWCAP (which we set to 0) and return a function pointer.
     // We use a mini-interpreter to handle the simple resolver patterns.
-    for &(got_offset, resolver_addr) in &info.irelatives {
-        let result = resolve_ifunc_static(&space, resolver_addr);
-        unsafe { space.write_u64(got_offset, result); }
-        if show_trace {
-            eprintln!(
-                "[ifunc] GOT[{:#x}] = {:#x} (resolver {:#x})",
-                got_offset, result, resolver_addr,
-            );
+    if env::var("TCG_NO_IFUNC").is_err() {
+        for &(got_offset, resolver_addr) in &info.irelatives {
+            let result = resolve_ifunc_static(&space, resolver_addr);
+            unsafe { space.write_u64(got_offset, result); }
+            if show_trace {
+                eprintln!(
+                    "[ifunc] GOT[{:#x}] = {:#x} (resolver {:#x})",
+                    got_offset, result, resolver_addr,
+                );
+            }
         }
     }
 

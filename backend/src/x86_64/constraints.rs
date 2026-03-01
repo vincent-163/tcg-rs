@@ -24,7 +24,12 @@ pub fn op_constraint(opc: Opcode) -> &'static OpConstraint {
             &C
         }
         // -- Destructive binary (output aliases input 0) --
-        Opcode::Sub | Opcode::Mul | Opcode::And | Opcode::Or | Opcode::Xor => {
+        Opcode::Sub
+        | Opcode::Mul
+        | Opcode::And
+        | Opcode::Or
+        | Opcode::Xor
+        | Opcode::Eqv => {
             static C: OpConstraint = o1_i2_alias(R, R, R);
             &C
         }

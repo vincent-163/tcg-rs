@@ -2,7 +2,11 @@ use crate::guest_space::GuestSpace;
 use crate::syscall::SyscallResult;
 
 // AArch64 Linux syscall numbers (asm-generic)
+const SYS_FCNTL: u64 = 25;
+const SYS_DUP: u64 = 23;
+const SYS_DUP3: u64 = 24;
 const SYS_IOCTL: u64 = 29;
+const SYS_PIPE2: u64 = 59;
 const SYS_UNLINKAT: u64 = 35;
 const SYS_FACCESSAT: u64 = 48;
 const SYS_OPENAT: u64 = 56;
@@ -22,6 +26,7 @@ const SYS_SET_TID_ADDRESS: u64 = 96;
 const SYS_FUTEX: u64 = 98;
 const SYS_SET_ROBUST_LIST: u64 = 99;
 const SYS_CLOCK_GETTIME: u64 = 113;
+const SYS_CLOCK_NANOSLEEP: u64 = 115;
 const SYS_TGKILL: u64 = 131;
 const SYS_RT_SIGACTION: u64 = 134;
 const SYS_RT_SIGPROCMASK: u64 = 135;
@@ -37,11 +42,14 @@ const SYS_BRK: u64 = 214;
 const SYS_MUNMAP: u64 = 215;
 const SYS_MREMAP: u64 = 216;
 const SYS_MMAP: u64 = 222;
+const SYS_EXECVE: u64 = 221;
 const SYS_MPROTECT: u64 = 226;
 const SYS_MADVISE: u64 = 233;
 const SYS_PRLIMIT64: u64 = 261;
+const SYS_WAIT4: u64 = 260;
 const SYS_GETRANDOM: u64 = 278;
 const SYS_RSEQ: u64 = 293;
+const SYS_CLONE: u64 = 220;
 
 const ENOSYS: u64 = (-38i64) as u64;
 const ENOTTY: u64 = (-25i64) as u64;
@@ -69,10 +77,11 @@ pub fn handle_syscall_aarch64(
     let a4 = regs[4];  // X4
     if std::env::var("TCG_SYSCALL").is_ok() {
         eprintln!(
-            "[syscall] nr={nr} a0={a0:#x} a1={a1:#x} a2={a2:#x} a3={a3:#x}",
+            "[syscall] nr={nr} a0={a0:#x} a1={a1:#x} a2={a2:#x} a3={a3:#x} lr={:#x}",
+            regs[30],
         );
     }
-    match nr {
+    let result = match nr {
         SYS_WRITE => {
             let fd = a0 as i32;
             let buf = a1;
@@ -116,12 +125,42 @@ pub fn handle_syscall_aarch64(
         | SYS_MADVISE => {
             SyscallResult::Continue(0)
         }
-        SYS_SET_TID_ADDRESS => SyscallResult::Continue(1),
-        SYS_GETPID | SYS_GETPPID | SYS_GETTID => {
-            SyscallResult::Continue(1)
+        SYS_SET_TID_ADDRESS => {
+            SyscallResult::Continue(host_gettid() as u64)
         }
-        SYS_GETUID | SYS_GETEUID | SYS_GETGID
-        | SYS_GETEGID => SyscallResult::Continue(0),
+        SYS_GETPID => {
+            SyscallResult::Continue(
+                unsafe { libc::getpid() as u64 },
+            )
+        }
+        SYS_GETPPID => {
+            SyscallResult::Continue(
+                unsafe { libc::getppid() as u64 },
+            )
+        }
+        SYS_GETTID => {
+            SyscallResult::Continue(host_gettid() as u64)
+        }
+        SYS_GETUID => {
+            SyscallResult::Continue(
+                unsafe { libc::getuid() as u64 },
+            )
+        }
+        SYS_GETEUID => {
+            SyscallResult::Continue(
+                unsafe { libc::geteuid() as u64 },
+            )
+        }
+        SYS_GETGID => {
+            SyscallResult::Continue(
+                unsafe { libc::getgid() as u64 },
+            )
+        }
+        SYS_GETEGID => {
+            SyscallResult::Continue(
+                unsafe { libc::getegid() as u64 },
+            )
+        }
         SYS_GETRANDOM => {
             let buf = a0;
             let len = a1 as usize;
@@ -143,6 +182,10 @@ pub fn handle_syscall_aarch64(
         SYS_WRITEV => do_writev(space, a0, a1, a2),
         SYS_READV => do_readv(space, a0, a1, a2),
         SYS_IOCTL => do_ioctl(a0, a1, a2),
+        SYS_FCNTL => do_fcntl(a0, a1, a2),
+        SYS_DUP => do_dup(a0),
+        SYS_DUP3 => do_dup3(a0, a1, a2),
+        SYS_PIPE2 => do_pipe2(space, a0, a1),
         SYS_UNLINKAT => do_unlinkat(space, a0, a1, a2),
         SYS_FSTAT => do_fstat(space, a0, a1),
         SYS_FSTATFS => do_fstatfs(space, a0, a1),
@@ -162,18 +205,185 @@ pub fn handle_syscall_aarch64(
         SYS_CLOCK_GETTIME => {
             do_clock_gettime(space, a0, a1)
         }
+        SYS_CLOCK_NANOSLEEP => {
+            do_clock_nanosleep(space, a0, a1, a2, a3)
+        }
+        SYS_CLONE => do_clone(space, a0, a1, a2, a3, a4),
+        SYS_WAIT4 => do_wait4(space, a0, a1, a2, a3),
+        SYS_EXECVE => SyscallResult::Continue(ENOSYS),
         _ => {
             eprintln!(
                 "[tcg] unknown syscall {nr} → -ENOSYS"
             );
             SyscallResult::Continue(ENOSYS)
         }
+    };
+    if std::env::var("TCG_SYSCALL").is_ok() {
+        match result {
+            SyscallResult::Continue(ret) => {
+                eprintln!("[syscall] nr={nr} ret={ret:#x}");
+            }
+            SyscallResult::Exit(code) => {
+                eprintln!("[syscall] nr={nr} exit={code}");
+            }
+        }
+    }
+    result
+}
+
+fn do_fcntl(fd: u64, cmd: u64, arg: u64) -> SyscallResult {
+    let ret = unsafe {
+        libc::fcntl(fd as i32, cmd as i32, arg as libc::c_long)
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(ret as u64)
+    }
+}
+
+fn do_dup(fd: u64) -> SyscallResult {
+    let ret = unsafe { libc::dup(fd as i32) };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(ret as u64)
+    }
+}
+
+fn do_dup3(oldfd: u64, newfd: u64, flags: u64) -> SyscallResult {
+    let ret = unsafe {
+        libc::dup3(oldfd as i32, newfd as i32, flags as i32)
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(ret as u64)
+    }
+}
+
+fn do_pipe2(space: &mut GuestSpace, pipefd_addr: u64, flags: u64) -> SyscallResult {
+    let mut fds = [0i32; 2];
+    let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), flags as i32) };
+    if ret < 0 {
+        return SyscallResult::Continue(errno_ret());
+    }
+    let fd0 = (fds[0] as u32).to_le_bytes();
+    let fd1 = (fds[1] as u32).to_le_bytes();
+    unsafe {
+        space.write_bytes(pipefd_addr, &fd0);
+        space.write_bytes(pipefd_addr + 4, &fd1);
+    }
+    SyscallResult::Continue(0)
+}
+
+fn do_clone(
+    _space: &mut GuestSpace,
+    flags: u64,
+    _child_stack: u64,
+    _ptid: u64,
+    _tls: u64,
+    _ctid: u64,
+) -> SyscallResult {
+    // Minimal clone support for fork-like use in glibc/perl:
+    // clone(flags=SIGCHLD|CLONE_CHILD_{SET,CLEAR}TID, child_stack=0, ...)
+    // We map this to host fork().
+    let sigchld = libc::SIGCHLD as u64;
+    if (flags & sigchld) == sigchld {
+        let pid = unsafe { libc::fork() };
+        if pid < 0 {
+            SyscallResult::Continue(errno_ret())
+        } else {
+            SyscallResult::Continue(pid as u64)
+        }
+    } else {
+        SyscallResult::Continue(ENOSYS)
+    }
+}
+
+fn do_wait4(
+    space: &mut GuestSpace,
+    pid: u64,
+    status_addr: u64,
+    options: u64,
+    rusage_addr: u64,
+) -> SyscallResult {
+    if rusage_addr != 0 {
+        return SyscallResult::Continue(ENOSYS);
+    }
+    let mut status: i32 = 0;
+    let ret = unsafe {
+        libc::wait4(
+            pid as i32,
+            if status_addr != 0 { &mut status } else { std::ptr::null_mut() },
+            options as i32,
+            std::ptr::null_mut(),
+        )
+    };
+    if ret < 0 {
+        return SyscallResult::Continue(errno_ret());
+    }
+    if status_addr != 0 {
+        let st = (status as u32).to_le_bytes();
+        unsafe {
+            space.write_bytes(status_addr, &st);
+        }
+    }
+    SyscallResult::Continue(ret as u64)
+}
+
+fn do_clock_nanosleep(
+    space: &mut GuestSpace,
+    clockid: u64,
+    flags: u64,
+    req_addr: u64,
+    rem_addr: u64,
+) -> SyscallResult {
+    let req_sec = unsafe { space.read_u64(req_addr) } as i64;
+    let req_nsec = unsafe { space.read_u64(req_addr + 8) } as i64;
+    let req = libc::timespec {
+        tv_sec: req_sec as libc::time_t,
+        tv_nsec: req_nsec as libc::c_long,
+    };
+    let mut rem = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    let rem_ptr = if rem_addr != 0 {
+        &mut rem as *mut libc::timespec
+    } else {
+        std::ptr::null_mut()
+    };
+    let ret = unsafe {
+        libc::clock_nanosleep(
+            clockid as libc::clockid_t,
+            flags as i32,
+            &req as *const libc::timespec,
+            rem_ptr,
+        )
+    };
+    if ret != 0 {
+        if rem_addr != 0 {
+            let rem_sec = (rem.tv_sec as i64 as u64).to_le_bytes();
+            let rem_nsec = (rem.tv_nsec as i64 as u64).to_le_bytes();
+            unsafe {
+                space.write_bytes(rem_addr, &rem_sec);
+                space.write_bytes(rem_addr + 8, &rem_nsec);
+            }
+        }
+        SyscallResult::Continue((-(ret as i64)) as u64)
+    } else {
+        SyscallResult::Continue(0)
     }
 }
 
 fn errno_ret() -> u64 {
     let e = unsafe { *libc::__errno_location() };
     (-e as i64) as u64
+}
+
+fn host_gettid() -> i64 {
+    unsafe { libc::syscall(libc::SYS_gettid) as i64 }
 }
 
 fn do_brk(space: &mut GuestSpace, addr: u64) -> SyscallResult {

@@ -224,8 +224,8 @@ fn ti(info: &[TempInfo], tidx: TempIdx) -> TempInfo {
 
 /// Record that `dst` is now a known constant.
 fn set_const(info: &mut Vec<TempInfo>, dst: TempIdx, val: u64) {
+    invalidate_one(info, dst);
     let i = dst.0 as usize;
-    ensure_info(info, i);
     info[i].is_const = true;
     info[i].val = val;
     info[i].copy_of = None;
@@ -233,8 +233,8 @@ fn set_const(info: &mut Vec<TempInfo>, dst: TempIdx, val: u64) {
 
 /// Record that `dst` is a copy of `src`.
 fn set_copy(info: &mut Vec<TempInfo>, dst: TempIdx, src: TempIdx) {
+    invalidate_one(info, dst);
     let i = dst.0 as usize;
-    ensure_info(info, i);
     let si = ti(info, src);
     if si.is_const {
         info[i].is_const = true;

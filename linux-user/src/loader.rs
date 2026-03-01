@@ -228,6 +228,10 @@ fn setup_stack(
 ) -> Result<u64, LoadError> {
     let stack_top = GUEST_STACK_TOP;
     let stack_base = stack_top - GUEST_STACK_SIZE as u64;
+    // Keep some mapped headroom above initial data.
+    // Some optimized libc routines may speculatively read a little past
+    // string/object boundaries during startup processing.
+    const STACK_HEADROOM: u64 = 0x10000;
 
     // Map stack
     space.mmap_fixed(
@@ -237,7 +241,7 @@ fn setup_stack(
     )?;
 
     // Build from top down
-    let mut pos = stack_top;
+    let mut pos = stack_top - STACK_HEADROOM;
 
     // 16 bytes random data for AT_RANDOM
     pos -= 16;
