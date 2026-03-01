@@ -181,16 +181,11 @@ impl Aarch64DisasContext {
         sf: bool, is_sub: bool,
     ) {
         let ty = Self::sf_type(sf);
-        let bits = if sf { 63u64 } else { 31u64 };
         let zero = ir.new_const(ty, 0);
-        let sh = ir.new_const(ty, bits);
 
         // N
-        let n_tmp = ir.new_temp(ty);
-        ir.gen_shr(ty, n_tmp, result, sh);
         let n_bit = ir.new_temp(Type::I64);
-        if sf { ir.gen_mov(Type::I64, n_bit, n_tmp); }
-        else { ir.gen_ext_u32_i64(n_bit, n_tmp); }
+        ir.gen_setcond(ty, n_bit, result, zero, Cond::Lt);
 
         // Z
         let z_bit = ir.new_temp(Type::I64);
@@ -219,11 +214,8 @@ impl Aarch64DisasContext {
             ir.gen_not(ty, not_xor, xor_ab);
             ir.gen_and(ty, v_tmp, not_xor, xor_ar);
         }
-        let v_sh = ir.new_temp(ty);
-        ir.gen_shr(ty, v_sh, v_tmp, sh);
         let v_bit = ir.new_temp(Type::I64);
-        if sf { ir.gen_mov(Type::I64, v_bit, v_sh); }
-        else { ir.gen_ext_u32_i64(v_bit, v_sh); }
+        ir.gen_setcond(ty, v_bit, v_tmp, zero, Cond::Lt);
 
         // Pack (N<<31)|(Z<<30)|(C<<29)|(V<<28)
         let c31 = ir.new_const(Type::I64, 31);
@@ -238,12 +230,10 @@ impl Aarch64DisasContext {
         ir.gen_shl(Type::I64, c_s, c_bit, c29);
         let v_s = ir.new_temp(Type::I64);
         ir.gen_shl(Type::I64, v_s, v_bit, c28);
-        let nzcv = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, nzcv, n_s, z_s);
-        let tmp = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, tmp, c_s, v_s);
-        ir.gen_or(Type::I64, nzcv, nzcv, tmp);
-        ir.gen_mov(Type::I64, self.nzcv, nzcv);
+        ir.gen_or(Type::I64, n_s, n_s, z_s);
+        ir.gen_or(Type::I64, n_s, n_s, c_s);
+        ir.gen_or(Type::I64, n_s, n_s, v_s);
+        ir.gen_mov(Type::I64, self.nzcv, n_s);
     }
 
     // -- NZCV for logical (C=0, V=0) --
@@ -252,15 +242,9 @@ impl Aarch64DisasContext {
         result: TempIdx, sf: bool,
     ) {
         let ty = Self::sf_type(sf);
-        let bits = if sf { 63u64 } else { 31u64 };
         let zero = ir.new_const(ty, 0);
-        let sh = ir.new_const(ty, bits);
-
-        let n_tmp = ir.new_temp(ty);
-        ir.gen_shr(ty, n_tmp, result, sh);
         let n_bit = ir.new_temp(Type::I64);
-        if sf { ir.gen_mov(Type::I64, n_bit, n_tmp); }
-        else { ir.gen_ext_u32_i64(n_bit, n_tmp); }
+        ir.gen_setcond(ty, n_bit, result, zero, Cond::Lt);
 
         let z_bit = ir.new_temp(Type::I64);
         ir.gen_setcond(ty, z_bit, result, zero, Cond::Eq);
@@ -271,94 +255,66 @@ impl Aarch64DisasContext {
         ir.gen_shl(Type::I64, n_s, n_bit, c31);
         let z_s = ir.new_temp(Type::I64);
         ir.gen_shl(Type::I64, z_s, z_bit, c30);
-        let nzcv = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, nzcv, n_s, z_s);
-        ir.gen_mov(Type::I64, self.nzcv, nzcv);
+        ir.gen_or(Type::I64, n_s, n_s, z_s);
+        ir.gen_mov(Type::I64, self.nzcv, n_s);
+    }
+
+    fn extract_nzcv_bit(
+        &self, ir: &mut Context, bit: u64,
+    ) -> TempIdx {
+        let sh = ir.new_const(Type::I64, bit);
+        let one = ir.new_const(Type::I64, 1);
+        let t = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, t, self.nzcv, sh);
+        ir.gen_and(Type::I64, t, t, one);
+        t
     }
 
     // -- Condition evaluation --
     fn eval_cond(
         &self, ir: &mut Context, cond: i64,
     ) -> TempIdx {
-        let nzcv = self.nzcv;
-        let c31 = ir.new_const(Type::I64, 31);
-        let c30 = ir.new_const(Type::I64, 30);
-        let c29 = ir.new_const(Type::I64, 29);
-        let c28 = ir.new_const(Type::I64, 28);
-        let one64 = ir.new_const(Type::I64, 1);
-        let zero = ir.new_const(Type::I64, 0);
-
-        let n = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, n, nzcv, c31);
-        ir.gen_and(Type::I64, n, n, one64);
-        let z = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, z, nzcv, c30);
-        ir.gen_and(Type::I64, z, z, one64);
-        let c = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, c, nzcv, c29);
-        ir.gen_and(Type::I64, c, c, one64);
-        let v = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, v, nzcv, c28);
-        ir.gen_and(Type::I64, v, v, one64);
+        let one = ir.new_const(Type::I64, 1);
 
         let base_cond = (cond >> 1) as u32;
-        let result = ir.new_temp(Type::I64);
-        match base_cond {
-            0 => { // EQ/NE: Z==1
-                ir.gen_setcond(
-                    Type::I64, result, z, zero, Cond::Ne,
-                );
-            }
-            1 => { // CS/CC: C==1
-                ir.gen_setcond(
-                    Type::I64, result, c, zero, Cond::Ne,
-                );
-            }
-            2 => { // MI/PL: N==1
-                ir.gen_setcond(
-                    Type::I64, result, n, zero, Cond::Ne,
-                );
-            }
-            3 => { // VS/VC: V==1
-                ir.gen_setcond(
-                    Type::I64, result, v, zero, Cond::Ne,
-                );
-            }
+        let result = match base_cond {
+            0 => self.extract_nzcv_bit(ir, 30), // EQ/NE: Z==1
+            1 => self.extract_nzcv_bit(ir, 29), // CS/CC: C==1
+            2 => self.extract_nzcv_bit(ir, 31), // MI/PL: N==1
+            3 => self.extract_nzcv_bit(ir, 28), // VS/VC: V==1
             4 => { // HI/LS: C==1 && Z==0
+                let c = self.extract_nzcv_bit(ir, 29);
+                let z = self.extract_nzcv_bit(ir, 30);
                 let t = ir.new_temp(Type::I64);
                 ir.gen_andc(Type::I64, t, c, z);
-                ir.gen_setcond(
-                    Type::I64, result, t, zero, Cond::Ne,
-                );
+                t
             }
             5 => { // GE/LT: N==V
-                ir.gen_setcond(
-                    Type::I64, result, n, v, Cond::Eq,
-                );
+                let n = self.extract_nzcv_bit(ir, 31);
+                let v = self.extract_nzcv_bit(ir, 28);
+                let r = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, r, n, v, Cond::Eq);
+                r
             }
             6 => { // GT/LE: N==V && Z==0
+                let n = self.extract_nzcv_bit(ir, 31);
+                let v = self.extract_nzcv_bit(ir, 28);
                 let nv = ir.new_temp(Type::I64);
                 ir.gen_setcond(
                     Type::I64, nv, n, v, Cond::Eq,
                 );
+                let z = self.extract_nzcv_bit(ir, 30);
                 let t = ir.new_temp(Type::I64);
                 ir.gen_andc(Type::I64, t, nv, z);
-                ir.gen_setcond(
-                    Type::I64, result, t, zero, Cond::Ne,
-                );
+                t
             }
-            7 => { // AL
-                let one = ir.new_const(Type::I64, 1);
-                ir.gen_mov(Type::I64, result, one);
-            }
+            7 => one, // AL
             _ => unreachable!(),
-        }
+        };
         // Invert if low bit set (and not AL/NV).
         if (cond & 1) != 0 && cond != 0xf {
             let inv = ir.new_temp(Type::I64);
-            ir.gen_setcond(
-                Type::I64, inv, result, zero, Cond::Eq,
-            );
+            ir.gen_xor(Type::I64, inv, result, one);
             inv
         } else {
             result
@@ -8439,4 +8395,3 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 }
-
