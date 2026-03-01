@@ -65,6 +65,20 @@ cc -shared -o /tmp/aot.so /tmp/aot.o
 # Step 3: run with AOT — AOT TBs are called via trampolines; others JIT'd
 TCG_AOT=/tmp/aot.so target/release/tcg-riscv64 <elf> [args...]
 
+# ── AArch64 profile-guided AOT ───────────────────────────────────────────────
+# Same 3-step pipeline as RISC-V; arch auto-detected from ELF e_machine.
+
+# Step 1: profile run
+TCG_PROFILE=1 TCG_PROFILE_OUT=/tmp/prof-aa64.bin \
+    target/release/tcg-aarch64 <elf> [args...]
+
+# Step 2: AOT compile
+target/release/tcg-aot /tmp/prof-aa64.bin <elf> -o /tmp/aot-aa64.o
+cc -shared -o /tmp/aot-aa64.so /tmp/aot-aa64.o
+
+# Step 3: run with AOT (~3.5× speedup over baseline JIT)
+TCG_AOT=/tmp/aot-aa64.so target/release/tcg-aarch64 <elf> [args...]
+
 # Optional env vars:
 #   TCG_STATS=1          print TB lookup / exit / chaining statistics
 #   TCG_PROFILE=1        enable profiling (needed for profile-guided mode)
