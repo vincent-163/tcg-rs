@@ -8,10 +8,13 @@
 #![allow(clippy::fn_to_numeric_cast)]
 
 use super::cpu::{
-    vreg_hi_offset, vreg_lo_offset, FPCR_OFFSET, FPSR_OFFSET, TPIDR_EL0_OFFSET,
+    helper_lazy_nzcv_eval_cond, helper_lazy_nzcv_to_packed, vreg_hi_offset,
+    vreg_lo_offset, CC_OP_ADD32, CC_OP_ADD64, CC_OP_EAGER, CC_OP_LOGIC32,
+    CC_OP_LOGIC64, CC_OP_SUB32, CC_OP_SUB64, FPCR_OFFSET, FPSR_OFFSET,
+    TPIDR_EL0_OFFSET,
 };
 use super::insn_decode::*;
-use super::{Aarch64DisasContext, NzcvSource};
+use super::{Aarch64DisasContext, LazyNzcvKind};
 use crate::DisasJumpType;
 use tcg_core::context::Context;
 use tcg_core::tb::{EXCP_ECALL, TB_EXIT_IDX0, TB_EXIT_IDX1, TB_EXIT_NOCHAIN};
@@ -186,7 +189,7 @@ impl Aarch64DisasContext {
         d
     }
 
-    // -- NZCV for add/sub --
+    // -- Lazy NZCV: set flags from add/sub --
     fn gen_nzcv_add_sub(
         &mut self,
         ir: &mut Context,
@@ -196,14 +199,248 @@ impl Aarch64DisasContext {
         sf: bool,
         is_sub: bool,
     ) {
+        // Write cc_op, cc_a, cc_b, cc_result to globals.
+        let op_val = if is_sub {
+            if sf {
+                CC_OP_SUB64
+            } else {
+                CC_OP_SUB32
+            }
+        } else {
+            if sf {
+                CC_OP_ADD64
+            } else {
+                CC_OP_ADD32
+            }
+        };
+        let op_c = ir.new_const(Type::I64, op_val);
+        ir.gen_mov(Type::I64, self.cc_op, op_c);
+        // Widen a, b, result to I64 for storage in cc_a/cc_b/cc_result.
+        let a64 = if sf {
+            a
+        } else {
+            let t = ir.new_temp(Type::I64);
+            ir.gen_ext_u32_i64(t, a);
+            t
+        };
+        let b64 = if sf {
+            b
+        } else {
+            let t = ir.new_temp(Type::I64);
+            ir.gen_ext_u32_i64(t, b);
+            t
+        };
+        let r64 = if sf {
+            result
+        } else {
+            let t = ir.new_temp(Type::I64);
+            ir.gen_ext_u32_i64(t, result);
+            t
+        };
+        ir.gen_mov(Type::I64, self.cc_a, a64);
+        ir.gen_mov(Type::I64, self.cc_b, b64);
+        ir.gen_mov(Type::I64, self.cc_result, r64);
+        // Set compile-time lazy state.
+        self.lazy_nzcv = Some(if is_sub {
+            LazyNzcvKind::Sub { sf }
+        } else {
+            LazyNzcvKind::Add { sf }
+        });
+    }
+
+    // -- Lazy NZCV: set flags from logic (C=0, V=0) --
+    fn gen_nzcv_logic(&mut self, ir: &mut Context, result: TempIdx, sf: bool) {
+        let op_val = if sf { CC_OP_LOGIC64 } else { CC_OP_LOGIC32 };
+        let op_c = ir.new_const(Type::I64, op_val);
+        ir.gen_mov(Type::I64, self.cc_op, op_c);
+        let r64 = if sf {
+            result
+        } else {
+            let t = ir.new_temp(Type::I64);
+            ir.gen_ext_u32_i64(t, result);
+            t
+        };
+        ir.gen_mov(Type::I64, self.cc_result, r64);
+        // cc_a and cc_b are don't-care for logic ops.
+        self.lazy_nzcv = Some(LazyNzcvKind::Logic { sf });
+    }
+
+    // -- Materialize packed NZCV from lazy state --
+    // Call this before any operation that needs the packed nzcv
+    // global (MRS NZCV, ADC, SBC, etc.)
+    fn materialize_nzcv(&mut self, ir: &mut Context) {
+        if self.lazy_nzcv.is_some() {
+            // We know cc_op at compile time; call the helper
+            // to compute packed NZCV and store it.
+            let packed = ir.new_temp(Type::I64);
+            ir.gen_call(
+                packed,
+                helper_lazy_nzcv_to_packed as u64,
+                &[self.cc_op, self.cc_a, self.cc_b, self.cc_result],
+            );
+            ir.gen_mov(Type::I64, self.nzcv, packed);
+            // Mark cc_op as EAGER and store packed in cc_a.
+            let eager = ir.new_const(Type::I64, CC_OP_EAGER);
+            ir.gen_mov(Type::I64, self.cc_op, eager);
+            ir.gen_mov(Type::I64, self.cc_a, packed);
+            self.lazy_nzcv = None;
+        } else {
+            // cc_op unknown at compile time — might be lazy from
+            // previous TB. We need to check at runtime.
+            // Generate: if cc_op != EAGER { nzcv = helper(...); cc_op = EAGER; cc_a = nzcv; }
+            let eager_c = ir.new_const(Type::I64, CC_OP_EAGER);
+            let skip = ir.new_label();
+            ir.gen_brcond(Type::I64, self.cc_op, eager_c, Cond::Eq, skip);
+            let packed = ir.new_temp(Type::I64);
+            ir.gen_call(
+                packed,
+                helper_lazy_nzcv_to_packed as u64,
+                &[self.cc_op, self.cc_a, self.cc_b, self.cc_result],
+            );
+            ir.gen_mov(Type::I64, self.nzcv, packed);
+            ir.gen_mov(Type::I64, self.cc_op, eager_c);
+            ir.gen_mov(Type::I64, self.cc_a, packed);
+            ir.gen_set_label(skip);
+        }
+    }
+
+    // -- Set NZCV to a specific packed value (EAGER) --
+    // For FCMP, MSR NZCV, CCMP fallthrough, etc.
+    fn set_nzcv_eager(&mut self, ir: &mut Context, val: TempIdx) {
+        ir.gen_mov(Type::I64, self.nzcv, val);
+        let eager = ir.new_const(Type::I64, CC_OP_EAGER);
+        ir.gen_mov(Type::I64, self.cc_op, eager);
+        // Store packed nzcv in cc_a so the runtime helper
+        // can access it when cc_op == EAGER.
+        ir.gen_mov(Type::I64, self.cc_a, val);
+        self.lazy_nzcv = None;
+    }
+
+    // -- Invalidate compile-time lazy tracking --
+    // Called at labels (branch targets) where cc_op is unknown.
+    fn invalidate_lazy_nzcv(&mut self) {
+        self.lazy_nzcv = None;
+    }
+
+    // -- Condition evaluation (lazy-aware) --
+    fn eval_cond(&mut self, ir: &mut Context, cond: i64) -> TempIdx {
+        if cond == 0xe || cond == 0xf {
+            // AL/NV — always true
+            let one = ir.new_const(Type::I64, 1);
+            return one;
+        }
+
+        if let Some(lazy) = self.lazy_nzcv {
+            return match lazy {
+                LazyNzcvKind::Sub { sf } => {
+                    let packed = self.pack_lazy_sub_nzcv(ir, sf);
+                    self.eval_cond_from_packed(ir, cond, packed)
+                }
+                _ => self.eval_cond_inline(ir, cond, lazy),
+            };
+        }
+
+        // cc_op unknown — call runtime helper.
+        let cond_c = ir.new_const(Type::I64, cond as u64);
+        let result = ir.new_temp(Type::I64);
+        ir.gen_call(
+            result,
+            helper_lazy_nzcv_eval_cond as u64,
+            &[self.cc_op, self.cc_a, self.cc_b, self.cc_result, cond_c],
+        );
+        result
+    }
+
+    fn extract_nzcv_bit_from(
+        &self,
+        ir: &mut Context,
+        nzcv: TempIdx,
+        bit: u64,
+    ) -> TempIdx {
+        let sh = ir.new_const(Type::I64, bit);
+        let one = ir.new_const(Type::I64, 1);
+        let t = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, t, nzcv, sh);
+        ir.gen_and(Type::I64, t, t, one);
+        t
+    }
+
+    fn eval_cond_from_packed(
+        &self,
+        ir: &mut Context,
+        cond: i64,
+        nzcv: TempIdx,
+    ) -> TempIdx {
+        let n = self.extract_nzcv_bit_from(ir, nzcv, 31);
+        let z = self.extract_nzcv_bit_from(ir, nzcv, 30);
+        let c = self.extract_nzcv_bit_from(ir, nzcv, 29);
+        let v = self.extract_nzcv_bit_from(ir, nzcv, 28);
+        let base_cond = (cond >> 1) as u32;
+        let result = match base_cond {
+            0 => z, // EQ/NE
+            1 => c, // CS/CC
+            2 => n, // MI/PL
+            3 => v, // VS/VC
+            4 => {
+                let t = ir.new_temp(Type::I64);
+                ir.gen_andc(Type::I64, t, c, z); // HI/LS
+                t
+            }
+            5 => {
+                let r = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, r, n, v, Cond::Eq); // GE/LT
+                r
+            }
+            6 => {
+                let nv = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, nv, n, v, Cond::Eq);
+                let t = ir.new_temp(Type::I64);
+                ir.gen_andc(Type::I64, t, nv, z); // GT/LE
+                t
+            }
+            7 => ir.new_const(Type::I64, 1), // AL
+            _ => unreachable!(),
+        };
+
+        if (cond & 1) != 0 && cond != 0xf {
+            let inv = ir.new_temp(Type::I64);
+            let one = ir.new_const(Type::I64, 1);
+            ir.gen_xor(Type::I64, inv, result, one);
+            inv
+        } else {
+            result
+        }
+    }
+
+    fn pack_lazy_sub_nzcv(&self, ir: &mut Context, sf: bool) -> TempIdx {
         let ty = Self::sf_type(sf);
         let bits = if sf { 63u64 } else { 31u64 };
+        let a = if sf {
+            self.cc_a
+        } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.cc_a);
+            t
+        };
+        let b = if sf {
+            self.cc_b
+        } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.cc_b);
+            t
+        };
+        let res = if sf {
+            self.cc_result
+        } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.cc_result);
+            t
+        };
         let zero = ir.new_const(ty, 0);
         let sh = ir.new_const(ty, bits);
 
-        // N
         let n_tmp = ir.new_temp(ty);
-        ir.gen_shr(ty, n_tmp, result, sh);
+        ir.gen_shr(ty, n_tmp, res, sh);
         let n_bit = ir.new_temp(Type::I64);
         if sf {
             ir.gen_mov(Type::I64, n_bit, n_tmp);
@@ -211,19 +448,227 @@ impl Aarch64DisasContext {
             ir.gen_ext_u32_i64(n_bit, n_tmp);
         }
 
-        // Z
         let z_bit = ir.new_temp(Type::I64);
-        ir.gen_setcond(ty, z_bit, result, zero, Cond::Eq);
+        ir.gen_setcond(ty, z_bit, res, zero, Cond::Eq);
 
-        // C
         let c_bit = ir.new_temp(Type::I64);
-        if is_sub {
-            ir.gen_setcond(ty, c_bit, a, b, Cond::Geu);
+        ir.gen_setcond(ty, c_bit, a, b, Cond::Geu);
+
+        let xor_ab = ir.new_temp(ty);
+        ir.gen_xor(ty, xor_ab, a, b);
+        let xor_ar = ir.new_temp(ty);
+        ir.gen_xor(ty, xor_ar, a, res);
+        let v_tmp = ir.new_temp(ty);
+        ir.gen_and(ty, v_tmp, xor_ab, xor_ar);
+        let v_sh = ir.new_temp(ty);
+        ir.gen_shr(ty, v_sh, v_tmp, sh);
+        let v_bit = ir.new_temp(Type::I64);
+        if sf {
+            ir.gen_mov(Type::I64, v_bit, v_sh);
         } else {
-            ir.gen_setcond(ty, c_bit, result, a, Cond::Ltu);
+            ir.gen_ext_u32_i64(v_bit, v_sh);
         }
 
-        // V
+        let c31 = ir.new_const(Type::I64, 31);
+        let c30 = ir.new_const(Type::I64, 30);
+        let c29 = ir.new_const(Type::I64, 29);
+        let c28 = ir.new_const(Type::I64, 28);
+        let n_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, n_s, n_bit, c31);
+        let z_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, z_s, z_bit, c30);
+        let c_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, c_s, c_bit, c29);
+        let v_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, v_s, v_bit, c28);
+        let nzcv = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, nzcv, n_s, z_s);
+        let tmp = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, tmp, c_s, v_s);
+        ir.gen_or(Type::I64, nzcv, nzcv, tmp);
+        nzcv
+    }
+
+    /// Generate inline condition evaluation from known lazy state.
+    fn eval_cond_inline(
+        &self,
+        ir: &mut Context,
+        cond: i64,
+        lazy: LazyNzcvKind,
+    ) -> TempIdx {
+        let base_cond = (cond >> 1) as u32;
+        let invert = (cond & 1) != 0;
+
+        // Read operands from globals (always live, unlike local temps).
+        let result = match lazy {
+            LazyNzcvKind::Add { sf } | LazyNzcvKind::Sub { sf } => {
+                let is_sub = matches!(lazy, LazyNzcvKind::Sub { .. });
+                let ty = Self::sf_type(sf);
+                // Read from cc_a, cc_b, cc_result globals.
+                let a = if sf {
+                    self.cc_a
+                } else {
+                    let t = ir.new_temp(Type::I32);
+                    ir.gen_extrl_i64_i32(t, self.cc_a);
+                    t
+                };
+                let b = if sf {
+                    self.cc_b
+                } else {
+                    let t = ir.new_temp(Type::I32);
+                    ir.gen_extrl_i64_i32(t, self.cc_b);
+                    t
+                };
+                let res = if sf {
+                    self.cc_result
+                } else {
+                    let t = ir.new_temp(Type::I32);
+                    ir.gen_extrl_i64_i32(t, self.cc_result);
+                    t
+                };
+                let zero = ir.new_const(ty, 0);
+                match base_cond {
+                    0 => {
+                        // EQ: Z==1 ⟹ result == 0
+                        let r = ir.new_temp(Type::I64);
+                        ir.gen_setcond(ty, r, res, zero, Cond::Eq);
+                        r
+                    }
+                    1 => {
+                        // CS: C==1
+                        let r = ir.new_temp(Type::I64);
+                        if is_sub {
+                            ir.gen_setcond(ty, r, a, b, Cond::Geu);
+                        } else {
+                            ir.gen_setcond(ty, r, res, a, Cond::Ltu);
+                        }
+                        r
+                    }
+                    2 => {
+                        // MI: N==1 ⟹ result is negative
+                        let r = ir.new_temp(Type::I64);
+                        ir.gen_setcond(ty, r, res, zero, Cond::Lt);
+                        r
+                    }
+                    3 => {
+                        // VS: V==1 (overflow)
+                        self.eval_overflow(ir, a, b, res, sf, is_sub)
+                    }
+                    4 => {
+                        // HI: C==1 && Z==0
+                        let r = ir.new_temp(Type::I64);
+                        if is_sub {
+                            ir.gen_setcond(ty, r, a, b, Cond::Gtu);
+                        } else {
+                            let c = ir.new_temp(Type::I64);
+                            ir.gen_setcond(ty, c, res, a, Cond::Ltu);
+                            let nz = ir.new_temp(Type::I64);
+                            ir.gen_setcond(ty, nz, res, zero, Cond::Ne);
+                            ir.gen_and(Type::I64, r, c, nz);
+                        }
+                        r
+                    }
+                    5 => {
+                        // GE: N==V ⟹ signed >=
+                        let r = ir.new_temp(Type::I64);
+                        if is_sub {
+                            ir.gen_setcond(ty, r, a, b, Cond::Ge);
+                        } else {
+                            let v =
+                                self.eval_overflow(ir, a, b, res, sf, false);
+                            let n = ir.new_temp(Type::I64);
+                            ir.gen_setcond(ty, n, res, zero, Cond::Lt);
+                            ir.gen_setcond(Type::I64, r, n, v, Cond::Eq);
+                        }
+                        r
+                    }
+                    6 => {
+                        // GT: N==V && Z==0 ⟹ signed >
+                        let r = ir.new_temp(Type::I64);
+                        if is_sub {
+                            ir.gen_setcond(ty, r, a, b, Cond::Gt);
+                        } else {
+                            let ge = ir.new_temp(Type::I64);
+                            let v =
+                                self.eval_overflow(ir, a, b, res, sf, false);
+                            let n = ir.new_temp(Type::I64);
+                            ir.gen_setcond(ty, n, res, zero, Cond::Lt);
+                            ir.gen_setcond(Type::I64, ge, n, v, Cond::Eq);
+                            let nz = ir.new_temp(Type::I64);
+                            ir.gen_setcond(ty, nz, res, zero, Cond::Ne);
+                            ir.gen_and(Type::I64, r, ge, nz);
+                        }
+                        r
+                    }
+                    7 => ir.new_const(Type::I64, 1),
+                    _ => unreachable!(),
+                }
+            }
+            LazyNzcvKind::Logic { sf } => {
+                let ty = Self::sf_type(sf);
+                // Read result from cc_result global.
+                let res = if sf {
+                    self.cc_result
+                } else {
+                    let t = ir.new_temp(Type::I32);
+                    ir.gen_extrl_i64_i32(t, self.cc_result);
+                    t
+                };
+                let zero = ir.new_const(ty, 0);
+                match base_cond {
+                    0 => {
+                        let r = ir.new_temp(Type::I64);
+                        ir.gen_setcond(ty, r, res, zero, Cond::Eq);
+                        r
+                    }
+                    1 => ir.new_const(Type::I64, 0),
+                    2 => {
+                        let r = ir.new_temp(Type::I64);
+                        ir.gen_setcond(ty, r, res, zero, Cond::Lt);
+                        r
+                    }
+                    3 => ir.new_const(Type::I64, 0),
+                    4 => ir.new_const(Type::I64, 0),
+                    5 => {
+                        let r = ir.new_temp(Type::I64);
+                        ir.gen_setcond(ty, r, res, zero, Cond::Ge);
+                        r
+                    }
+                    6 => {
+                        let r = ir.new_temp(Type::I64);
+                        ir.gen_setcond(ty, r, res, zero, Cond::Gt);
+                        r
+                    }
+                    7 => ir.new_const(Type::I64, 1),
+                    _ => unreachable!(),
+                }
+            }
+        };
+
+        if invert {
+            let inv = ir.new_temp(Type::I64);
+            let zero = ir.new_const(Type::I64, 0);
+            ir.gen_setcond(Type::I64, inv, result, zero, Cond::Eq);
+            inv
+        } else {
+            result
+        }
+    }
+
+    /// Compute overflow flag (V) from operands.
+    fn eval_overflow(
+        &self,
+        ir: &mut Context,
+        a: TempIdx,
+        b: TempIdx,
+        result: TempIdx,
+        sf: bool,
+        is_sub: bool,
+    ) -> TempIdx {
+        let ty = Self::sf_type(sf);
+        let bits = if sf { 63u64 } else { 31u64 };
+        let sh = ir.new_const(ty, bits);
+
         let xor_ab = ir.new_temp(ty);
         ir.gen_xor(ty, xor_ab, a, b);
         let xor_ar = ir.new_temp(ty);
@@ -244,219 +689,7 @@ impl Aarch64DisasContext {
         } else {
             ir.gen_ext_u32_i64(v_bit, v_sh);
         }
-
-        // Pack (N<<31)|(Z<<30)|(C<<29)|(V<<28)
-        let c31 = ir.new_const(Type::I64, 31);
-        let c30 = ir.new_const(Type::I64, 30);
-        let c29 = ir.new_const(Type::I64, 29);
-        let c28 = ir.new_const(Type::I64, 28);
-        let n_s = ir.new_temp(Type::I64);
-        ir.gen_shl(Type::I64, n_s, n_bit, c31);
-        let z_s = ir.new_temp(Type::I64);
-        ir.gen_shl(Type::I64, z_s, z_bit, c30);
-        let c_s = ir.new_temp(Type::I64);
-        ir.gen_shl(Type::I64, c_s, c_bit, c29);
-        let v_s = ir.new_temp(Type::I64);
-        ir.gen_shl(Type::I64, v_s, v_bit, c28);
-        let nzcv = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, nzcv, n_s, z_s);
-        let tmp = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, tmp, c_s, v_s);
-        ir.gen_or(Type::I64, nzcv, nzcv, tmp);
-        ir.gen_mov(Type::I64, self.nzcv, nzcv);
-        self.nzcv_src = NzcvSource::Unknown;
-    }
-
-    // -- NZCV for logical (C=0, V=0) --
-    fn gen_nzcv_logic(&mut self, ir: &mut Context, result: TempIdx, sf: bool) {
-        let ty = Self::sf_type(sf);
-        let bits = if sf { 63u64 } else { 31u64 };
-        let zero = ir.new_const(ty, 0);
-        let sh = ir.new_const(ty, bits);
-
-        let n_tmp = ir.new_temp(ty);
-        ir.gen_shr(ty, n_tmp, result, sh);
-        let n_bit = ir.new_temp(Type::I64);
-        if sf {
-            ir.gen_mov(Type::I64, n_bit, n_tmp);
-        } else {
-            ir.gen_ext_u32_i64(n_bit, n_tmp);
-        }
-
-        let z_bit = ir.new_temp(Type::I64);
-        ir.gen_setcond(ty, z_bit, result, zero, Cond::Eq);
-
-        let c31 = ir.new_const(Type::I64, 31);
-        let c30 = ir.new_const(Type::I64, 30);
-        let n_s = ir.new_temp(Type::I64);
-        ir.gen_shl(Type::I64, n_s, n_bit, c31);
-        let z_s = ir.new_temp(Type::I64);
-        ir.gen_shl(Type::I64, z_s, z_bit, c30);
-        let nzcv = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, nzcv, n_s, z_s);
-        ir.gen_mov(Type::I64, self.nzcv, nzcv);
-        self.nzcv_src = NzcvSource::Unknown;
-    }
-
-    fn set_nzcv_packed(&mut self, ir: &mut Context, val: TempIdx) {
-        ir.gen_mov(Type::I64, self.nzcv, val);
-        // Use architectural nzcv temp for subsequent reads; `val`
-        // may be a short-lived local temp.
-        self.nzcv_src = NzcvSource::Unknown;
-    }
-
-    fn extract_nzcv_bit(
-        &self,
-        ir: &mut Context,
-        nzcv: TempIdx,
-        bit: u64,
-    ) -> TempIdx {
-        let sh = ir.new_const(Type::I64, bit);
-        let one = ir.new_const(Type::I64, 1);
-        let t = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, t, nzcv, sh);
-        ir.gen_and(Type::I64, t, t, one);
-        t
-    }
-
-    fn eval_n_flag(&self, ir: &mut Context) -> TempIdx {
-        match self.nzcv_src {
-            NzcvSource::AddSub { result, ty, .. }
-            | NzcvSource::Logic { result, ty } => {
-                let zero = ir.new_const(ty, 0);
-                let n = ir.new_temp(Type::I64);
-                ir.gen_setcond(ty, n, result, zero, Cond::Lt);
-                n
-            }
-            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 31),
-        }
-    }
-
-    fn eval_z_flag(&self, ir: &mut Context) -> TempIdx {
-        match self.nzcv_src {
-            NzcvSource::AddSub { result, ty, .. }
-            | NzcvSource::Logic { result, ty } => {
-                let zero = ir.new_const(ty, 0);
-                let z = ir.new_temp(Type::I64);
-                ir.gen_setcond(ty, z, result, zero, Cond::Eq);
-                z
-            }
-            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 30),
-        }
-    }
-
-    fn eval_c_flag(&self, ir: &mut Context) -> TempIdx {
-        match self.nzcv_src {
-            NzcvSource::AddSub {
-                a,
-                b,
-                result,
-                ty,
-                is_sub,
-            } => {
-                let c = ir.new_temp(Type::I64);
-                if is_sub {
-                    ir.gen_setcond(ty, c, a, b, Cond::Geu);
-                } else {
-                    ir.gen_setcond(ty, c, result, a, Cond::Ltu);
-                }
-                c
-            }
-            NzcvSource::Logic { .. } => ir.new_const(Type::I64, 0),
-            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 29),
-        }
-    }
-
-    fn eval_v_flag(&self, ir: &mut Context) -> TempIdx {
-        match self.nzcv_src {
-            NzcvSource::AddSub {
-                a,
-                b,
-                result,
-                ty,
-                is_sub,
-            } => {
-                let bits = if ty == Type::I64 { 63u64 } else { 31u64 };
-                let sh = ir.new_const(ty, bits);
-                let xor_ab = ir.new_temp(ty);
-                ir.gen_xor(ty, xor_ab, a, b);
-                let xor_ar = ir.new_temp(ty);
-                ir.gen_xor(ty, xor_ar, a, result);
-                let v_tmp = ir.new_temp(ty);
-                if is_sub {
-                    ir.gen_and(ty, v_tmp, xor_ab, xor_ar);
-                } else {
-                    let not_xor = ir.new_temp(ty);
-                    ir.gen_not(ty, not_xor, xor_ab);
-                    ir.gen_and(ty, v_tmp, not_xor, xor_ar);
-                }
-                let v_sh = ir.new_temp(ty);
-                ir.gen_shr(ty, v_sh, v_tmp, sh);
-                let v = ir.new_temp(Type::I64);
-                if ty == Type::I64 {
-                    ir.gen_mov(Type::I64, v, v_sh);
-                } else {
-                    ir.gen_ext_u32_i64(v, v_sh);
-                }
-                v
-            }
-            NzcvSource::Logic { .. } => ir.new_const(Type::I64, 0),
-            NzcvSource::Unknown => self.extract_nzcv_bit(ir, self.nzcv, 28),
-        }
-    }
-
-    // -- Condition evaluation --
-    fn eval_cond(&self, ir: &mut Context, cond: i64) -> TempIdx {
-        let zero = ir.new_const(Type::I64, 0);
-        let base_cond = (cond >> 1) as u32;
-        let result = match base_cond {
-            0 => self.eval_z_flag(ir), // EQ/NE: Z==1
-            1 => self.eval_c_flag(ir), // CS/CC: C==1
-            2 => self.eval_n_flag(ir), // MI/PL: N==1
-            3 => self.eval_v_flag(ir), // VS/VC: V==1
-            4 => {
-                // HI/LS: C==1 && Z==0
-                let c = self.eval_c_flag(ir);
-                let z = self.eval_z_flag(ir);
-                let t = ir.new_temp(Type::I64);
-                ir.gen_andc(Type::I64, t, c, z);
-                let r = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, r, t, zero, Cond::Ne);
-                r
-            }
-            5 => {
-                // GE/LT: N==V
-                let n = self.eval_n_flag(ir);
-                let v = self.eval_v_flag(ir);
-                let r = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, r, n, v, Cond::Eq);
-                r
-            }
-            6 => {
-                // GT/LE: N==V && Z==0
-                let n = self.eval_n_flag(ir);
-                let v = self.eval_v_flag(ir);
-                let nv = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, nv, n, v, Cond::Eq);
-                let z = self.eval_z_flag(ir);
-                let t = ir.new_temp(Type::I64);
-                ir.gen_andc(Type::I64, t, nv, z);
-                let r = ir.new_temp(Type::I64);
-                ir.gen_setcond(Type::I64, r, t, zero, Cond::Ne);
-                r
-            }
-            7 => ir.new_const(Type::I64, 1), // AL
-            _ => unreachable!(),
-        };
-        // Invert if low bit set (and not AL/NV).
-        if (cond & 1) != 0 && cond != 0xf {
-            let inv = ir.new_temp(Type::I64);
-            let one = ir.new_const(Type::I64, 1);
-            ir.gen_xor(Type::I64, inv, result, one);
-            inv
-        } else {
-            result
-        }
+        v_bit
     }
 
     // -- Branch helpers --
@@ -533,13 +766,6 @@ impl Aarch64DisasContext {
         let addr = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr, base, shifted);
         addr
-    }
-
-    // For LDRSB/LDRSH forms, bit22 selects destination width:
-    // 1 => Wt (sign-extend to 32 then zero-extend to 64),
-    // 0 => Xt (sign-extend to 64).
-    fn ldrs_dest_is_w(&self) -> bool {
-        ((self.opcode >> 22) & 1) != 0
     }
 
     // -- Extend register helper for ADD/SUB extended --
@@ -1582,27 +1808,6 @@ impl Aarch64DisasContext {
         if insn & 0xdf20_0400 == 0x5e20_0400 {
             return self.neon_scalar_3same(ir, insn);
         }
-        // AdvSIMD scalar shift by immediate (observed in glibc):
-        // USHR Dd, Dn, #imm
-        if insn & 0xff80_fc00 == 0x7f00_0400 {
-            let immh = ((insn >> 19) & 0xf) as u32;
-            let immb = ((insn >> 16) & 0x7) as u32;
-            let immhb = (immh << 3) | immb;
-            if immh >= 8 {
-                let shift = 128u32 - immhb;
-                if (1..=64).contains(&shift) {
-                    let rn = ((insn >> 5) & 0x1f) as usize;
-                    let rd = (insn & 0x1f) as usize;
-                    let src = self.read_vreg_lo(ir, rn);
-                    let sh = ir.new_const(Type::I64, shift as u64);
-                    let d = ir.new_temp(Type::I64);
-                    ir.gen_shr(Type::I64, d, src, sh);
-                    self.write_vreg_lo(ir, rd, d);
-                    self.clear_vreg_hi(ir, rd);
-                    return true;
-                }
-            }
-        }
         // FADDP scalar: 01 1 11110 sz 1 10000 01101 10 Rn Rd (mask 0xff3e0c00 == 0x7e300800)
         if insn & 0xff3e_0c00 == 0x7e30_0800 {
             let sz = (insn >> 22) & 1; // 0=f32, 1=f64
@@ -2355,7 +2560,7 @@ impl Aarch64DisasContext {
             };
             let d = ir.new_temp(Type::I64);
             ir.gen_call(d, helper_fcmp64 as u64, &[a, b]);
-            self.set_nzcv_packed(ir, d);
+            self.set_nzcv_eager(ir, d);
             return Some(true);
         }
 
@@ -2792,7 +2997,7 @@ impl Aarch64DisasContext {
                 nzcv_alt,
                 Cond::Ne,
             );
-            self.set_nzcv_packed(ir, result);
+            self.set_nzcv_eager(ir, result);
             return Some(true);
         }
         // FMOV Sn, Wn: 0001 1110 0010 0111 0000 00 Rn Rd
@@ -4334,6 +4539,15 @@ unsafe extern "C" fn helper_vfdiv32(a: u64, b: u64) -> u64 {
     let b1 = f32::from_bits((b >> 32) as u32);
     (a0 / b0).to_bits() as u64 | (((a1 / b1).to_bits() as u64) << 32)
 }
+/// Vector FP: fabd 2x f32 packed in 64 bits (absolute difference)
+unsafe extern "C" fn helper_vfabd32(a: u64, b: u64) -> u64 {
+    let a0 = f32::from_bits(a as u32);
+    let b0 = f32::from_bits(b as u32);
+    let a1 = f32::from_bits((a >> 32) as u32);
+    let b1 = f32::from_bits((b >> 32) as u32);
+    (a0 - b0).abs().to_bits() as u64
+        | (((a1 - b1).abs().to_bits() as u64) << 32)
+}
 /// Vector FP: fmax 2x f32
 unsafe extern "C" fn helper_vfmax32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
@@ -5434,8 +5648,9 @@ impl Aarch64DisasContext {
                 }
                 return true;
             }
-            // FADDP .2S/.4S: U=1, opcode=11010 — pairwise add adjacent f32 lanes
-            if (u, opcode) == (1, 0b11010) {
+            // FADDP .2S/.4S: U=1, size[1]=0, opcode=11010 — pairwise add adjacent f32 lanes
+            // (size[1]=1 would be FABD, not FADDP)
+            if (u, opcode) == (1, 0b11010) && (insn >> 23) & 1 == 0 {
                 let n_lo = self.read_vreg_lo(ir, rn);
                 let m_lo = self.read_vreg_lo(ir, rm);
                 if q != 0 {
@@ -5455,6 +5670,11 @@ impl Aarch64DisasContext {
                     self.write_vreg_lo(ir, rd, d_lo);
                     self.clear_vreg_hi(ir, rd);
                 }
+                return true;
+            }
+            // FABD .2S/.4S: U=1, size[1]=1, opcode=11010 — absolute difference
+            if (u, opcode) == (1, 0b11010) && (insn >> 23) & 1 == 1 {
+                self.neon_call2_halves(ir, q, rd, rn, rm, helper_vfabd32);
                 return true;
             }
         } else {
@@ -5478,6 +5698,24 @@ impl Aarch64DisasContext {
                     let m_hi = self.read_vreg_hi(ir, rm);
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, h, &[n_hi, m_hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
+                return true;
+            }
+            // FABD .2D: U=1, size[1]=1, opcode=11010 — absolute difference f64
+            if (u, opcode) == (1, 0b11010) && (insn >> 23) & 1 == 1 {
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_fabd64 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let n_hi = self.read_vreg_hi(ir, rn);
+                    let m_hi = self.read_vreg_hi(ir, rm);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_fabd64 as u64, &[n_hi, m_hi]);
                     self.write_vreg_hi(ir, rd, d_hi);
                 } else {
                     self.clear_vreg_hi(ir, rd);
@@ -6986,18 +7224,9 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Move wide immediate --
 
     fn trans_MOVZ(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
-        let sf = a.sf != 0;
-        let shift = a.hw * 16;
-        if !sf && shift >= 32 {
-            return false;
-        }
-        let ty = Self::sf_type(sf);
-        let mut val = (a.imm as u64) << shift;
-        if !sf {
-            val &= 0xffff_ffff;
-        }
-        let c = ir.new_const(ty, val);
-        self.write_xreg_sz(ir, a.rd, c, sf);
+        let val = (a.imm as u64) << (a.hw * 16);
+        let c = ir.new_const(Type::I64, val);
+        self.write_xreg(ir, a.rd, c);
         true
     }
 
@@ -7005,41 +7234,26 @@ impl Decode<Context> for Aarch64DisasContext {
         if a.rd == 31 {
             return true;
         }
-        let sf = a.sf != 0;
         let shift = a.hw * 16;
-        if !sf && shift >= 32 {
-            return false;
-        }
-        let ty = Self::sf_type(sf);
-        let mut mask = !(0xffffu64 << shift);
-        let mut bits = (a.imm as u64) << shift;
-        if !sf {
-            mask &= 0xffff_ffff;
-            bits &= 0xffff_ffff;
-        }
-        let old = self.read_xreg(ir, a.rd);
-        let old = Self::trunc32(ir, old, sf);
-        let m = ir.new_const(ty, mask);
-        let t = ir.new_temp(ty);
-        ir.gen_and(ty, t, old, m);
-        let b = ir.new_const(ty, bits);
-        let d = ir.new_temp(ty);
-        ir.gen_or(ty, d, t, b);
-        self.write_xreg_sz(ir, a.rd, d, sf);
+        let mask = !(0xffffu64 << shift);
+        let bits = (a.imm as u64) << shift;
+        let old = self.xregs[a.rd as usize];
+        let m = ir.new_const(Type::I64, mask);
+        let t = ir.new_temp(Type::I64);
+        ir.gen_and(Type::I64, t, old, m);
+        let b = ir.new_const(Type::I64, bits);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, d, t, b);
+        self.write_xreg(ir, a.rd, d);
         true
     }
 
     fn trans_MOVN(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
         let sf = a.sf != 0;
-        let shift = a.hw * 16;
-        if !sf && shift >= 32 {
-            return false;
-        }
-        let val = !((a.imm as u64) << shift);
+        let val = !((a.imm as u64) << (a.hw * 16));
         let val = if !sf { val & 0xffff_ffff } else { val };
-        let ty = Self::sf_type(sf);
-        let c = ir.new_const(ty, val);
-        self.write_xreg_sz(ir, a.rd, c, sf);
+        let c = ir.new_const(Type::I64, val);
+        self.write_xreg(ir, a.rd, c);
         true
     }
 
@@ -7523,60 +7737,47 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Add/Sub extended register --
 
     fn trans_ADD_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let sf = a.sf != 0;
-        let ty = Self::sf_type(sf);
+        let _sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
-        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
-        let ext = Self::trunc32(ir, ext64, sf);
-        let d = ir.new_temp(ty);
-        ir.gen_add(ty, d, src1, ext);
-        self.write_xreg_sp_sz(ir, a.rd, d, sf);
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_add(Type::I64, d, src1, ext);
+        self.write_xreg_sp(ir, a.rd, d);
         true
     }
 
     fn trans_SUB_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let sf = a.sf != 0;
-        let ty = Self::sf_type(sf);
         let src1 = self.read_xreg_sp(ir, a.rn);
-        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
-        let ext = Self::trunc32(ir, ext64, sf);
-        let d = ir.new_temp(ty);
-        ir.gen_sub(ty, d, src1, ext);
-        self.write_xreg_sp_sz(ir, a.rd, d, sf);
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_sub(Type::I64, d, src1, ext);
+        self.write_xreg_sp(ir, a.rd, d);
         true
     }
 
     fn trans_ADDS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let sf = a.sf != 0;
-        let ty = Self::sf_type(sf);
+        let _sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
-        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
-        let ext = Self::trunc32(ir, ext64, sf);
-        let d = ir.new_temp(ty);
-        ir.gen_add(ty, d, src1, ext);
-        self.gen_nzcv_add_sub(ir, src1, ext, d, sf, false);
-        self.write_xreg_sz(ir, a.rd, d, sf);
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_add(Type::I64, d, src1, ext);
+        self.gen_nzcv_add_sub(ir, src1, ext, d, true, false);
+        self.write_xreg(ir, a.rd, d);
         true
     }
 
     fn trans_SUBS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let sf = a.sf != 0;
-        let ty = Self::sf_type(sf);
+        let _sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
-        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
-        let ext64 = Self::extend_reg(ir, src2, a.option, a.imm);
-        let ext = Self::trunc32(ir, ext64, sf);
-        let d = ir.new_temp(ty);
-        ir.gen_sub(ty, d, src1, ext);
-        self.gen_nzcv_add_sub(ir, src1, ext, d, sf, true);
-        self.write_xreg_sz(ir, a.rd, d, sf);
+        let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let d = ir.new_temp(Type::I64);
+        ir.gen_sub(Type::I64, d, src1, ext);
+        self.gen_nzcv_add_sub(ir, src1, ext, d, true, true);
+        self.write_xreg(ir, a.rd, d);
         true
     }
 
@@ -7849,7 +8050,13 @@ impl Decode<Context> for Aarch64DisasContext {
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
-        let c = self.eval_c_flag(ir);
+        // Materialize NZCV so we can read packed C flag.
+        self.materialize_nzcv(ir);
+        let c29 = ir.new_const(Type::I64, 29);
+        let one = ir.new_const(Type::I64, 1);
+        let c = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, c, self.nzcv, c29);
+        ir.gen_and(Type::I64, c, c, one);
         let d = ir.new_temp(Type::I64);
         ir.gen_add(ty, d, n, m);
         ir.gen_add(ty, d, d, c);
@@ -7862,8 +8069,14 @@ impl Decode<Context> for Aarch64DisasContext {
         let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
+        // Materialize NZCV so we can read packed C flag.
+        self.materialize_nzcv(ir);
+        // Extract C flag (bit 29 of nzcv)
+        let c29 = ir.new_const(Type::I64, 29);
         let one = ir.new_const(Type::I64, 1);
-        let c = self.eval_c_flag(ir);
+        let c = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, c, self.nzcv, c29);
+        ir.gen_and(Type::I64, c, c, one);
         // SBC: Rd = Rn - Rm - (1 - C) = Rn - Rm - 1 + C
         let d = ir.new_temp(Type::I64);
         ir.gen_sub(ty, d, n, m);
@@ -8118,10 +8331,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8131,10 +8340,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8222,10 +8427,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8243,8 +8444,11 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_LDRSB_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, 0);
         let d = ir.new_temp(Type::I64);
+        // sf field (bit22 inverted): sf=0 in decode means 64-bit target (sign-extend to X),
+        // sf=1 means 32-bit target (sign-extend to W, zero-extend to X)
+        // But we use MemOp::sb() which sign-extends to 64-bit, then mask if needed
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
-        if self.ldrs_dest_is_w() {
+        if a.sf != 0 {
             // 32-bit target: mask to 32 bits
             let mask = ir.new_const(Type::I64, 0xffff_ffff);
             ir.gen_and(Type::I64, d, d, mask);
@@ -8394,10 +8598,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -8406,10 +8606,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -8452,10 +8648,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, base, MemOp::sb().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         let wb = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, wb);
@@ -8465,10 +8657,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, base, MemOp::sw().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         let wb = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, wb);
@@ -8640,6 +8828,8 @@ impl Decode<Context> for Aarch64DisasContext {
         }
         // NZCV
         if op0 == 3 && op1 == 3 && crn == 4 && crm == 2 && op2 == 0 {
+            // Materialize NZCV before reading it.
+            self.materialize_nzcv(ir);
             let v = self.nzcv;
             self.write_xreg(ir, a.rd, v);
             return true;
@@ -8693,7 +8883,7 @@ impl Decode<Context> for Aarch64DisasContext {
         }
         // NZCV
         if op0 == 3 && op1 == 3 && crn == 4 && crm == 2 && op2 == 0 {
-            self.set_nzcv_packed(ir, val);
+            self.set_nzcv_eager(ir, val);
             return true;
         }
         // FPCR
@@ -8771,10 +8961,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8783,10 +8969,6 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
-        if self.ldrs_dest_is_w() {
-            let mask = ir.new_const(Type::I64, 0xffff_ffff);
-            ir.gen_and(Type::I64, d, d, mask);
-        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8802,12 +8984,13 @@ impl Decode<Context> for Aarch64DisasContext {
         let taken = ir.new_label();
         let done = ir.new_label();
         ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
-        // Condition false: set NZCV to immediate
+        // Condition false: set NZCV to immediate (eager)
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        self.set_nzcv_packed(ir, imm_c);
+        self.set_nzcv_eager(ir, imm_c);
         ir.gen_br(done);
         // Condition true: do CMP (SUBS discarding result)
         ir.gen_set_label(taken);
+        self.invalidate_lazy_nzcv();
         let src = self.read_xreg(ir, a.rn);
         let src = Self::trunc32(ir, src, sf);
         let b = self.read_xreg(ir, a.rm);
@@ -8816,10 +8999,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_sub(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, true);
         ir.gen_set_label(done);
-        // Resulting NZCV is path-dependent; keep only architectural source.
-        self.nzcv_src = NzcvSource::Unknown;
-        // Keep CCMP isolated to avoid cross-instruction NZCV hazards.
-        self.base.is_jmp = DisasJumpType::TooMany;
+        // After join: cc_op unknown at compile time
+        self.invalidate_lazy_nzcv();
         true
     }
 
@@ -8833,9 +9014,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let done = ir.new_label();
         ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        self.set_nzcv_packed(ir, imm_c);
+        self.set_nzcv_eager(ir, imm_c);
         ir.gen_br(done);
         ir.gen_set_label(taken);
+        self.invalidate_lazy_nzcv();
         let src = self.read_xreg(ir, a.rn);
         let src = Self::trunc32(ir, src, sf);
         let b = self.read_xreg(ir, a.rm);
@@ -8844,10 +9026,7 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, false);
         ir.gen_set_label(done);
-        // Resulting NZCV is path-dependent; keep only architectural source.
-        self.nzcv_src = NzcvSource::Unknown;
-        // Keep CCMN isolated to avoid cross-instruction NZCV hazards.
-        self.base.is_jmp = DisasJumpType::TooMany;
+        self.invalidate_lazy_nzcv();
         true
     }
 
@@ -8862,9 +9041,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let done = ir.new_label();
         ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        self.set_nzcv_packed(ir, imm_c);
+        self.set_nzcv_eager(ir, imm_c);
         ir.gen_br(done);
         ir.gen_set_label(taken);
+        self.invalidate_lazy_nzcv();
         let src = self.read_xreg(ir, a.rn);
         let src = Self::trunc32(ir, src, sf);
         let b = ir.new_const(ty, imm5);
@@ -8872,10 +9052,6 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_sub(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, true);
         ir.gen_set_label(done);
-        // Resulting NZCV is path-dependent; keep only architectural source.
-        self.nzcv_src = NzcvSource::Unknown;
-        // Keep CCMP isolated to avoid cross-instruction NZCV hazards.
-        self.base.is_jmp = DisasJumpType::TooMany;
         true
     }
 
@@ -8890,9 +9066,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let done = ir.new_label();
         ir.gen_brcond(Type::I64, cond_val, zero, Cond::Ne, taken);
         let imm_c = ir.new_const(Type::I64, nzcv_imm << 28);
-        self.set_nzcv_packed(ir, imm_c);
+        self.set_nzcv_eager(ir, imm_c);
         ir.gen_br(done);
         ir.gen_set_label(taken);
+        self.invalidate_lazy_nzcv();
         let src = self.read_xreg(ir, a.rn);
         let src = Self::trunc32(ir, src, sf);
         let b = ir.new_const(ty, imm5);
@@ -8900,10 +9077,7 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(ty, d, src, b);
         self.gen_nzcv_add_sub(ir, src, b, d, sf, false);
         ir.gen_set_label(done);
-        // Resulting NZCV is path-dependent; keep only architectural source.
-        self.nzcv_src = NzcvSource::Unknown;
-        // Keep CCMN isolated to avoid cross-instruction NZCV hazards.
-        self.base.is_jmp = DisasJumpType::TooMany;
+        self.invalidate_lazy_nzcv();
         true
     }
 

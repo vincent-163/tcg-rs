@@ -18,6 +18,43 @@ use tcg_linux_user::guest_space::GuestSpace;
 use tcg_linux_user::loader::{load_elf, ElfInfo};
 use tcg_linux_user::syscall::{handle_syscall, SyscallResult};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProfileSaveMode {
+    Hot,
+    All,
+}
+
+impl ProfileSaveMode {
+    fn from_env() -> Self {
+        match env::var("TCG_PROFILE_MODE")
+            .unwrap_or_else(|_| "hot".to_string())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "hot" => Self::Hot,
+            "all" => Self::All,
+            other => {
+                eprintln!("[tcg] warning: unknown TCG_PROFILE_MODE={other:?}, using \"hot\"");
+                Self::Hot
+            }
+        }
+    }
+
+    fn min_exec_count(self) -> u64 {
+        match self {
+            Self::Hot => DEFAULT_HOT_THRESHOLD,
+            Self::All => 1,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Hot => "hot",
+            Self::All => "all",
+        }
+    }
+}
+
 /// Wrapper: RiscvCpu + guest_base for GuestCpu trait.
 struct LinuxCpu {
     cpu: RiscvCpu,
@@ -72,10 +109,15 @@ impl GuestCpu for LinuxCpu {
     }
 }
 
-fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) {
+fn save_profile<B: tcg_backend::HostCodeGen>(
+    env: &ExecEnv<B>,
+    load_vaddr: u64,
+    mode: ProfileSaveMode,
+) {
     let out = std::env::var("TCG_PROFILE_OUT").unwrap_or_else(|_| "profile.bin".into());
     let path = std::path::Path::new(&out);
     let shared = &env.shared;
+    let min_exec_count = mode.min_exec_count();
 
     // Load existing profile entries (accumulate entry addresses only, not counts)
     let mut accumulated: std::collections::HashMap<u64, ProfileEntry> =
@@ -92,9 +134,9 @@ fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) 
         let exec = tb.exec_count.load(Ordering::Relaxed);
         let file_offset = tb.pc - load_vaddr;
 
-        // Add to profile if this TB was hot in this run (exec >= threshold)
-        // Don't sum counts across runs - each run must independently show the TB is hot
-        if exec >= DEFAULT_HOT_THRESHOLD {
+        // Add to profile if this TB met the mode threshold in this run.
+        // Don't sum counts across runs - each run must independently satisfy it.
+        if exec >= min_exec_count {
             let entry = accumulated.entry(file_offset).or_insert(ProfileEntry {
                 file_offset,
                 exec_count: exec,  // Use this run's count, don't sum
@@ -108,11 +150,16 @@ fn save_profile<B: tcg_backend::HostCodeGen>(env: &ExecEnv<B>, load_vaddr: u64) 
 
     let entries: Vec<ProfileEntry> = accumulated.into_values().collect();
 
-    let data = ProfileData { threshold: DEFAULT_HOT_THRESHOLD as u32, entries };
+    let data = ProfileData { threshold: min_exec_count as u32, entries };
     if let Err(e) = data.save(path) {
         eprintln!("[tcg] failed to save profile: {e}");
     } else {
-        eprintln!("[tcg] profile saved to {out} ({} hot TBs)", data.entries.len());
+        eprintln!(
+            "[tcg] profile saved to {out} (mode={}, min_exec_count={}, {} TBs)",
+            mode.as_str(),
+            min_exec_count,
+            data.entries.len()
+        );
     }
 }
 
@@ -156,6 +203,7 @@ fn main() {
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
     let profiling = env::var("TCG_PROFILE").is_ok();
+    let profile_mode = ProfileSaveMode::from_env();
 
     // Load AOT if specified
     let aot = env::var("TCG_AOT").ok().and_then(|p| {
@@ -171,7 +219,13 @@ fn main() {
         eprintln!("[tcg] LLVM JIT backend enabled");
         env.enable_llvm();
     }
-    if profiling { eprintln!("[tcg] profiling enabled"); }
+    if profiling {
+        eprintln!(
+            "[tcg] profiling enabled (mode={}, min_exec_count={})",
+            profile_mode.as_str(),
+            profile_mode.min_exec_count()
+        );
+    }
     let mut env = env;
     loop {
         let reason = unsafe { cpu_exec_loop(&mut env, &mut lcpu) };
@@ -190,32 +244,32 @@ fn main() {
                     }
                     SyscallResult::Exit(code) => {
                         if show_stats { eprint!("{}", env.per_cpu.stats); }
-                        if profiling { save_profile(&env, info.load_vaddr); }
+                        if profiling { save_profile(&env, info.load_vaddr, profile_mode); }
                         process::exit(code);
                     }
                 }
             }
             ExitReason::Exit(v) if v == EXCP_EBREAK as usize => {
                 if show_stats { eprint!("{}", env.per_cpu.stats); }
-                if profiling { save_profile(&env, info.load_vaddr); }
+                if profiling { save_profile(&env, info.load_vaddr, profile_mode); }
                 eprintln!("ebreak at pc={:#x}", lcpu.cpu.pc);
                 process::exit(1);
             }
             ExitReason::Exit(v) if v == EXCP_UNDEF as usize => {
                 if show_stats { eprint!("{}", env.per_cpu.stats); }
-                if profiling { save_profile(&env, info.load_vaddr); }
+                if profiling { save_profile(&env, info.load_vaddr, profile_mode); }
                 eprintln!("illegal instruction at pc={:#x}", lcpu.cpu.pc);
                 process::exit(1);
             }
             ExitReason::Exit(v) => {
                 if show_stats { eprint!("{}", env.per_cpu.stats); }
-                if profiling { save_profile(&env, info.load_vaddr); }
+                if profiling { save_profile(&env, info.load_vaddr, profile_mode); }
                 eprintln!("unexpected exit {v}");
                 process::exit(1);
             }
             ExitReason::BufferFull => {
                 if show_stats { eprint!("{}", env.per_cpu.stats); }
-                if profiling { save_profile(&env, info.load_vaddr); }
+                if profiling { save_profile(&env, info.load_vaddr, profile_mode); }
                 eprintln!("code buffer full");
                 process::exit(1);
             }
