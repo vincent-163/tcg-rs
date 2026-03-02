@@ -1956,6 +1956,19 @@ fn a64_difftest_scvtf_v2s_decode() {
 }
 
 #[test]
+fn a64_difftest_ucvtf_v2d() {
+    // ucvtf v1.2d, v0.2d
+    let insn = 0x6e61_d801u32;
+    let src_lo = 3u64;
+    let src_hi = 5u64;
+    let cpu = run_tcgrs_with_state(&[], &[(0, src_lo, src_hi)], &[insn]);
+
+    assert_eq!(cpu.vregs[1 * 2], 3.0f64.to_bits());
+    assert_eq!(cpu.vregs[1 * 2 + 1], 5.0f64.to_bits());
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
 fn a64_difftest_scvtf_d_w_fixedpoint_scale1() {
     // scvtf d13, w1, #1
     let insn = 0x1e42_fc2du32;

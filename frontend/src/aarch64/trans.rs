@@ -4866,6 +4866,10 @@ unsafe extern "C" fn helper_vscvtf32(a: u64) -> u64 {
 unsafe extern "C" fn helper_vscvtf64(a: u64) -> u64 {
     (a as i64 as f64).to_bits()
 }
+/// ucvtf vector: convert 2x u64 to 2x f64 (one lane per 64-bit half)
+unsafe extern "C" fn helper_vucvtf64(a: u64) -> u64 {
+    (a as f64).to_bits()
+}
 /// fcvtzs vector: convert f64 → i64 (one lane per 64-bit half)
 #[allow(dead_code)]
 unsafe extern "C" fn helper_vfcvtzs64(a: u64) -> u64 {
@@ -6907,6 +6911,11 @@ impl Aarch64DisasContext {
                 self.neon_call1_halves(ir, q, rd, rn, helper_vscvtf32);
                 true
             }
+            // UCVTF .2S/.4S: U=1 size=00 opcode=11101 — vector unsigned-int-to-float (32-bit)
+            (1, 0b00, 0b11101) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_vucvtf32);
+                true
+            }
             // SCVTF .2D/.4D: U=0 size=01 opcode=11101 — vector signed-int-to-float (64-bit)
             // Each 64-bit lane holds one i64 → f64
             (0, 0b01, 0b11101) => {
@@ -6918,6 +6927,23 @@ impl Aarch64DisasContext {
                     let hi = self.read_vreg_hi(ir, rn);
                     let d_hi = ir.new_temp(Type::I64);
                     ir.gen_call(d_hi, helper_vscvtf64 as u64, &[hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
+                true
+            }
+            // UCVTF .2D/.4D: U=1 size=01 opcode=11101 — vector unsigned-int-to-float (64-bit)
+            // Each 64-bit lane holds one u64 → f64
+            (1, 0b01, 0b11101) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_vucvtf64 as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_vucvtf64 as u64, &[hi]);
                     self.write_vreg_hi(ir, rd, d_hi);
                 } else {
                     self.clear_vreg_hi(ir, rd);
