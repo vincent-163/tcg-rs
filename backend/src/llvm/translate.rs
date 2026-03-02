@@ -1,5 +1,6 @@
 //! TCG IR → LLVM IR translator.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::ptr;
@@ -43,6 +44,8 @@ pub struct TbTranslator {
     peer_fty: LLVMTypeRef,                  // fn(ptr, i64) -> i64
     // AOT dispatch super-function for indirect jumps
     aot_dispatch: Option<LLVMValueRef>,     // @aot_dispatch declaration
+    // Per-peer mask of globals potentially read by target TB.
+    aot_peer_liveins: HashMap<u64, Vec<bool>>,
     // Intrinsic IDs cached
     ctlz_i32: LLVMValueRef,
     ctlz_i64: LLVMValueRef,
@@ -59,6 +62,10 @@ pub struct TbTranslator {
     tbaa_guest: LLVMValueRef, // TBAA access tag for guest mem
     // Profiling counter address (optional)
     profile_counter: Option<u64>,
+    // Per-global dirty flags used to avoid full CPUState flushes.
+    dirty_globals: RefCell<Vec<bool>>,
+    // Whether a global currently has a valid cached value in `temps`.
+    global_loaded: RefCell<Vec<bool>>,
 }
 
 fn get_intrinsic(m: LLVMModuleRef, name: &str, tys: &[LLVMTypeRef]) -> LLVMValueRef {
@@ -217,11 +224,18 @@ impl TbTranslator {
                 last_pc_const: None,
                 peer_fty: fty,
                 aot_dispatch: None,
+                aot_peer_liveins: HashMap::new(),
                 ctlz_i32, ctlz_i64, cttz_i32, cttz_i64,
                 ctpop_i32, ctpop_i64,
                 bswap_i16, bswap_i32, bswap_i64,
                 tbaa_kind, tbaa_cpu, tbaa_guest,
                 profile_counter,
+                dirty_globals: RefCell::new(
+                    vec![false; ir.nb_globals() as usize]
+                ),
+                global_loaded: RefCell::new(
+                    vec![false; ir.nb_globals() as usize]
+                ),
             }
         }
     }
@@ -236,10 +250,12 @@ impl TbTranslator {
         ir: &Context,
         func_name: &str,
         peer_va_to_offset: &std::collections::HashMap<u64, u64>,
+        peer_liveins: &std::collections::HashMap<u64, Vec<bool>>,
         pc_temp: TempIdx,
     ) -> Self {
         let mut s = Self::new(llvm_ctx, ir, func_name, None);
         s.pc_temp = Some(pc_temp);
+        s.aot_peer_liveins = peer_liveins.clone();
 
         // Declare all peer TB functions in this module.
         // Key aot_peers by guest VA so GotoTb lookup (which uses last_pc_const,
@@ -281,6 +297,133 @@ impl TbTranslator {
     /// Tag a load or store with TBAA metadata.
     fn set_tbaa(&self, inst: LLVMValueRef, tag: LLVMValueRef) {
         unsafe { LLVMSetMetadata(inst, self.tbaa_kind, tag); }
+    }
+
+    fn mark_global_dirty(&self, tidx: TempIdx) {
+        if let Some(dirty) = self
+            .dirty_globals
+            .borrow_mut()
+            .get_mut(tidx.0 as usize)
+        {
+            *dirty = true;
+        }
+        if let Some(loaded) = self
+            .global_loaded
+            .borrow_mut()
+            .get_mut(tidx.0 as usize)
+        {
+            *loaded = true;
+        }
+    }
+
+    fn invalidate_all_globals(&self) {
+        for dirty in self.dirty_globals.borrow_mut().iter_mut() {
+            *dirty = false;
+        }
+        for loaded in self.global_loaded.borrow_mut().iter_mut() {
+            *loaded = false;
+        }
+    }
+
+    fn flush_dirty_globals_mask(
+        &self,
+        ir: &Context,
+        livein_mask: Option<&[bool]>,
+    ) {
+        let b = self.builder;
+        let mut dirty = self.dirty_globals.borrow_mut();
+        for i in 0..ir.nb_globals() as usize {
+            if !dirty[i] {
+                continue;
+            }
+            if let Some(mask) = livein_mask {
+                if !mask.get(i).copied().unwrap_or(false) {
+                    continue;
+                }
+            }
+            let tidx = TempIdx(i as u32);
+            let temp = ir.temp(tidx);
+            if temp.kind != TempKind::Global {
+                dirty[i] = false;
+                continue;
+            }
+            unsafe {
+                let v = LLVMBuildLoad2(
+                    b, self.llvm_ty(temp.ty), self.temps[i], E,
+                );
+                let off = self.ci(self.i64t, temp.mem_offset as u64);
+                let p = LLVMBuildGEP2(
+                    b, self.i8t, self.env, [off].as_ptr(), 1, E,
+                );
+                let st = LLVMBuildStore(b, v, p);
+                self.set_tbaa(st, self.tbaa_cpu);
+            }
+            dirty[i] = false;
+        }
+    }
+
+    fn flush_dirty_globals(&self, ir: &Context) {
+        self.flush_dirty_globals_mask(ir, None);
+    }
+
+    fn load_global_cached(
+        &self,
+        ir: &Context,
+        tidx: TempIdx,
+    ) -> LLVMValueRef {
+        let idx = tidx.0 as usize;
+        let temp = ir.temp(tidx);
+        let b = self.builder;
+        let need_load = self
+            .global_loaded
+            .borrow()
+            .get(idx)
+            .map(|v| !*v)
+            .unwrap_or(false);
+        if need_load {
+            unsafe {
+                let off = self.ci(self.i64t, temp.mem_offset as u64);
+                let p = LLVMBuildGEP2(
+                    b, self.i8t, self.env, [off].as_ptr(), 1, E,
+                );
+                let v = LLVMBuildLoad2(
+                    b, self.llvm_ty(temp.ty), p, E,
+                );
+                self.set_tbaa(v, self.tbaa_cpu);
+                LLVMBuildStore(b, v, self.temps[idx]);
+                if let Some(loaded) =
+                    self.global_loaded.borrow_mut().get_mut(idx)
+                {
+                    *loaded = true;
+                }
+                return v;
+            }
+        }
+        unsafe {
+            LLVMBuildLoad2(
+                b, self.llvm_ty(temp.ty), self.temps[idx], E,
+            )
+        }
+    }
+
+    fn input_val(&self, ir: &Context, tidx: TempIdx) -> LLVMValueRef {
+        let temp = ir.temp(tidx);
+        let b = self.builder;
+        unsafe {
+            match temp.kind {
+                TempKind::Const => {
+                    self.ci(self.llvm_ty(temp.ty), temp.val)
+                }
+                TempKind::Fixed => {
+                    LLVMBuildPtrToInt(b, self.env, self.i64t, E)
+                }
+                TempKind::Global => self.load_global_cached(ir, tidx),
+                _ => LLVMBuildLoad2(
+                    b, self.llvm_ty(temp.ty),
+                    self.temps[tidx.0 as usize], E,
+                ),
+            }
+        }
     }
 
     /// Load a TCG temp's current value.
@@ -384,16 +527,8 @@ impl TbTranslator {
             bb
         };
 
-        // Load initial values for globals from env
-        for i in 0..ir.nb_globals() as usize {
-            let tidx = TempIdx(i as u32);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Global {
-                let val = self.load_temp(ir, tidx);
-                // Store into local alloca for faster access within TB
-                unsafe { LLVMBuildStore(b, val, self.temps[i]); }
-            }
-        }
+        // Start with an invalidated global cache and materialize on demand.
+        self.invalidate_all_globals();
 
         let mut terminated = false;
 
@@ -417,18 +552,7 @@ impl TbTranslator {
             // Load input temp values (for non-global access, use local allocas)
             macro_rules! ival {
                 ($n:expr) => {{
-                    let tidx = iarg!($n);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Const {
-                        self.ci(self.llvm_ty(temp.ty), temp.val)
-                    } else if temp.kind == TempKind::Fixed {
-                        unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) }
-                    } else if temp.kind == TempKind::Global {
-                        // Read from local alloca (cached)
-                        unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) }
-                    } else {
-                        unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) }
-                    }
+                    self.input_val(ir, iarg!($n))
                 }}
             }
 
@@ -439,6 +563,7 @@ impl TbTranslator {
                     if temp.kind == TempKind::Global {
                         // Write to local alloca
                         unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                        self.mark_global_dirty(tidx);
                     } else if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                         unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
                     }
@@ -448,18 +573,7 @@ impl TbTranslator {
             // Flush globals to env memory before BB boundaries
             macro_rules! flush_globals {
                 () => {
-                    for i in 0..ir.nb_globals() as usize {
-                        let tidx = TempIdx(i as u32);
-                        let temp = ir.temp(tidx);
-                        if temp.kind == TempKind::Global {
-                            unsafe {
-                                let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
-                                let off = self.ci(self.i64t, temp.mem_offset as u64);
-                                let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                                LLVMBuildStore(b, v, p);
-                            }
-                        }
-                    }
+                    self.flush_dirty_globals(ir);
                 }
             }
 
@@ -536,18 +650,7 @@ impl TbTranslator {
 
         // If last op didn't terminate, flush and return 0
         if !terminated {
-            for i in 0..ir.nb_globals() as usize {
-                let tidx = TempIdx(i as u32);
-                let temp = ir.temp(tidx);
-                if temp.kind == TempKind::Global {
-                    unsafe {
-                        let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
-                        let off = self.ci(self.i64t, temp.mem_offset as u64);
-                        let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                        LLVMBuildStore(b, v, p);
-                    }
-                }
-            }
+            self.flush_dirty_globals(ir);
             unsafe {
                 let zero = self.ci(self.i64t, 0);
                 LLVMBuildStore(b, zero, self.exit_val);
@@ -584,15 +687,7 @@ impl TbTranslator {
 
         macro_rules! ival {
             ($n:expr) => {{
-                let tidx = iarg!($n);
-                let temp = ir.temp(tidx);
-                if temp.kind == TempKind::Const {
-                    self.ci(self.llvm_ty(temp.ty), temp.val)
-                } else if temp.kind == TempKind::Fixed {
-                    unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) }
-                } else {
-                    unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) }
-                }
+                self.input_val(ir, iarg!($n))
             }}
         }
 
@@ -602,25 +697,16 @@ impl TbTranslator {
                 let temp = ir.temp(tidx);
                 if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                     unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                    if temp.kind == TempKind::Global {
+                        self.mark_global_dirty(tidx);
+                    }
                 }
             }}
         }
 
         macro_rules! flush_globals {
             () => {
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        unsafe {
-                            let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
-                            let off = self.ci(self.i64t, temp.mem_offset as u64);
-                            let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            let st = LLVMBuildStore(b, v, p);
-                            self.set_tbaa(st, self.tbaa_cpu);
-                        }
-                    }
-                }
+                self.flush_dirty_globals(ir);
             }
         }
 
@@ -680,17 +766,16 @@ impl TbTranslator {
         macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
         macro_rules! carg { ($n:expr) => { op.args[nb_o + nb_i + $n].0 } }
         macro_rules! ival { ($n:expr) => {{
-            let tidx = iarg!($n);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
-            else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            self.input_val(ir, iarg!($n))
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                 unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                if temp.kind == TempKind::Global {
+                    self.mark_global_dirty(tidx);
+                }
             }
         }}}
 
@@ -795,34 +880,21 @@ impl TbTranslator {
         macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
         macro_rules! carg { ($n:expr) => { op.args[nb_o + nb_i + $n].0 } }
         macro_rules! ival { ($n:expr) => {{
-            let tidx = iarg!($n);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
-            else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            self.input_val(ir, iarg!($n))
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                 unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                if temp.kind == TempKind::Global {
+                    self.mark_global_dirty(tidx);
+                }
             }
         }}}
         macro_rules! flush_globals {
             () => {
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        unsafe {
-                            let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
-                            let off = self.ci(self.i64t, temp.mem_offset as u64);
-                            let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            let st = LLVMBuildStore(b, v, p);
-                            self.set_tbaa(st, self.tbaa_cpu);
-                        }
-                    }
-                }
+                self.flush_dirty_globals(ir);
             }
         }
 
@@ -883,34 +955,21 @@ impl TbTranslator {
         macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
         macro_rules! carg { ($n:expr) => { op.args[nb_o + nb_i + $n].0 } }
         macro_rules! ival { ($n:expr) => {{
-            let tidx = iarg!($n);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
-            else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            self.input_val(ir, iarg!($n))
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                 unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                if temp.kind == TempKind::Global {
+                    self.mark_global_dirty(tidx);
+                }
             }
         }}}
         macro_rules! flush_globals {
             () => {
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        unsafe {
-                            let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
-                            let off = self.ci(self.i64t, temp.mem_offset as u64);
-                            let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            let st = LLVMBuildStore(b, v, p);
-                            self.set_tbaa(st, self.tbaa_cpu);
-                        }
-                    }
-                }
+                self.flush_dirty_globals(ir);
             }
         }
 
@@ -918,7 +977,6 @@ impl TbTranslator {
             // -- Control flow --
             Opcode::Br => {
                 let label_id = carg!(0);
-                flush_globals!();
                 LLVMBuildBr(b, self.labels[label_id as usize]);
                 *terminated = true;
             }
@@ -933,45 +991,21 @@ impl TbTranslator {
                 } else {
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), a, bv, E)
                 };
-                flush_globals!();
                 let fall_bb = LLVMAppendBasicBlockInContext(
                     self.ctx_ref, self.func, c"fall".as_ptr(),
                 );
                 LLVMBuildCondBr(b, cmp, self.labels[label_id as usize], fall_bb);
                 LLVMPositionBuilderAtEnd(b, fall_bb);
-                // Reload globals after branch
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        let off = self.ci(self.i64t, temp.mem_offset as u64);
-                        let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                        let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E);
-                        LLVMBuildStore(b, v, self.temps[i]);
-                    }
-                }
             }
             Opcode::SetLabel => {
                 let label_id = carg!(0);
                 let target_bb = self.labels[label_id as usize];
                 // If previous block wasn't terminated, branch to this label
                 if !*terminated {
-                    flush_globals!();
                     LLVMBuildBr(b, target_bb);
                 }
                 LLVMPositionBuilderAtEnd(b, target_bb);
                 *terminated = false;
-                // Reload globals from env
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        let off = self.ci(self.i64t, temp.mem_offset as u64);
-                        let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                        let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E);
-                        LLVMBuildStore(b, v, self.temps[i]);
-                    }
-                }
             }
             Opcode::ExitTb => {
                 let val = carg!(0) as u64;
@@ -996,14 +1030,23 @@ impl TbTranslator {
                 *terminated = true;
             }
             Opcode::GotoTb => {
-                flush_globals!();
                 // AOT direct linking: musttail call to peer if target PC is known.
                 // Falls back to aot_dispatch (loads PC + load_bias from env,
                 // computes file_offset = pc - load_bias, switches) so static
                 // branches between AOT TBs never return to the exec loop.
-                let peer = self.last_pc_const
+                let target_pc = self.last_pc_const;
+                let peer = target_pc
                     .and_then(|pc| self.aot_peers.get(&pc).copied());
                 if let Some(peer_fn) = peer {
+                    if let Some(pc) = target_pc {
+                        if let Some(mask) = self.aot_peer_liveins.get(&pc) {
+                            self.flush_dirty_globals_mask(ir, Some(mask));
+                        } else {
+                            flush_globals!();
+                        }
+                    } else {
+                        flush_globals!();
+                    }
                     let mut args = [self.env, self.guest_base];
                     let call = LLVMBuildCall2(
                         b, self.peer_fty, peer_fn,
@@ -1012,6 +1055,7 @@ impl TbTranslator {
                     LLVMSetTailCallKind(call, 2); // MustTail
                     LLVMBuildRet(b, call);
                 } else if let Some(dispatch_fn) = self.aot_dispatch {
+                    flush_globals!();
                     // Target not a declared local peer; aot_dispatch will find it.
                     let mut args = [self.env, self.guest_base];
                     let call = LLVMBuildCall2(
@@ -1021,6 +1065,7 @@ impl TbTranslator {
                     LLVMSetTailCallKind(call, 2); // MustTail
                     LLVMBuildRet(b, call);
                 } else {
+                    flush_globals!();
                     self.do_exit(tcg_core::tb::TB_EXIT_NOCHAIN);
                 }
                 *terminated = true;
@@ -1058,18 +1103,7 @@ impl TbTranslator {
         macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
         macro_rules! carg { ($n:expr) => { op.args[nb_o + nb_i + $n].0 } }
         macro_rules! ival { ($n:expr) => {{
-            let tidx = iarg!($n);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Const {
-                self.ci(self.llvm_ty(temp.ty), temp.val)
-            } else if temp.kind == TempKind::Fixed {
-                unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) }
-            } else {
-                unsafe { LLVMBuildLoad2(
-                    b, self.llvm_ty(temp.ty),
-                    self.temps[tidx.0 as usize], E,
-                ) }
-            }
+            self.input_val(ir, iarg!($n))
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
@@ -1083,32 +1117,16 @@ impl TbTranslator {
                         self.temps[tidx.0 as usize],
                     );
                 }
+                if temp.kind == TempKind::Global {
+                    self.mark_global_dirty(tidx);
+                }
             }
         }}}
 
         unsafe { match op.opc {
             // -- Call --
             Opcode::Call => {
-                // Flush globals before call
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        let v = LLVMBuildLoad2(
-                            b, self.llvm_ty(temp.ty),
-                            self.temps[i], E,
-                        );
-                        let off = self.ci(
-                            self.i64t,
-                            temp.mem_offset as u64,
-                        );
-                        let p = LLVMBuildGEP2(
-                            b, self.i8t, self.env,
-                            [off].as_ptr(), 1, E,
-                        );
-                        LLVMBuildStore(b, v, p);
-                    }
-                }
+                self.flush_dirty_globals(ir);
                 // func_addr = cargs[1] << 32 | cargs[0]
                 let lo = carg!(0) as u64;
                 let hi = carg!(1) as u64;
@@ -1139,25 +1157,7 @@ impl TbTranslator {
                     args.as_ptr(), args.len() as u32, E,
                 );
                 store_out!(0, ret);
-                // Reload globals after call
-                for i in 0..ir.nb_globals() as usize {
-                    let tidx = TempIdx(i as u32);
-                    let temp = ir.temp(tidx);
-                    if temp.kind == TempKind::Global {
-                        let off = self.ci(
-                            self.i64t,
-                            temp.mem_offset as u64,
-                        );
-                        let p = LLVMBuildGEP2(
-                            b, self.i8t, self.env,
-                            [off].as_ptr(), 1, E,
-                        );
-                        let v = LLVMBuildLoad2(
-                            b, self.llvm_ty(temp.ty), p, E,
-                        );
-                        LLVMBuildStore(b, v, self.temps[i]);
-                    }
-                }
+                self.invalidate_all_globals();
             }
 
             // -- Bit counting --
@@ -1243,17 +1243,16 @@ impl TbTranslator {
         macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
         macro_rules! carg { ($n:expr) => { op.args[nb_o + nb_i + $n].0 } }
         macro_rules! ival { ($n:expr) => {{
-            let tidx = iarg!($n);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
-            else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            self.input_val(ir, iarg!($n))
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                 unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                if temp.kind == TempKind::Global {
+                    self.mark_global_dirty(tidx);
+                }
             }
         }}}
 
@@ -1346,17 +1345,16 @@ impl TbTranslator {
         macro_rules! oarg { ($n:expr) => { op.args[$n] } }
         macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
         macro_rules! ival { ($n:expr) => {{
-            let tidx = iarg!($n);
-            let temp = ir.temp(tidx);
-            if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
-            else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            self.input_val(ir, iarg!($n))
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
                 unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                if temp.kind == TempKind::Global {
+                    self.mark_global_dirty(tidx);
+                }
             }
         }}}
 

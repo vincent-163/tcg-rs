@@ -415,6 +415,29 @@ fn parse_elf_entry(data: &[u8]) -> u64 {
     )
 }
 
+/// Conservative per-TB global-input mask:
+/// mark globals that appear as any input operand.
+fn collect_global_input_mask(ir: &Context) -> Vec<bool> {
+    let nb_globals = ir.nb_globals() as usize;
+    let mut mask = vec![false; nb_globals];
+    for op in ir.ops() {
+        let def = &OPCODE_DEFS[op.opc as usize];
+        let nb_o = def.nb_oargs as usize;
+        let nb_i = def.nb_iargs as usize;
+        for i in 0..nb_i {
+            let tidx = op.args[nb_o + i];
+            let idx = tidx.0 as usize;
+            if idx >= nb_globals {
+                continue;
+            }
+            if ir.temp(tidx).kind == TempKind::Global {
+                mask[idx] = true;
+            }
+        }
+    }
+    mask
+}
+
 // ── Profile mode ─────────────────────────────────────────
 
 fn run_profile(
@@ -565,6 +588,8 @@ fn compile_aot(
     // goto_tb into them fall back to aot_dispatch instead of
     // emitting an unresolved musttail-call reference.
     let mut skipped_offsets: HashSet<u64> = HashSet::new();
+    let mut all_va_to_liveins: HashMap<u64, Vec<bool>> =
+        HashMap::new();
     for &(offset, _) in all_entries {
         let mut ir = Context::new();
         arch.init_context(&mut ir);
@@ -575,7 +600,12 @@ fn compile_aot(
         optimize(&mut ir);
         if ir.ops().iter().any(|op| op.opc == Opcode::Call) {
             skipped_offsets.insert(offset);
+            continue;
         }
+        all_va_to_liveins.insert(
+            guest_pc,
+            collect_global_input_mask(&ir),
+        );
     }
 
     // Build guest VA → file_offset map for peer lookup,
@@ -614,6 +644,7 @@ fn compile_aot(
                 &ir,
                 &func_name,
                 &all_va_to_offset,
+                &all_va_to_liveins,
                 pc_temp,
             );
         let tb_module = tb_translator.translate(&ir);
