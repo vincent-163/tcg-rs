@@ -430,9 +430,11 @@ fn run_profile(
     let arch = detect_arch(&elf_data);
     let (load_vaddr, load_file_offset) =
         parse_elf_load(&elf_data);
+    let min_exec_count = u64::from(profile.threshold.max(1));
 
     eprintln!(
-        "[aot] profile mode ({arch:?}): {} hot entries, \
+        "[aot] profile mode ({arch:?}): {} entries, \
+         min_exec_count={min_exec_count}, \
          load vaddr={load_vaddr:#x} \
          file_offset={load_file_offset:#x}",
         profile.entries.len()
@@ -442,18 +444,19 @@ fn run_profile(
         .entries
         .iter()
         .copied()
-        .filter(|e| e.exec_count > 10)
+        .filter(|e| e.exec_count >= min_exec_count)
         .collect();
     eprintln!(
-        "[aot] keeping {} entries with exec_count > 10 \
+        "[aot] keeping {} entries with exec_count >= {} \
          (dropped {})",
         selected_entries.len(),
+        min_exec_count,
         profile.entries.len() - selected_entries.len()
     );
     if selected_entries.is_empty() {
         eprintln!(
-            "[aot] no profile entries satisfy exec_count \
-             > 10"
+            "[aot] no profile entries satisfy exec_count >= {}",
+            min_exec_count
         );
         process::exit(1);
     }
@@ -462,7 +465,7 @@ fn run_profile(
     let export_set: HashSet<u64> = profile
         .entries
         .iter()
-        .filter(|e| e.exec_count > 10)
+        .filter(|e| e.exec_count >= min_exec_count)
         .filter(|e| ProfileData::should_export(e))
         .map(|e| e.file_offset)
         .collect();

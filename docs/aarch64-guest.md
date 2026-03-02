@@ -26,6 +26,28 @@ Expected output includes:
 - `Correct operation validated.`
 - `CoreMark 1.0 : ...`
 
+### 2.1 Profile all executed TBs, then AOT CoreMark
+
+`TCG_PROFILE_MODE=all` records every executed TB (`exec_count >= 1`) into the profile.
+`tcg-aot` will reuse the saved profile threshold automatically.
+
+```bash
+# 1) collect profile from all executed TBs
+TCG_PROFILE=1 TCG_PROFILE_MODE=all TCG_PROFILE_OUT=/tmp/coremark-aa64-all.prof \
+  $TCG_A64 ./coremark-aarch64
+
+# 2) build AOT object from that profile
+./target/release/tcg-aot /tmp/coremark-aa64-all.prof ./coremark-aarch64 \
+  -o /tmp/coremark-aa64-all.o
+
+# 3) link shared object
+cc -shared -o /tmp/coremark-aa64-all.so /tmp/coremark-aa64-all.o
+
+# 4) run with AOT enabled
+TCG_AOT=/tmp/coremark-aa64-all.so TCG_STATS=1 \
+  $TCG_A64 ./coremark-aarch64
+```
+
 ## 3. SPEC2006 from `cogbt`
 
 The `cogbt` project contains a SPEC2006 tree and AArch64 benchmark binaries:
