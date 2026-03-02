@@ -4335,6 +4335,14 @@ unsafe extern "C" fn helper_cmgt32(a: u64, b: u64) -> u64 {
     };
     lo as u64 | ((hi as u64) << 32)
 }
+/// CMGT 64-bit: signed greater than
+unsafe extern "C" fn helper_cmgt64(a: u64, b: u64) -> u64 {
+    if (a as i64) > (b as i64) {
+        !0
+    } else {
+        0
+    }
+}
 /// CMGE 32-bit: signed greater than or equal
 unsafe extern "C" fn helper_cmge32(a: u64, b: u64) -> u64 {
     let lo: u32 = if (a as i32) >= (b as i32) { !0 } else { 0 };
@@ -6394,6 +6402,10 @@ impl Aarch64DisasContext {
                     }
                     true
                 }
+                (0, 0b00110) => {
+                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt64);
+                    true
+                } // CMGT .1D/.2D
                 (0, 0b10001) => {
                     // CMTST .2D: if (a & b) != 0 then -1 else 0 per lane
                     let n_lo = self.read_vreg_lo(ir, rn);

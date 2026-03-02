@@ -2020,6 +2020,22 @@ fn a64_difftest_ushr_d_imm60() {
     assert_eq!(cpu.pc, 4);
 }
 
+#[test]
+fn a64_difftest_cmgt_v2d() {
+    // cmgt v3.2d, v3.2d, v0.2d
+    // Encoding observed in perlbench pack.pl failure path at pc=0x4716e0.
+    let insn = 0x4ee0_3463u32;
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(3, 5, (-1i64) as u64), (0, 3, 2)],
+        &[insn],
+    );
+
+    assert_eq!(cpu.vregs[3 * 2], !0u64);
+    assert_eq!(cpu.vregs[3 * 2 + 1], 0);
+    assert_eq!(cpu.pc, 4);
+}
+
 // ── Load semantics difftests ─────────────────────────────
 
 fn translated_qemu_ld_memops(insns: &[u32]) -> Vec<u32> {
