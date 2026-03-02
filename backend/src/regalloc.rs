@@ -236,10 +236,7 @@ fn sync_globals(
 /// registers, force reload from memory on next use.  At merge points
 /// the register state from the fall-through path may differ from the
 /// branch path, so ALL cached register values are invalid.
-fn invalidate_all_temps(
-    ctx: &mut Context,
-    state: &mut RegAllocState,
-) {
+fn invalidate_all_temps(ctx: &mut Context, state: &mut RegAllocState) {
     // Clear every register mapping except Fixed temps.
     for reg in 0..16u8 {
         if let Some(tidx) = state.reg_to_temp[reg as usize] {
@@ -306,54 +303,86 @@ fn regalloc_call(
         }
     }
 
-    // 3. Load each input into its fixed register.
-    //    Emit MOV/LOAD/MOVI directly without changing
-    //    the source temp's state.
+    // 3. Stage each input to the reserved call-args stack area first.
+    //
+    // Direct in-order register-to-register moves can corrupt argument
+    // permutations (e.g. swapping RDI/RSI) by overwriting a source register
+    // before it is consumed by a later argument. Staging through memory
+    // makes argument materialization order-independent.
+    const CALL_ARG_SCRATCH_REG: u8 = 11; // R11 (caller-saved)
+    let frame_reg = ctx.frame_reg.unwrap();
     let mut i_regs = [0u8; 10];
     for i in 0..nb_iargs {
         let tidx = op.args[nb_oargs + i];
-        let target = ct.args[nb_oargs + i].regs.first().unwrap();
+        let stack_off = (i as i64) * 8;
         let temp = ctx.temp(tidx);
+        let ty = temp.ty;
         match temp.val_type {
             TempVal::Reg => {
                 let src = temp.reg.unwrap();
-                if src != target {
-                    backend.tcg_out_mov(buf, temp.ty, target, src);
-                }
+                backend.tcg_out_st(buf, ty, src, frame_reg, stack_off);
             }
             TempVal::Const => {
-                backend.tcg_out_movi(buf, temp.ty, target, temp.val);
+                backend.tcg_out_movi(buf, ty, CALL_ARG_SCRATCH_REG, temp.val);
+                backend.tcg_out_st(
+                    buf,
+                    ty,
+                    CALL_ARG_SCRATCH_REG,
+                    frame_reg,
+                    stack_off,
+                );
             }
             TempVal::Mem => {
                 if let Some(base_idx) = temp.mem_base {
                     let base_reg = ctx.temp(base_idx).reg.unwrap();
                     backend.tcg_out_ld(
                         buf,
-                        temp.ty,
-                        target,
+                        ty,
+                        CALL_ARG_SCRATCH_REG,
                         base_reg,
                         temp.mem_offset,
                     );
                 } else if temp.mem_allocated {
-                    let frame_reg = ctx.frame_reg.unwrap();
                     backend.tcg_out_ld(
                         buf,
-                        temp.ty,
-                        target,
+                        ty,
+                        CALL_ARG_SCRATCH_REG,
                         frame_reg,
                         temp.mem_offset,
                     );
                 }
+                backend.tcg_out_st(
+                    buf,
+                    ty,
+                    CALL_ARG_SCRATCH_REG,
+                    frame_reg,
+                    stack_off,
+                );
             }
             TempVal::Dead => {
-                // Dead input — load zero.
-                backend.tcg_out_movi(buf, temp.ty, target, 0);
+                backend.tcg_out_movi(buf, ty, CALL_ARG_SCRATCH_REG, 0);
+                backend.tcg_out_st(
+                    buf,
+                    ty,
+                    CALL_ARG_SCRATCH_REG,
+                    frame_reg,
+                    stack_off,
+                );
             }
         }
+    }
+
+    // 4. Load staged args into their fixed call ABI registers.
+    for i in 0..nb_iargs {
+        let tidx = op.args[nb_oargs + i];
+        let target = ct.args[nb_oargs + i].regs.first().unwrap();
+        let ty = ctx.temp(tidx).ty;
+        let stack_off = (i as i64) * 8;
+        backend.tcg_out_ld(buf, ty, target, frame_reg, stack_off);
         i_regs[i] = target;
     }
 
-    // 4. Free dead inputs.
+    // 5. Free dead inputs.
     for i in 0..nb_iargs {
         if life.is_dead((nb_oargs + i) as u32) {
             let tidx = op.args[nb_oargs + i];
@@ -361,7 +390,7 @@ fn regalloc_call(
         }
     }
 
-    // 5. Clobber all caller-saved registers.
+    // 6. Clobber all caller-saved registers.
     for &reg in &CALLER_SAVED {
         if let Some(tidx) = state.reg_to_temp[reg as usize] {
             let temp = ctx.temp(tidx);
@@ -375,14 +404,14 @@ fn regalloc_call(
         }
     }
 
-    // 6. Collect cargs and emit call.
+    // 7. Collect cargs and emit call.
     let cstart = nb_oargs + nb_iargs;
     let cargs: Vec<u32> =
         (0..nb_cargs).map(|i| op.args[cstart + i].0).collect();
     let out_reg = ct.args[0].regs.first().unwrap();
     backend.tcg_out_op(buf, ctx, op, &[out_reg], &i_regs[..nb_iargs], &cargs);
 
-    // 7. Assign output to return register (RAX).
+    // 8. Assign output to return register (RAX).
     let dst_tidx = op.args[0];
     free_old_reg(ctx, state, dst_tidx, Some(out_reg));
     state.assign(out_reg, dst_tidx);
@@ -391,7 +420,7 @@ fn regalloc_call(
     t.reg = Some(out_reg);
     t.mem_coherent = false;
 
-    // 8. Free dead output.
+    // 9. Free dead output.
     if life.is_dead(0) {
         temp_dead(ctx, state, dst_tidx);
     }
@@ -485,10 +514,7 @@ fn regalloc_op(
         let tidx = op.args[nb_oargs + i];
         let required = arg_ct.regs;
         if required == RegSet::EMPTY {
-            panic!(
-                "empty constraint regs for input {} of {:?}",
-                i, op.opc
-            );
+            panic!("empty constraint regs for input {} of {:?}", i, op.opc);
         }
         let is_dead = life.is_dead((nb_oargs + i) as u32);
         let temp = ctx.temp(tidx);
