@@ -3998,6 +3998,17 @@ unsafe extern "C" fn helper_sdiv32(n: u64, m: u64) -> u64 {
     }
 }
 
+unsafe extern "C" fn helper_adc64(n: u64, m: u64, c: u64) -> u64 {
+    n.wrapping_add(m).wrapping_add(c & 1)
+}
+
+unsafe extern "C" fn helper_adc32(n: u64, m: u64, c: u64) -> u64 {
+    let carry = (c & 1) as u32;
+    let n = n as u32;
+    let m = m as u32;
+    n.wrapping_add(m).wrapping_add(carry) as u64
+}
+
 unsafe extern "C" fn helper_sbc64(n: u64, m: u64, c: u64) -> u64 {
     let carry = c & 1;
     n.wrapping_sub(m).wrapping_sub(1u64.wrapping_sub(carry))
@@ -8610,7 +8621,6 @@ impl Decode<Context> for Aarch64DisasContext {
 
     fn trans_ADC(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
-        let ty = Self::sf_type(sf);
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
         // Materialize NZCV so we can read packed C flag.
@@ -8621,8 +8631,11 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_shr(Type::I64, c, self.nzcv, c29);
         ir.gen_and(Type::I64, c, c, one);
         let d = ir.new_temp(Type::I64);
-        ir.gen_add(ty, d, n, m);
-        ir.gen_add(ty, d, d, c);
+        if sf {
+            ir.gen_call(d, helper_adc64 as u64, &[n, m, c]);
+        } else {
+            ir.gen_call(d, helper_adc32 as u64, &[n, m, c]);
+        }
         self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
