@@ -845,8 +845,49 @@ fn create_target_machine()
             }
             process::exit(1);
         }
-        let cpu = c"generic";
-        let features = c"";
+        let host_cpu_ptr = LLVMGetHostCPUName();
+        let host_features_ptr = LLVMGetHostCPUFeatures();
+        let host_cpu = if host_cpu_ptr.is_null() {
+            "generic".to_string()
+        } else {
+            std::ffi::CStr::from_ptr(host_cpu_ptr)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let host_features = if host_features_ptr.is_null() {
+            String::new()
+        } else {
+            std::ffi::CStr::from_ptr(host_features_ptr)
+                .to_string_lossy()
+                .into_owned()
+        };
+        if !host_cpu_ptr.is_null() {
+            LLVMDisposeMessage(host_cpu_ptr);
+        }
+        if !host_features_ptr.is_null() {
+            LLVMDisposeMessage(host_features_ptr);
+        }
+
+        let cpu_str = env::var("TCG_AOT_CPU")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(host_cpu);
+        let features_str = env::var("TCG_AOT_FEATURES")
+            .ok()
+            .unwrap_or(host_features);
+        let cpu = CString::new(cpu_str.as_str())
+            .expect("target cpu contains interior NUL");
+        let features = CString::new(features_str.as_str())
+            .expect("target features contains interior NUL");
+        eprintln!(
+            "[aot] target machine: triple={triple_str}, cpu={}, features={}",
+            cpu_str,
+            if features_str.is_empty() {
+                "<none>"
+            } else {
+                features_str.as_str()
+            }
+        );
         let tm = LLVMCreateTargetMachine(
             target,
             triple,

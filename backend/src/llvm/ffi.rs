@@ -322,6 +322,8 @@ extern "C" {
 
     // Target machine for AOT object emission
     pub fn LLVMGetDefaultTargetTriple() -> *mut c_char;
+    pub fn LLVMGetHostCPUName() -> *mut c_char;
+    pub fn LLVMGetHostCPUFeatures() -> *mut c_char;
     pub fn LLVMGetTargetFromTriple(
         triple: *const c_char, target: *mut LLVMTargetRef, err: *mut *mut c_char,
     ) -> i32;
