@@ -608,41 +608,247 @@ impl TbTranslator {
                 Opcode::RemU => { let v = LLVMBuildURem(b, ival!(0), ival!(1), E); store_out!(0, v); }
 
                 // -- Logic --
-                Opcode::And => { let v = LLVMBuildAnd(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Or  => { let v = LLVMBuildOr(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Xor => { let v = LLVMBuildXor(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Not => { let v = LLVMBuildNot(b, ival!(0), E); store_out!(0, v); }
+                Opcode::And => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let v = LLVMBuildAnd(b, a, bv, E);
+                    store_out!(0, v);
+                }
+                Opcode::Or  => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let v = LLVMBuildOr(b, a, bv, E);
+                    store_out!(0, v);
+                }
+                Opcode::Xor => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let v = LLVMBuildXor(b, a, bv, E);
+                    store_out!(0, v);
+                }
+                Opcode::Not => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let v = LLVMBuildNot(b, a, E);
+                    store_out!(0, v);
+                }
 
                 Opcode::AndC => {
-                    let nb = LLVMBuildNot(b, ival!(1), E);
-                    let v = LLVMBuildAnd(b, ival!(0), nb, E);
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let nb = LLVMBuildNot(b, bv, E);
+                    let v = LLVMBuildAnd(b, a, nb, E);
                     store_out!(0, v);
                 }
                 Opcode::OrC => {
-                    let nb = LLVMBuildNot(b, ival!(1), E);
-                    let v = LLVMBuildOr(b, ival!(0), nb, E);
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let nb = LLVMBuildNot(b, bv, E);
+                    let v = LLVMBuildOr(b, a, nb, E);
                     store_out!(0, v);
                 }
                 Opcode::Eqv => {
-                    let x = LLVMBuildXor(b, ival!(0), ival!(1), E);
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let x = LLVMBuildXor(b, a, bv, E);
                     let v = LLVMBuildNot(b, x, E);
                     store_out!(0, v);
                 }
                 Opcode::Nand => {
-                    let a = LLVMBuildAnd(b, ival!(0), ival!(1), E);
-                    let v = LLVMBuildNot(b, a, E);
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let anded = LLVMBuildAnd(b, a, bv, E);
+                    let v = LLVMBuildNot(b, anded, E);
                     store_out!(0, v);
                 }
                 Opcode::Nor => {
-                    let o = LLVMBuildOr(b, ival!(0), ival!(1), E);
-                    let v = LLVMBuildNot(b, o, E);
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut bv = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_b_ty = ir.temp(iarg!(1)).ty;
+                    if src_b_ty.size_bits() < dst_ty.size_bits() {
+                        bv = LLVMBuildZExt(b, bv, ty, E);
+                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
+                        bv = LLVMBuildTrunc(b, bv, ty, E);
+                    }
+                    let ored = LLVMBuildOr(b, a, bv, E);
+                    let v = LLVMBuildNot(b, ored, E);
                     store_out!(0, v);
                 }
 
                 // -- Shifts --
-                Opcode::Shl => { let v = LLVMBuildShl(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Shr => { let v = LLVMBuildLShr(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Sar => { let v = LLVMBuildAShr(b, ival!(0), ival!(1), E); store_out!(0, v); }
+                Opcode::Shl => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut sh = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_sh_ty = ir.temp(iarg!(1)).ty;
+                    if src_sh_ty.size_bits() < dst_ty.size_bits() {
+                        sh = LLVMBuildZExt(b, sh, ty, E);
+                    } else if src_sh_ty.size_bits() > dst_ty.size_bits() {
+                        sh = LLVMBuildTrunc(b, sh, ty, E);
+                    }
+                    let v = LLVMBuildShl(b, a, sh, E);
+                    store_out!(0, v);
+                }
+                Opcode::Shr => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut sh = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_sh_ty = ir.temp(iarg!(1)).ty;
+                    if src_sh_ty.size_bits() < dst_ty.size_bits() {
+                        sh = LLVMBuildZExt(b, sh, ty, E);
+                    } else if src_sh_ty.size_bits() > dst_ty.size_bits() {
+                        sh = LLVMBuildTrunc(b, sh, ty, E);
+                    }
+                    let v = LLVMBuildLShr(b, a, sh, E);
+                    store_out!(0, v);
+                }
+                Opcode::Sar => {
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let ty = self.llvm_ty(dst_ty);
+                    let mut a = ival!(0);
+                    let mut sh = ival!(1);
+                    let src_a_ty = ir.temp(iarg!(0)).ty;
+                    if src_a_ty.size_bits() < dst_ty.size_bits() {
+                        a = LLVMBuildZExt(b, a, ty, E);
+                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                        a = LLVMBuildTrunc(b, a, ty, E);
+                    }
+                    let src_sh_ty = ir.temp(iarg!(1)).ty;
+                    if src_sh_ty.size_bits() < dst_ty.size_bits() {
+                        sh = LLVMBuildZExt(b, sh, ty, E);
+                    } else if src_sh_ty.size_bits() > dst_ty.size_bits() {
+                        sh = LLVMBuildTrunc(b, sh, ty, E);
+                    }
+                    let v = LLVMBuildAShr(b, a, sh, E);
+                    store_out!(0, v);
+                }
 
                 _ => { self.translate_op_part2(ir, op, &mut terminated); }
             }}
@@ -1283,21 +1489,35 @@ impl TbTranslator {
 
             // -- Bit extract/deposit --
             Opcode::Extract => {
-                let a = ival!(0);
+                let mut a = ival!(0);
                 let ofs = carg!(0) as u64;
                 let len = carg!(1) as u64;
-                let ty = self.llvm_ty(op.op_type);
+                let dst_ty = ir.temp(oarg!(0)).ty;
+                let ty = self.llvm_ty(dst_ty);
+                let src_ty = ir.temp(iarg!(0)).ty;
+                if src_ty.size_bits() < dst_ty.size_bits() {
+                    a = LLVMBuildZExt(b, a, ty, E);
+                } else if src_ty.size_bits() > dst_ty.size_bits() {
+                    a = LLVMBuildTrunc(b, a, ty, E);
+                }
                 let sh = LLVMBuildLShr(b, a, self.ci(ty, ofs), E);
                 let mask = self.ci(ty, (1u64 << len).wrapping_sub(1));
                 let v = LLVMBuildAnd(b, sh, mask, E);
                 store_out!(0, v);
             }
             Opcode::SExtract => {
-                let a = ival!(0);
+                let mut a = ival!(0);
                 let ofs = carg!(0) as u64;
                 let len = carg!(1) as u64;
-                let ty = self.llvm_ty(op.op_type);
-                let bits = op.op_type.size_bits() as u64;
+                let dst_ty = ir.temp(oarg!(0)).ty;
+                let ty = self.llvm_ty(dst_ty);
+                let src_ty = ir.temp(iarg!(0)).ty;
+                if src_ty.size_bits() < dst_ty.size_bits() {
+                    a = LLVMBuildZExt(b, a, ty, E);
+                } else if src_ty.size_bits() > dst_ty.size_bits() {
+                    a = LLVMBuildTrunc(b, a, ty, E);
+                }
+                let bits = dst_ty.size_bits() as u64;
                 let shl_amt = bits - len - ofs;
                 let sar_amt = bits - len;
                 let sh = LLVMBuildShl(b, a, self.ci(ty, shl_amt), E);
@@ -1305,11 +1525,24 @@ impl TbTranslator {
                 store_out!(0, v);
             }
             Opcode::Deposit => {
-                let a = ival!(0);
-                let val = ival!(1);
+                let mut a = ival!(0);
+                let mut val = ival!(1);
                 let ofs = carg!(0) as u64;
                 let len = carg!(1) as u64;
-                let ty = self.llvm_ty(op.op_type);
+                let dst_ty = ir.temp(oarg!(0)).ty;
+                let ty = self.llvm_ty(dst_ty);
+                let src_a_ty = ir.temp(iarg!(0)).ty;
+                if src_a_ty.size_bits() < dst_ty.size_bits() {
+                    a = LLVMBuildZExt(b, a, ty, E);
+                } else if src_a_ty.size_bits() > dst_ty.size_bits() {
+                    a = LLVMBuildTrunc(b, a, ty, E);
+                }
+                let src_v_ty = ir.temp(iarg!(1)).ty;
+                if src_v_ty.size_bits() < dst_ty.size_bits() {
+                    val = LLVMBuildZExt(b, val, ty, E);
+                } else if src_v_ty.size_bits() > dst_ty.size_bits() {
+                    val = LLVMBuildTrunc(b, val, ty, E);
+                }
                 let mask = self.ci(ty, ((1u64 << len).wrapping_sub(1)) << ofs);
                 let nmask = LLVMBuildNot(b, mask, E);
                 let cleared = LLVMBuildAnd(b, a, nmask, E);
@@ -1319,11 +1552,24 @@ impl TbTranslator {
                 store_out!(0, v);
             }
             Opcode::Extract2 => {
-                let ah = ival!(0);
-                let al = ival!(1);
+                let mut ah = ival!(0);
+                let mut al = ival!(1);
                 let shr = carg!(0) as u64;
-                let ty = self.llvm_ty(op.op_type);
-                let bits = op.op_type.size_bits() as u64;
+                let dst_ty = ir.temp(oarg!(0)).ty;
+                let ty = self.llvm_ty(dst_ty);
+                let src_h_ty = ir.temp(iarg!(0)).ty;
+                if src_h_ty.size_bits() < dst_ty.size_bits() {
+                    ah = LLVMBuildZExt(b, ah, ty, E);
+                } else if src_h_ty.size_bits() > dst_ty.size_bits() {
+                    ah = LLVMBuildTrunc(b, ah, ty, E);
+                }
+                let src_l_ty = ir.temp(iarg!(1)).ty;
+                if src_l_ty.size_bits() < dst_ty.size_bits() {
+                    al = LLVMBuildZExt(b, al, ty, E);
+                } else if src_l_ty.size_bits() > dst_ty.size_bits() {
+                    al = LLVMBuildTrunc(b, al, ty, E);
+                }
+                let bits = dst_ty.size_bits() as u64;
                 let lo = LLVMBuildLShr(b, al, self.ci(ty, shr), E);
                 let hi = LLVMBuildShl(b, ah, self.ci(ty, bits - shr), E);
                 let v = LLVMBuildOr(b, hi, lo, E);
