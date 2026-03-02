@@ -438,10 +438,31 @@ fn run_profile(
         profile.entries.len()
     );
 
+    let selected_entries: Vec<_> = profile
+        .entries
+        .iter()
+        .copied()
+        .filter(|e| e.exec_count > 10)
+        .collect();
+    eprintln!(
+        "[aot] keeping {} entries with exec_count > 10 \
+         (dropped {})",
+        selected_entries.len(),
+        profile.entries.len() - selected_entries.len()
+    );
+    if selected_entries.is_empty() {
+        eprintln!(
+            "[aot] no profile entries satisfy exec_count \
+             > 10"
+        );
+        process::exit(1);
+    }
+
     // Determine which TBs to export vs keep internal
     let export_set: HashSet<u64> = profile
         .entries
         .iter()
+        .filter(|e| e.exec_count > 10)
         .filter(|e| ProfileData::should_export(e))
         .map(|e| e.file_offset)
         .collect();
@@ -449,53 +470,10 @@ fn run_profile(
     eprintln!(
         "[aot] {} exported, {} internal",
         export_set.len(),
-        profile.entries.len() - export_set.len()
+        selected_entries.len() - export_set.len()
     );
 
-    let base = unsafe {
-        elf_data.as_ptr().offset(
-            load_file_offset as isize
-                - load_vaddr as isize,
-        )
-    };
-    let pc_temp = arch.pc_temp();
-
-    // Pass 1: collect goto_tb reachable targets
-    let mut extra_offsets: HashSet<u64> = HashSet::new();
-    for entry in &profile.entries {
-        let guest_pc = entry.file_offset + load_vaddr;
-        let mut ir = Context::new();
-        arch.init_context(&mut ir);
-        ir.tb_ptr = 0;
-        let max_insns = TranslationBlock::max_insns(0);
-        arch.translate_tb(&mut ir, guest_pc, base, max_insns);
-        optimize(&mut ir);
-        let mut va_targets: HashSet<u64> = HashSet::new();
-        collect_goto_targets(
-            &ir, pc_temp, &mut va_targets,
-        );
-        for va in va_targets {
-            extra_offsets.insert(va - load_vaddr);
-        }
-    }
-
-    let existing_offsets: HashSet<u64> = profile
-        .entries
-        .iter()
-        .map(|e| e.file_offset)
-        .collect();
-    let new_targets: Vec<u64> = extra_offsets
-        .difference(&existing_offsets)
-        .copied()
-        .collect();
-    eprintln!(
-        "[aot] {} goto_tb targets outside hot set, \
-         adding to AOT",
-        new_targets.len()
-    );
-
-    let mut all_entries: Vec<(u64, bool)> = profile
-        .entries
+    let all_entries: Vec<(u64, bool)> = selected_entries
         .iter()
         .map(|e| {
             (
@@ -504,9 +482,6 @@ fn run_profile(
             )
         })
         .collect();
-    for &offset in &new_targets {
-        all_entries.push((offset, false));
-    }
 
     compile_aot(
         arch,
