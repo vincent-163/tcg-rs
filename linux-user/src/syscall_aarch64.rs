@@ -6,6 +6,7 @@ const SYS_FCNTL: u64 = 25;
 const SYS_DUP: u64 = 23;
 const SYS_DUP3: u64 = 24;
 const SYS_IOCTL: u64 = 29;
+const SYS_GETCWD: u64 = 17;
 const SYS_PIPE2: u64 = 59;
 const SYS_UNLINKAT: u64 = 35;
 const SYS_FACCESSAT: u64 = 48;
@@ -150,6 +151,7 @@ pub fn handle_syscall_aarch64(
         SYS_FCNTL => do_fcntl(a0, a1, a2),
         SYS_DUP => do_dup(a0),
         SYS_DUP3 => do_dup3(a0, a1, a2),
+        SYS_GETCWD => do_getcwd(space, a0, a1),
         SYS_PIPE2 => do_pipe2(space, a0, a1),
         SYS_UNLINKAT => do_unlinkat(space, a0, a1, a2),
         SYS_FSTAT => do_fstat(space, a0, a1),
@@ -572,6 +574,25 @@ fn do_prlimit64(
     SyscallResult::Continue(0)
 }
 
+fn do_getcwd(
+    space: &mut GuestSpace,
+    buf_addr: u64,
+    size: u64,
+) -> SyscallResult {
+    if buf_addr == 0 || size == 0 {
+        return SyscallResult::Continue(EINVAL);
+    }
+    let host_buf = space.g2h(buf_addr) as *mut libc::c_char;
+    let ret = unsafe {
+        libc::syscall(libc::SYS_getcwd, host_buf, size as libc::size_t)
+    };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(ret as u64)
+    }
+}
+
 fn do_uname(space: &mut GuestSpace, buf_addr: u64) -> SyscallResult {
     let p = space.g2h(buf_addr);
     unsafe {
@@ -890,4 +911,44 @@ fn do_ioctl(fd: u64, _cmd: u64, _arg: u64) -> SyscallResult {
     }
     // For stdio, also return ENOTTY (we're not a terminal)
     SyscallResult::Continue(ENOTTY)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_getcwd_syscall() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let guest_buf = 0x10000u64;
+        let map_len = 4096usize;
+        space
+            .mmap_fixed(
+                guest_buf,
+                map_len,
+                libc::PROT_READ | libc::PROT_WRITE,
+            )
+            .expect("map getcwd buffer");
+        let mut regs = [0u64; 31];
+        regs[8] = SYS_GETCWD;
+        regs[0] = guest_buf;
+        regs[1] = map_len as u64;
+        let mut sp = 0u64;
+        let mut mmap_next = 0u64;
+        let res = handle_syscall_aarch64(
+            &mut space,
+            &mut regs,
+            &mut sp,
+            &mut mmap_next,
+            "/tmp/guest",
+        );
+        let len = match res {
+            SyscallResult::Continue(v) => v as usize,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert!(len > 1 && len <= map_len);
+        let host = space.g2h(guest_buf);
+        let bytes = unsafe { std::slice::from_raw_parts(host, len) };
+        assert_eq!(bytes[len - 1], 0);
+    }
 }
