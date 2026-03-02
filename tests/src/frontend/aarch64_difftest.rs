@@ -1773,6 +1773,70 @@ fn a64_difftest_bhi_fallthrough_next_tb() {
     assert_eq!(cpu.xregs[1], 0x1ff, "mov x1,x0 result");
 }
 
+#[test]
+fn a64_difftest_bhi_equal_not_taken() {
+    // cmp x5, x0 with equal operands sets C=1,Z=1.
+    // HI (C==1 && Z==0) must be false.
+    let insns = [
+        a64_subs_r(1, 31, 5, 0), // cmp x5, x0
+        a64_bcond(0b1000, 8),    // b.hi skip mov
+        a64_orr_r(1, 1, 0, 31),  // mov x1, x0
+    ];
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 4096];
+    mem[..code.len()].copy_from_slice(&code);
+    let guest_base = mem.as_ptr();
+
+    let mut cpu = Aarch64Cpu::new();
+    cpu.xregs[0] = 0x942000;
+    cpu.xregs[5] = 0x942000;
+    cpu.xregs[1] = 0;
+
+    // TB1: cmp + b.hi
+    {
+        let mut backend = X86_64CodeGen::new();
+        let mut buf = CodeBuffer::new(4096).unwrap();
+        backend.emit_prologue(&mut buf);
+        backend.emit_epilogue(&mut buf);
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(0, guest_base);
+        disas.base.max_insns = insns.len() as u32;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+        unsafe {
+            translate_and_execute(
+                &mut ctx,
+                &backend,
+                &mut buf,
+                &mut cpu as *mut Aarch64Cpu as *mut u8,
+            );
+        }
+    }
+    assert_eq!(cpu.pc, 8, "expected B.HI fallthrough on equal compare");
+
+    // TB2: mov x1, x0
+    {
+        let mut backend = X86_64CodeGen::new();
+        let mut buf = CodeBuffer::new(4096).unwrap();
+        backend.emit_prologue(&mut buf);
+        backend.emit_epilogue(&mut buf);
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(8, guest_base);
+        disas.base.max_insns = 2;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+        unsafe {
+            translate_and_execute(
+                &mut ctx,
+                &backend,
+                &mut buf,
+                &mut cpu as *mut Aarch64Cpu as *mut u8,
+            );
+        }
+    }
+    assert_eq!(cpu.xregs[1], 0x942000);
+}
+
 // ── Load semantics difftests ─────────────────────────────
 
 fn translated_qemu_ld_memops(insns: &[u32]) -> Vec<u32> {

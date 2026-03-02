@@ -330,14 +330,16 @@ impl Aarch64DisasContext {
             return one;
         }
 
-        if let Some(lazy) = self.lazy_nzcv {
-            return match lazy {
-                LazyNzcvKind::Sub { sf } => {
-                    let packed = self.pack_lazy_sub_nzcv(ir, sf);
-                    self.eval_cond_from_packed(ir, cond, packed)
-                }
-                _ => self.eval_cond_inline(ir, cond, lazy),
-            };
+        if std::env::var_os("TCG_A64_NO_INLINE_COND").is_none() {
+            if let Some(lazy) = self.lazy_nzcv {
+                return match lazy {
+                    LazyNzcvKind::Sub { sf } => {
+                        let packed = self.pack_lazy_sub_nzcv(ir, sf);
+                        self.eval_cond_from_packed(ir, cond, packed)
+                    }
+                    _ => self.eval_cond_inline(ir, cond, lazy),
+                };
+            }
         }
 
         // cc_op unknown — call runtime helper.
