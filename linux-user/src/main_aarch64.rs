@@ -70,6 +70,22 @@ struct LinuxCpu {
     max_insns_override: Option<u32>,
 }
 
+const AARCH64_SAFE_MAX_INSNS: u32 = 4;
+
+fn effective_max_insns(
+    single_step: bool,
+    max_insns: u32,
+    max_insns_override: Option<u32>,
+) -> u32 {
+    let mut max_insns = if single_step { 1 } else { max_insns };
+    if let Some(v) = max_insns_override {
+        max_insns = v.max(1);
+    } else {
+        max_insns = max_insns.min(AARCH64_SAFE_MAX_INSNS);
+    }
+    max_insns
+}
+
 impl GuestCpu for LinuxCpu {
     fn get_pc(&self) -> u64 {
         self.cpu.pc
@@ -85,15 +101,13 @@ impl GuestCpu for LinuxCpu {
         pc: u64,
         max_insns: u32,
     ) -> u32 {
-        // SPEC2006 exposes a long-TB correctness issue in AArch64 JIT.
+        // SPEC2006/perlbench still exposes long-TB correctness issues in AArch64 JIT.
         // Keep a conservative default cap unless explicitly overridden.
-        const AARCH64_SAFE_MAX_INSNS: u32 = 9;
-        let mut max_insns = if self.single_step { 1 } else { max_insns };
-        if let Some(v) = self.max_insns_override {
-            max_insns = v.max(1);
-        } else {
-            max_insns = max_insns.min(AARCH64_SAFE_MAX_INSNS);
-        }
+        let max_insns = effective_max_insns(
+            self.single_step,
+            max_insns,
+            self.max_insns_override,
+        );
         let base = self.cpu.guest_base as *const u8;
         if ir.nb_globals() == 0 {
             let mut d =
@@ -456,7 +470,10 @@ fn decode_bitmask_64(insn: u32) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_bitmask_64;
+    use super::{
+        decode_bitmask_64, effective_max_insns,
+        AARCH64_SAFE_MAX_INSNS,
+    };
 
     #[test]
     fn decode_bitmask_full_width() {
@@ -468,6 +485,34 @@ mod tests {
     fn decode_bitmask_full_width_rotated() {
         let insn = (1 << 22) | (7 << 16) | (63 << 10);
         assert_eq!(decode_bitmask_64(insn), Some(u64::MAX));
+    }
+
+    #[test]
+    fn max_insns_uses_safe_default_cap() {
+        assert_eq!(
+            effective_max_insns(false, 32, None),
+            AARCH64_SAFE_MAX_INSNS
+        );
+        assert_eq!(
+            effective_max_insns(false, 3, None),
+            3
+        );
+    }
+
+    #[test]
+    fn max_insns_override_and_single_step() {
+        assert_eq!(
+            effective_max_insns(true, 32, None),
+            1
+        );
+        assert_eq!(
+            effective_max_insns(true, 32, Some(6)),
+            6
+        );
+        assert_eq!(
+            effective_max_insns(false, 32, Some(1)),
+            1
+        );
     }
 }
 
