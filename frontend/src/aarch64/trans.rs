@@ -2966,6 +2966,20 @@ impl Aarch64DisasContext {
             self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
+        // FRINTP Dd/Sd: round toward plus infinity
+        // double: 0x1e64c000, single: 0x1e24c000
+        if insn & 0xffbf_fc00 == 0x1e24_c000 {
+            let src = self.read_vreg_lo(ir, rn);
+            let d = ir.new_temp(Type::I64);
+            if is_double {
+                ir.gen_call(d, helper_frintp_d as u64, &[src]);
+            } else {
+                ir.gen_call(d, helper_frintp_s as u64, &[src]);
+            }
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
         // FRINTN Dd/Sd: round to nearest even
         // double: 0x1e644000, single: 0x1e244000
         if insn & 0xffbf_fc00 == 0x1e24_4000 {
@@ -3260,6 +3274,22 @@ impl Aarch64DisasContext {
             let sh = ir.new_const(Type::I64, shift);
             let d = ir.new_temp(Type::I64);
             ir.gen_call(d, helper_shl64 as u64, &[src, sh]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        // USHR Dd, Dn, #imm : U=1 opcode=00000 and 64-bit element class (immh=1xxx)
+        if u == 1 && opcode == 0b00000 && (immh & 0b1000) != 0 {
+            let immhb = (immh << 3) | immb;
+            if !(64..128).contains(&immhb) {
+                return false;
+            }
+            let shift = (128 - immhb) as u64;
+            let src = self.read_vreg_lo(ir, rn);
+            let sh = ir.new_const(Type::I64, shift);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_ushr64 as u64, &[src, sh]);
             self.write_vreg_lo(ir, rd, d);
             self.clear_vreg_hi(ir, rd);
             return true;
@@ -3974,6 +4004,19 @@ unsafe extern "C" fn helper_rbit64(a: u64) -> u64 {
 unsafe extern "C" fn helper_rbit32(a: u64) -> u64 {
     (a as u32).reverse_bits() as u64
 }
+unsafe extern "C" fn helper_rev16_64(a: u64) -> u64 {
+    ((a & 0x00ff_00ff_00ff_00ff) << 8) | ((a & 0xff00_ff00_ff00_ff00) >> 8)
+}
+unsafe extern "C" fn helper_rev16_32(a: u64) -> u64 {
+    let x = a as u32;
+    let y = ((x & 0x00ff_00ff) << 8) | ((x & 0xff00_ff00) >> 8);
+    y as u64
+}
+unsafe extern "C" fn helper_rev32_64(a: u64) -> u64 {
+    let lo = (a as u32).swap_bytes() as u64;
+    let hi = ((a >> 32) as u32).swap_bytes() as u64;
+    lo | (hi << 32)
+}
 
 // ── NEON helper functions (called via gen_call) ─────────
 
@@ -4306,6 +4349,13 @@ unsafe extern "C" fn helper_ushr32(a: u64, shift: u64) -> u64 {
     let lo = ((a as u32) >> shift) as u64;
     let hi = (((a >> 32) as u32) >> shift) as u64;
     lo | (hi << 32)
+}
+unsafe extern "C" fn helper_ushr64(a: u64, shift: u64) -> u64 {
+    if shift >= 64 {
+        0
+    } else {
+        a >> shift
+    }
 }
 /// SSHR 32-bit: signed shift right each 32-bit element
 unsafe extern "C" fn helper_sshr32(a: u64, shift: u64) -> u64 {
@@ -5646,6 +5696,12 @@ unsafe extern "C" fn helper_frintm_d(a: u64) -> u64 {
 }
 unsafe extern "C" fn helper_frintm_s(a: u64) -> u64 {
     (f32::from_bits(a as u32).floor()).to_bits() as u64
+}
+unsafe extern "C" fn helper_frintp_d(a: u64) -> u64 {
+    f64::from_bits(a).ceil().to_bits()
+}
+unsafe extern "C" fn helper_frintp_s(a: u64) -> u64 {
+    (f32::from_bits(a as u32).ceil()).to_bits() as u64
 }
 unsafe extern "C" fn helper_frintn_d(a: u64) -> u64 {
     // Round to nearest even (banker's rounding)
@@ -6995,6 +7051,25 @@ impl Aarch64DisasContext {
                 let hi = self.read_vreg_hi(ir, rn);
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_ushr32 as u64, &[hi, sh]);
+                self.write_vreg_hi(ir, rd, d_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
+            return true;
+        }
+
+        // USHR 64-bit: U=1 opcode=00000, immh=1xxx → shift = 128 - immhb
+        if u == 1 && opcode == 0b00000 && immh >= 8 {
+            let shift = 128 - immhb;
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let lo = self.read_vreg_lo(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call(d_lo, helper_ushr64 as u64, &[lo, sh]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            if q != 0 {
+                let hi = self.read_vreg_hi(ir, rn);
+                let d_hi = ir.new_temp(Type::I64);
+                ir.gen_call(d_hi, helper_ushr64 as u64, &[hi, sh]);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
@@ -8653,12 +8728,36 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 
-    fn trans_REV16(&mut self, _ir: &mut Context, _a: &ArgsRrS) -> bool {
-        false
+    fn trans_REV16(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
+        let sf = a.sf != 0;
+        let src = self.read_xreg(ir, a.rn);
+        let d = ir.new_temp(Type::I64);
+        if sf {
+            ir.gen_call(d, helper_rev16_64 as u64, &[src]);
+            self.write_xreg(ir, a.rd, d);
+        } else {
+            ir.gen_call(d, helper_rev16_32 as u64, &[src]);
+            self.write_xreg_sz(ir, a.rd, d, false);
+        }
+        true
     }
 
-    fn trans_REV32(&mut self, _ir: &mut Context, _a: &ArgsRrS) -> bool {
-        false
+    fn trans_REV32(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
+        let sf = a.sf != 0;
+        let src = self.read_xreg(ir, a.rn);
+        let d = ir.new_temp(Type::I64);
+        if sf {
+            ir.gen_call(d, helper_rev32_64 as u64, &[src]);
+            self.write_xreg(ir, a.rd, d);
+        } else {
+            let s32 = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(s32, src);
+            let d32 = ir.new_temp(Type::I32);
+            ir.gen_bswap32(Type::I32, d32, s32, 0);
+            ir.gen_ext_u32_i64(d, d32);
+            self.write_xreg_sz(ir, a.rd, d, false);
+        }
+        true
     }
 
     // -- Conditional select --

@@ -223,6 +223,12 @@ fn a64_rev(sf: u32, rd: u32, rn: u32) -> u32 {
         (0b1011010110 << 21) | (0b000010 << 10) | (rn << 5) | rd
     }
 }
+fn a64_rev16(sf: u32, rd: u32, rn: u32) -> u32 {
+    (sf << 31) | (0b1011010110 << 21) | (0b000001 << 10) | (rn << 5) | rd
+}
+fn a64_rev32(rd: u32, rn: u32) -> u32 {
+    (1 << 31) | (0b1011010110 << 21) | (0b000010 << 10) | (rn << 5) | rd
+}
 
 // ── Difftest infrastructure ──────────────────────────────
 
@@ -1545,6 +1551,36 @@ fn a64_difftest_rev() {
         });
     }
 }
+
+#[test]
+fn a64_difftest_rev16() {
+    let cases: Vec<u64> = vec![V0, VNEG1, 0x1122334455667788, VPATTERN];
+    for a in cases {
+        difftest_alu(&AluTest {
+            name: "rev16",
+            asm: "rev16 x0, x1".to_string(),
+            insn: a64_rev16(1, 0, 1),
+            init: vec![(1, a)],
+            check_reg: 0,
+            check_nzcv: false,
+        });
+    }
+}
+
+#[test]
+fn a64_difftest_rev32() {
+    let cases: Vec<u64> = vec![V0, VNEG1, 0x1122334455667788, VPATTERN];
+    for a in cases {
+        difftest_alu(&AluTest {
+            name: "rev32",
+            asm: "rev32 x0, x1".to_string(),
+            insn: a64_rev32(0, 1),
+            init: vec![(1, a)],
+            check_reg: 0,
+            check_nzcv: false,
+        });
+    }
+}
 // ── Conditional select difftests ──────────────────────────
 
 #[test]
@@ -1956,6 +1992,31 @@ fn a64_difftest_shl_d_imm3() {
     let cpu = run_tcgrs_with_state(&[], &[(0, 5, 0)], &[insn]);
 
     assert_eq!(cpu.vregs[0], 40);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_frintp_d() {
+    // frintp d0, d0
+    let insn = 0x1e64_c000u32;
+    let in_bits = 1.25f64.to_bits();
+    let cpu = run_tcgrs_with_state(&[], &[(0, in_bits, 0)], &[insn]);
+
+    assert_eq!(cpu.vregs[0], 2.0f64.to_bits());
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ushr_d_imm60() {
+    // ushr d0, d0, #60
+    let insn = 0x7f44_0400u32;
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(0, 0xf000_0000_0000_0000, 0)],
+        &[insn],
+    );
+
+    assert_eq!(cpu.vregs[0], 0xf);
     assert_eq!(cpu.pc, 4);
 }
 
