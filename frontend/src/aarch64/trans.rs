@@ -2676,6 +2676,39 @@ impl Aarch64DisasContext {
             self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
+        // FCVTZS/FCVTZU fixed-point (scalar):
+        //   fcvtzs w,s,#fbits : 0x1e18_0000 (masked by 0xff3f_0000)
+        //   fcvtzu w,s,#fbits : 0x1e19_0000
+        //   fcvtzs x,d,#fbits : 0x9e18_0000
+        //   fcvtzu x,d,#fbits : 0x9e19_0000
+        //
+        // scale = bits[15:10], fbits = 64 - scale.
+        // This is exercised by SPEC2006 gobmk (fcvtzs w?, s?, #12).
+        let fp_fix = insn & 0xff3f_0000;
+        if fp_fix == 0x1e18_0000
+            || fp_fix == 0x1e19_0000
+            || fp_fix == 0x9e18_0000
+            || fp_fix == 0x9e19_0000
+        {
+            let scale = ((insn >> 10) & 0x3f) as u64;
+            if scale == 0 || scale > 64 {
+                return Some(false);
+            }
+            let fbits = 64 - scale;
+            let src = self.read_vreg_lo(ir, rn);
+            let fb = ir.new_const(Type::I64, fbits);
+            let d = ir.new_temp(Type::I64);
+            let helper = match fp_fix {
+                0x1e18_0000 => helper_fcvtzs_w_s_fixed as u64,
+                0x1e19_0000 => helper_fcvtzu_w_s_fixed as u64,
+                0x9e18_0000 => helper_fcvtzs_x_d_fixed as u64,
+                0x9e19_0000 => helper_fcvtzu_x_d_fixed as u64,
+                _ => unreachable!(),
+            };
+            ir.gen_call(d, helper, &[src, fb]);
+            self.write_xreg(ir, rd as i64, d);
+            return Some(true);
+        }
         // FCVTZx double-precision: ftype=01 (bits[23:22]=01)
         // FCVTZU Xd, Dn: mask 0xffff_fc00 == 0x9e79_0000
         if insn & 0xffff_fc00 == 0x9e79_0000 {
@@ -5348,6 +5381,42 @@ unsafe extern "C" fn helper_fcvtzs_x_s(a: u64) -> u64 {
         f as i64 as u64
     }
 }
+unsafe extern "C" fn helper_fcvtzs_w_s_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f32).powi(fbits as i32);
+    let f = f32::from_bits(a as u32) * scale;
+    if f.is_nan() {
+        0
+    } else {
+        (f as i32) as u32 as u64
+    }
+}
+unsafe extern "C" fn helper_fcvtzu_w_s_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f32).powi(fbits as i32);
+    let f = f32::from_bits(a as u32) * scale;
+    if f.is_nan() || f <= 0.0 {
+        0
+    } else {
+        (f as u32) as u64
+    }
+}
+unsafe extern "C" fn helper_fcvtzs_x_d_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f64).powi(fbits as i32);
+    let f = f64::from_bits(a) * scale;
+    if f.is_nan() {
+        0
+    } else {
+        (f as i64) as u64
+    }
+}
+unsafe extern "C" fn helper_fcvtzu_x_d_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f64).powi(fbits as i32);
+    let f = f64::from_bits(a) * scale;
+    if f.is_nan() || f <= 0.0 {
+        0
+    } else {
+        f as u64
+    }
+}
 unsafe extern "C" fn helper_fcvtas_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() {
@@ -6609,6 +6678,11 @@ impl Aarch64DisasContext {
             // FCVTZS .2S/.4S: U=0 size=10 opcode=11011 — vector float-to-signed-int (round toward zero)
             (0, 0b10, 0b11011) => {
                 self.neon_call1_halves(ir, q, rd, rn, helper_vfcvtzs32);
+                true
+            }
+            // SCVTF .2S/.4S: U=0 size=00 opcode=11101 — vector signed-int-to-float (32-bit)
+            (0, 0b00, 0b11101) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_vscvtf32);
                 true
             }
             // SCVTF .2D/.4D: U=0 size=01 opcode=11101 — vector signed-int-to-float (64-bit)

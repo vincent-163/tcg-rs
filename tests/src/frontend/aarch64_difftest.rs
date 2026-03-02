@@ -495,6 +495,61 @@ fn run_tcgrs(init: &[(usize, u64)], insns: &[u32]) -> Aarch64Cpu {
     cpu
 }
 
+fn run_tcgrs_with_state(
+    x_init: &[(usize, u64)],
+    v_init: &[(usize, u64, u64)],
+    insns: &[u32],
+) -> Aarch64Cpu {
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 4096];
+    mem[..code.len()].copy_from_slice(&code);
+    let guest_base = mem.as_ptr();
+
+    let mut backend = X86_64CodeGen::new();
+    let mut buf = CodeBuffer::new(4096).unwrap();
+    backend.emit_prologue(&mut buf);
+    backend.emit_epilogue(&mut buf);
+
+    let mut ctx = Context::new();
+    backend.init_context(&mut ctx);
+
+    let mut disas = Aarch64DisasContext::new(0, guest_base);
+    disas.base.max_insns = insns.len() as u32;
+    translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+
+    let mut cpu = Aarch64Cpu::new();
+    for &(reg, val) in x_init {
+        if reg < 31 {
+            cpu.xregs[reg] = val;
+        }
+    }
+    for &(reg, lo, hi) in v_init {
+        if reg < 32 {
+            cpu.vregs[reg * 2] = lo;
+            cpu.vregs[reg * 2 + 1] = hi;
+        }
+    }
+
+    unsafe {
+        translate_and_execute(
+            &mut ctx,
+            &backend,
+            &mut buf,
+            &mut cpu as *mut Aarch64Cpu as *mut u8,
+        );
+    }
+    use tcg_frontend::aarch64::cpu::{
+        helper_lazy_nzcv_to_packed, CC_OP_EAGER,
+    };
+    if cpu.cc_op != CC_OP_EAGER {
+        cpu.nzcv = helper_lazy_nzcv_to_packed(
+            cpu.cc_op, cpu.cc_a, cpu.cc_b, cpu.cc_result,
+        );
+        cpu.cc_op = CC_OP_EAGER;
+    }
+    cpu
+}
+
 /// Run an ALU difftest: compare tcg-rs vs QEMU.
 fn difftest_alu(test: &AluTest) {
     let asm = gen_alu_asm(test);
@@ -1835,6 +1890,33 @@ fn a64_difftest_bhi_equal_not_taken() {
         }
     }
     assert_eq!(cpu.xregs[1], 0x942000);
+}
+
+#[test]
+fn a64_difftest_fcvtzs_w_s_fixedpoint_scale12() {
+    // fcvtzs w0, s1, #12
+    let insn = 0x1e18_d020u32;
+    let input = 1.5f32.to_bits() as u64;
+    let cpu = run_tcgrs_with_state(&[], &[(1, input, 0)], &[insn]);
+    assert_eq!(cpu.xregs[0], 6144);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_scvtf_v2s_decode() {
+    // scvtf v2.2s, v2.2s
+    let insn = 0x0e21_d842u32;
+    let src_lane0 = 4i32 as u32 as u64;
+    let src_lane1 = (-8i32) as u32 as u64;
+    let src = src_lane0 | (src_lane1 << 32);
+    let cpu = run_tcgrs_with_state(&[], &[(2, src, 0)], &[insn]);
+
+    let out = cpu.vregs[2 * 2];
+    let want_lane0 = 4.0f32.to_bits() as u64;
+    let want_lane1 = (-8.0f32).to_bits() as u64;
+    let want = want_lane0 | (want_lane1 << 32);
+    assert_eq!(out, want);
+    assert_eq!(cpu.pc, 4);
 }
 
 // ── Load semantics difftests ─────────────────────────────
