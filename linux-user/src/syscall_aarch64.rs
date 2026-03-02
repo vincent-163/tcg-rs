@@ -54,7 +54,6 @@ const SYS_CLONE: u64 = 220;
 
 const ENOSYS: u64 = (-38i64) as u64;
 const ENOTTY: u64 = (-25i64) as u64;
-const ENOENT: u64 = (-2i64) as u64;
 const ENOMEM: u64 = (-12i64) as u64;
 const EINVAL: u64 = (-22i64) as u64;
 
@@ -618,7 +617,7 @@ fn do_uname(space: &mut GuestSpace, buf_addr: u64) -> SyscallResult {
 
 fn do_readlinkat(
     space: &mut GuestSpace,
-    _dirfd: u64,
+    dirfd: u64,
     path_addr: u64,
     buf_addr: u64,
     bufsiz: u64,
@@ -636,7 +635,20 @@ fn do_readlinkat(
         }
         SyscallResult::Continue(len as u64)
     } else {
-        SyscallResult::Continue(ENOENT)
+        let dst = space.g2h(buf_addr) as *mut libc::c_char;
+        let ret = unsafe {
+            libc::readlinkat(
+                dirfd as i32,
+                path.as_ptr(),
+                dst,
+                bufsiz as libc::size_t,
+            )
+        };
+        if ret < 0 {
+            SyscallResult::Continue(errno_ret())
+        } else {
+            SyscallResult::Continue(ret as u64)
+        }
     }
 }
 
@@ -916,6 +928,9 @@ fn do_ioctl(fd: u64, _cmd: u64, _arg: u64) -> SyscallResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_handle_getcwd_syscall() {
@@ -923,11 +938,7 @@ mod tests {
         let guest_buf = 0x10000u64;
         let map_len = 4096usize;
         space
-            .mmap_fixed(
-                guest_buf,
-                map_len,
-                libc::PROT_READ | libc::PROT_WRITE,
-            )
+            .mmap_fixed(guest_buf, map_len, libc::PROT_READ | libc::PROT_WRITE)
             .expect("map getcwd buffer");
         let mut regs = [0u64; 31];
         regs[8] = SYS_GETCWD;
@@ -950,5 +961,88 @@ mod tests {
         let host = space.g2h(guest_buf);
         let bytes = unsafe { std::slice::from_raw_parts(host, len) };
         assert_eq!(bytes[len - 1], 0);
+    }
+
+    #[test]
+    fn test_readlinkat_proc_self_exe() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let guest_base = 0x20000u64;
+        space
+            .mmap_fixed(guest_base, 4096, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map readlinkat buffers");
+
+        let path_addr = guest_base;
+        let buf_addr = guest_base + 0x100;
+        unsafe {
+            space.write_bytes(path_addr, b"/proc/self/exe\0");
+        }
+
+        let res = do_readlinkat(
+            &mut space,
+            libc::AT_FDCWD as u64,
+            path_addr,
+            buf_addr,
+            256,
+            "/tmp/fake-elf",
+        );
+        let len = match res {
+            SyscallResult::Continue(v) => v as usize,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(len, "/tmp/fake-elf".len());
+        let got =
+            unsafe { std::slice::from_raw_parts(space.g2h(buf_addr), len) };
+        assert_eq!(got, b"/tmp/fake-elf");
+    }
+
+    #[test]
+    fn test_readlinkat_symlink_passthrough() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let guest_base = 0x30000u64;
+        space
+            .mmap_fixed(guest_base, 8192, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map readlinkat buffers");
+
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "tcgrs-a64-readlinkat-{}-{uniq}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let target = dir.join("target.txt");
+        let link = dir.join("link.txt");
+        fs::write(&target, b"x").expect("write target");
+        symlink("target.txt", &link).expect("create symlink");
+
+        let path = format!("{}\0", link.to_string_lossy());
+        let path_addr = guest_base;
+        let buf_addr = guest_base + 0x400;
+        unsafe {
+            space.write_bytes(path_addr, path.as_bytes());
+        }
+
+        let res = do_readlinkat(
+            &mut space,
+            libc::AT_FDCWD as u64,
+            path_addr,
+            buf_addr,
+            256,
+            "/tmp/fake-elf",
+        );
+        let len = match res {
+            SyscallResult::Continue(v) => v as usize,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(len, "target.txt".len());
+        let got =
+            unsafe { std::slice::from_raw_parts(space.g2h(buf_addr), len) };
+        assert_eq!(got, b"target.txt");
+
+        let _ = fs::remove_file(&link);
+        let _ = fs::remove_file(&target);
+        let _ = fs::remove_dir(&dir);
     }
 }
