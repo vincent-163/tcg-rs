@@ -14,7 +14,9 @@ use tcg_backend::code_buffer::CodeBuffer;
 use tcg_backend::translate::translate_and_execute;
 use tcg_backend::HostCodeGen;
 use tcg_backend::X86_64CodeGen;
+use tcg_core::opcode::Opcode;
 use tcg_core::Context;
+use tcg_core::types::MemOp;
 use tcg_frontend::aarch64::cpu::Aarch64Cpu;
 use tcg_frontend::aarch64::{
     Aarch64DisasContext, Aarch64Translator,
@@ -153,6 +155,10 @@ fn a64_movz(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
 }
 fn a64_movn(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
     (sf << 31) | (0b00100101 << 23) | (hw << 21)
+        | (imm16 << 5) | rd
+}
+fn a64_movk(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
+    (sf << 31) | (0b11100101 << 23) | (hw << 21)
         | (imm16 << 5) | rd
 }
 
@@ -1211,6 +1217,61 @@ fn a64_difftest_movn() {
     }
 }
 
+#[test]
+fn a64_difftest_mov_w_zero_ext() {
+    let cases: Vec<(u32, u32, u64)> = vec![
+        (0x1234, 0, 0x0000_0000_0000_1234),
+        (0xabcd, 1, 0x0000_0000_abcd_0000),
+    ];
+    for (imm16, hw, expected) in cases {
+        difftest_sequence(
+            "movz_w_zero_ext",
+            &[(0, 0xffff_ffff_ffff_ffff)],
+            &[a64_movz(0, 0, imm16, hw)],
+            &format!("    movz w0, #0x{imm16:x}, lsl #{}\n", hw * 16),
+            &[0],
+            false,
+        );
+        let cpu = run_tcgrs(
+            &[(0, 0xffff_ffff_ffff_ffff)],
+            &[a64_movz(0, 0, imm16, hw)],
+        );
+        assert_eq!(
+            cpu.xregs[0], expected,
+            "movz w0 hw={hw} imm={imm16:#x} got={:#x}",
+            cpu.xregs[0]
+        );
+    }
+
+    difftest_sequence(
+        "movk_w_zero_ext",
+        &[(0, 0xffff_ffff_ffff_ffff)],
+        &[a64_movk(0, 0, 0xabcd, 1)],
+        "    movk w0, #0xabcd, lsl #16\n",
+        &[0],
+        false,
+    );
+    let cpu = run_tcgrs(
+        &[(0, 0xffff_ffff_ffff_ffff)],
+        &[a64_movk(0, 0, 0xabcd, 1)],
+    );
+    assert_eq!(cpu.xregs[0], 0x0000_0000_abcd_ffff);
+
+    difftest_sequence(
+        "movn_w_zero_ext",
+        &[(0, 0x0123_4567_89ab_cdef)],
+        &[a64_movn(0, 0, 0x0, 0)],
+        "    movn w0, #0x0\n",
+        &[0],
+        false,
+    );
+    let cpu = run_tcgrs(
+        &[(0, 0x0123_4567_89ab_cdef)],
+        &[a64_movn(0, 0, 0x0, 0)],
+    );
+    assert_eq!(cpu.xregs[0], 0x0000_0000_ffff_ffff);
+}
+
 // ── CLZ / REV difftests ──────────────────────────────────
 
 #[test]
@@ -1456,4 +1517,110 @@ fn a64_difftest_bcond() {
         &[subs_cmp, blt],
     );
     assert_eq!(cpu.pc, 8, "b.lt not taken: pc={:#x}", cpu.pc);
+}
+
+// ── Load semantics difftests ─────────────────────────────
+
+fn translated_qemu_ld_memops(insns: &[u32]) -> Vec<u32> {
+    let code: Vec<u8> =
+        insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 4096];
+    mem[..code.len()].copy_from_slice(&code);
+    let guest_base = mem.as_ptr();
+
+    let backend = X86_64CodeGen::new();
+    let mut ctx = Context::new();
+    backend.init_context(&mut ctx);
+
+    let mut disas = Aarch64DisasContext::new(0, guest_base);
+    disas.base.max_insns = insns.len() as u32;
+    translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+
+    let mut memops = Vec::new();
+    for op in ctx.ops() {
+        if op.opc == Opcode::QemuLd {
+            memops.push(op.cargs()[0].0);
+        }
+    }
+    memops
+}
+
+#[test]
+fn a64_difftest_ldr_w_literal_zero_ext() {
+    // LDR W literal must use unsigned 32-bit load semantics.
+    let memops = translated_qemu_ld_memops(&[0x1800_0040]);
+    assert_eq!(
+        memops,
+        vec![MemOp::ul().bits() as u32],
+        "expected LDR W literal to use MemOp::ul"
+    );
+}
+
+#[test]
+fn a64_difftest_ldp_w_zero_ext() {
+    // LDP W, W must use unsigned 32-bit loads for both lanes.
+    let memops = translated_qemu_ld_memops(&[0x2940_0440]);
+    assert_eq!(
+        memops,
+        vec![MemOp::ul().bits() as u32, MemOp::ul().bits() as u32],
+        "expected LDP W/W to use MemOp::ul on both loads"
+    );
+}
+
+#[test]
+fn a64_difftest_ldp_w_pre_post_zero_ext() {
+    let pre_memops = translated_qemu_ld_memops(&[0x29c1_0440]);
+    assert_eq!(
+        pre_memops,
+        vec![MemOp::ul().bits() as u32, MemOp::ul().bits() as u32],
+        "expected LDP pre-index W/W to use MemOp::ul"
+    );
+
+    let post_memops = translated_qemu_ld_memops(&[0x28c1_0440]);
+    assert_eq!(
+        post_memops,
+        vec![MemOp::ul().bits() as u32, MemOp::ul().bits() as u32],
+        "expected LDP post-index W/W to use MemOp::ul"
+    );
+}
+
+#[test]
+fn a64_difftest_ldrs_w_vs_x_masking() {
+    fn has_mask_after_ld(insn: u32) -> bool {
+        let code = insn.to_le_bytes();
+        let mut mem = vec![0u8; 4096];
+        mem[..4].copy_from_slice(&code);
+        let guest_base = mem.as_ptr();
+
+        let backend = X86_64CodeGen::new();
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(0, guest_base);
+        disas.base.max_insns = 1;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+
+        let mut seen_ld = false;
+        for op in ctx.ops() {
+            if op.opc == Opcode::QemuLd {
+                seen_ld = true;
+                continue;
+            }
+            if seen_ld && op.opc == Opcode::And {
+                return true;
+            }
+        }
+        false
+    }
+
+    // W destinations must insert a post-load mask to zero upper 32 bits.
+    assert!(has_mask_after_ld(0x39c0_00a0)); // ldrsb w0, [x5]
+    assert!(has_mask_after_ld(0x79c0_04a2)); // ldrsh w2, [x5, #2]
+    assert!(has_mask_after_ld(0x38ff_c8a6)); // ldrsb w6, [x5, wzr, sxtw]
+    assert!(has_mask_after_ld(0x78ea_d8a8)); // ldrsh w8, [x5, w10, sxtw #1]
+
+    // X destinations must not mask.
+    assert!(!has_mask_after_ld(0x3980_00a3)); // ldrsb x3, [x5]
+    assert!(!has_mask_after_ld(0x7980_04a4)); // ldrsh x4, [x5, #2]
+    assert!(!has_mask_after_ld(0x38bf_c8a7)); // ldrsb x7, [x5, wzr, sxtw]
+    assert!(!has_mask_after_ld(0x78aa_d8a9)); // ldrsh x9, [x5, w10, sxtw #1]
 }
