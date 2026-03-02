@@ -75,9 +75,10 @@ pub fn handle_syscall_aarch64(
     let a2 = regs[2]; // X2
     let a3 = regs[3]; // X3
     let a4 = regs[4]; // X4
+    let a5 = regs[5]; // X5
     if std::env::var("TCG_SYSCALL").is_ok() {
         eprintln!(
-            "[syscall] nr={nr} a0={a0:#x} a1={a1:#x} a2={a2:#x} a3={a3:#x} lr={:#x}",
+            "[syscall] nr={nr} a0={a0:#x} a1={a1:#x} a2={a2:#x} a3={a3:#x} a4={a4:#x} a5={a5:#x} lr={:#x}",
             regs[30],
         );
     }
@@ -99,7 +100,7 @@ pub fn handle_syscall_aarch64(
         }
         SYS_EXIT | SYS_EXIT_GROUP => SyscallResult::Exit(a0 as i32),
         SYS_BRK => do_brk(space, a0),
-        SYS_MMAP => do_mmap(space, a0, a1, a2, mmap_next),
+        SYS_MMAP => do_mmap(space, a0, a1, a2, a3, a4, a5, mmap_next),
         SYS_MREMAP => do_mremap(space, a0, a1, a2, a3, a4, mmap_next),
         SYS_MPROTECT => {
             let addr = a0;
@@ -389,9 +390,19 @@ fn do_mmap(
     addr: u64,
     len: u64,
     prot: u64,
+    flags: u64,
+    fd: u64,
+    offset: u64,
     mmap_next: &mut u64,
 ) -> SyscallResult {
+    if len == 0 {
+        return SyscallResult::Continue(EINVAL);
+    }
+
     let prot = prot as i32;
+    let flags = flags as i32;
+    let fd = fd as i32;
+    let offset = offset as i64;
     let aligned_len = crate::guest_space::page_align_up(len) as usize;
     let guest_addr = if addr != 0 {
         addr
@@ -400,9 +411,19 @@ fn do_mmap(
         *mmap_next += aligned_len as u64;
         a
     };
-    match space.mmap_fixed(guest_addr, aligned_len, prot) {
+
+    let map_res = if (flags & libc::MAP_ANONYMOUS) != 0 {
+        space.mmap_fixed(guest_addr, aligned_len, prot)
+    } else {
+        space.mmap_fixed_host(guest_addr, aligned_len, prot, flags, fd, offset)
+    };
+
+    match map_res {
         Ok(()) => SyscallResult::Continue(guest_addr),
-        Err(_) => SyscallResult::Continue((-12i64) as u64),
+        Err(e) => {
+            let errno = e.raw_os_error().unwrap_or(libc::ENOMEM);
+            SyscallResult::Continue((-(errno as i64)) as u64)
+        }
     }
 }
 
@@ -929,6 +950,8 @@ fn do_ioctl(fd: u64, _cmd: u64, _arg: u64) -> SyscallResult {
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write;
+    use std::os::fd::AsRawFd;
     use std::os::unix::fs::symlink;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1044,5 +1067,71 @@ mod tests {
         let _ = fs::remove_file(&link);
         let _ = fs::remove_file(&target);
         let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn test_mmap_anonymous_zeroed() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let mut mmap_next = 0x30000u64;
+        let res = do_mmap(
+            &mut space,
+            0,
+            4096,
+            libc::PROT_READ as u64,
+            (libc::MAP_PRIVATE | libc::MAP_ANONYMOUS) as u64,
+            u64::MAX,
+            0,
+            &mut mmap_next,
+        );
+        let guest_addr = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        let host = space.g2h(guest_addr);
+        let slice = unsafe { std::slice::from_raw_parts(host, 32) };
+        assert!(slice.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_mmap_file_backed_passthrough() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let mut mmap_next = 0x40000u64;
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let tmp = std::env::temp_dir()
+            .join(format!("tcgrs-a64-mmap-{}-{uniq}", std::process::id()));
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(&tmp)
+            .expect("create tmp file");
+        let payload = b"tcgrs mmap file-backed";
+        file.write_all(payload).expect("write payload");
+        file.set_len(4096).expect("set file size");
+
+        let res = do_mmap(
+            &mut space,
+            0,
+            4096,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64,
+            file.as_raw_fd() as u64,
+            0,
+            &mut mmap_next,
+        );
+        let guest_addr = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        let host = space.g2h(guest_addr);
+        let mapped = unsafe { std::slice::from_raw_parts(host, payload.len()) };
+        assert_eq!(mapped, payload);
+
+        drop(file);
+        let _ = fs::remove_file(&tmp);
     }
 }

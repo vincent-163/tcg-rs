@@ -109,6 +109,34 @@ impl GuestSpace {
         }
     }
 
+    /// Map a fixed region within the guest space with host mmap flags/fd/off.
+    pub fn mmap_fixed_host(
+        &self,
+        guest_addr: u64,
+        size: usize,
+        prot: i32,
+        flags: i32,
+        fd: i32,
+        offset: i64,
+    ) -> io::Result<()> {
+        let host = self.g2h(guest_addr);
+        let ret = unsafe {
+            libc::mmap(
+                host as *mut libc::c_void,
+                size,
+                prot,
+                flags | libc::MAP_FIXED,
+                fd,
+                offset as libc::off_t,
+            )
+        };
+        if ret == libc::MAP_FAILED {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Change protection on a guest region.
     pub fn mprotect(
         &self,
