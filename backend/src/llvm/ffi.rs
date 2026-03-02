@@ -198,6 +198,7 @@ extern "C" {
     pub fn LLVMBuildStore(
         b: LLVMBuilderRef, val: LLVMValueRef, ptr: LLVMValueRef,
     ) -> LLVMValueRef;
+    pub fn LLVMSetAlignment(v: LLVMValueRef, bytes: u32);
     pub fn LLVMBuildGEP2(
         b: LLVMBuilderRef, ty: LLVMTypeRef, ptr: LLVMValueRef,
         indices: *const LLVMValueRef, num_indices: u32, name: *const c_char,

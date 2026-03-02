@@ -283,6 +283,45 @@ impl TbTranslator {
         unsafe { LLVMSetMetadata(inst, self.tbaa_kind, tag); }
     }
 
+    fn align_for_type(&self, ty: Type) -> u32 {
+        match ty {
+            Type::I32 => 4,
+            _ => 8,
+        }
+    }
+
+    fn build_load_typed(
+        &self,
+        b: LLVMBuilderRef,
+        ty: Type,
+        ptr: LLVMValueRef,
+    ) -> LLVMValueRef {
+        unsafe {
+            let ld = LLVMBuildLoad2(
+                b,
+                self.llvm_ty(ty),
+                ptr,
+                E,
+            );
+            LLVMSetAlignment(ld, self.align_for_type(ty));
+            ld
+        }
+    }
+
+    fn build_store_typed(
+        &self,
+        b: LLVMBuilderRef,
+        ty: Type,
+        val: LLVMValueRef,
+        ptr: LLVMValueRef,
+    ) -> LLVMValueRef {
+        unsafe {
+            let st = LLVMBuildStore(b, val, ptr);
+            LLVMSetAlignment(st, self.align_for_type(ty));
+            st
+        }
+    }
+
     /// Load a TCG temp's current value.
     fn load_temp(&self, ir: &Context, tidx: TempIdx) -> LLVMValueRef {
         let temp = ir.temp(tidx);
@@ -296,7 +335,11 @@ impl TbTranslator {
                     // Load from [env + offset]
                     let off = self.ci(self.i64t, temp.mem_offset as u64);
                     let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                    let ld = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E);
+                    let ld = self.build_load_typed(
+                        b,
+                        temp.ty,
+                        p,
+                    );
                     self.set_tbaa(ld, self.tbaa_cpu);
                     ld
                 }
@@ -306,7 +349,11 @@ impl TbTranslator {
                 }
                 _ => {
                     // Ebb/Tb local - load from alloca
-                    LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E)
+                    self.build_load_typed(
+                        b,
+                        temp.ty,
+                        self.temps[tidx.0 as usize],
+                    )
                 }
             }
         }
@@ -321,12 +368,22 @@ impl TbTranslator {
                 TempKind::Global => {
                     let off = self.ci(self.i64t, temp.mem_offset as u64);
                     let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                    let st = LLVMBuildStore(b, val, p);
+                    let st = self.build_store_typed(
+                        b,
+                        temp.ty,
+                        val,
+                        p,
+                    );
                     self.set_tbaa(st, self.tbaa_cpu);
                 }
                 TempKind::Const | TempKind::Fixed => {}
                 _ => {
-                    LLVMBuildStore(b, val, self.temps[tidx.0 as usize]);
+                    self.build_store_typed(
+                        b,
+                        temp.ty,
+                        val,
+                        self.temps[tidx.0 as usize],
+                    );
                 }
             }
         }
@@ -391,7 +448,12 @@ impl TbTranslator {
             if temp.kind == TempKind::Global {
                 let val = self.load_temp(ir, tidx);
                 // Store into local alloca for faster access within TB
-                unsafe { LLVMBuildStore(b, val, self.temps[i]); }
+                self.build_store_typed(
+                    b,
+                    temp.ty,
+                    val,
+                    self.temps[i],
+                );
             }
         }
 
@@ -425,9 +487,17 @@ impl TbTranslator {
                         unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) }
                     } else if temp.kind == TempKind::Global {
                         // Read from local alloca (cached)
-                        unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) }
+                        self.build_load_typed(
+                            b,
+                            temp.ty,
+                            self.temps[tidx.0 as usize],
+                        )
                     } else {
-                        unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) }
+                        self.build_load_typed(
+                            b,
+                            temp.ty,
+                            self.temps[tidx.0 as usize],
+                        )
                     }
                 }}
             }
@@ -438,9 +508,19 @@ impl TbTranslator {
                     let temp = ir.temp(tidx);
                     if temp.kind == TempKind::Global {
                         // Write to local alloca
-                        unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            $val,
+                            self.temps[tidx.0 as usize],
+                        );
                     } else if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                        unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            $val,
+                            self.temps[tidx.0 as usize],
+                        );
                     }
                 }}
             }
@@ -453,10 +533,19 @@ impl TbTranslator {
                         let temp = ir.temp(tidx);
                         if temp.kind == TempKind::Global {
                             unsafe {
-                                let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
+                                let v = self.build_load_typed(
+                                    b,
+                                    temp.ty,
+                                    self.temps[i],
+                                );
                                 let off = self.ci(self.i64t, temp.mem_offset as u64);
                                 let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                                LLVMBuildStore(b, v, p);
+                                self.build_store_typed(
+                                    b,
+                                    temp.ty,
+                                    v,
+                                    p,
+                                );
                             }
                         }
                     }
@@ -747,10 +836,19 @@ impl TbTranslator {
                 let temp = ir.temp(tidx);
                 if temp.kind == TempKind::Global {
                     unsafe {
-                        let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
+                        let v = self.build_load_typed(
+                            b,
+                            temp.ty,
+                            self.temps[i],
+                        );
                         let off = self.ci(self.i64t, temp.mem_offset as u64);
                         let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                        LLVMBuildStore(b, v, p);
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            v,
+                            p,
+                        );
                     }
                 }
             }
@@ -797,7 +895,11 @@ impl TbTranslator {
                 } else if temp.kind == TempKind::Fixed {
                     unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) }
                 } else {
-                    unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) }
+                    self.build_load_typed(
+                        b,
+                        temp.ty,
+                        self.temps[tidx.0 as usize],
+                    )
                 }
             }}
         }
@@ -807,7 +909,12 @@ impl TbTranslator {
                 let tidx = oarg!($n);
                 let temp = ir.temp(tidx);
                 if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                    unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                    self.build_store_typed(
+                        b,
+                        temp.ty,
+                        $val,
+                        self.temps[tidx.0 as usize],
+                    );
                 }
             }}
         }
@@ -819,10 +926,19 @@ impl TbTranslator {
                     let temp = ir.temp(tidx);
                     if temp.kind == TempKind::Global {
                         unsafe {
-                            let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
+                            let v = self.build_load_typed(
+                                b,
+                                temp.ty,
+                                self.temps[i],
+                            );
                             let off = self.ci(self.i64t, temp.mem_offset as u64);
                             let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            let st = LLVMBuildStore(b, v, p);
+                            let st = self.build_store_typed(
+                                b,
+                                temp.ty,
+                                v,
+                                p,
+                            );
                             self.set_tbaa(st, self.tbaa_cpu);
                         }
                     }
@@ -890,13 +1006,13 @@ impl TbTranslator {
             let temp = ir.temp(tidx);
             if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
             else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            else { self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]) }
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                self.build_store_typed(b, temp.ty, $val, self.temps[tidx.0 as usize]);
             }
         }}}
 
@@ -1005,13 +1121,13 @@ impl TbTranslator {
             let temp = ir.temp(tidx);
             if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
             else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            else { self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]) }
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                self.build_store_typed(b, temp.ty, $val, self.temps[tidx.0 as usize]);
             }
         }}}
         macro_rules! flush_globals {
@@ -1021,10 +1137,19 @@ impl TbTranslator {
                     let temp = ir.temp(tidx);
                     if temp.kind == TempKind::Global {
                         unsafe {
-                            let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
+                            let v = self.build_load_typed(
+                                b,
+                                temp.ty,
+                                self.temps[i],
+                            );
                             let off = self.ci(self.i64t, temp.mem_offset as u64);
                             let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            let st = LLVMBuildStore(b, v, p);
+                            let st = self.build_store_typed(
+                                b,
+                                temp.ty,
+                                v,
+                                p,
+                            );
                             self.set_tbaa(st, self.tbaa_cpu);
                         }
                     }
@@ -1093,13 +1218,13 @@ impl TbTranslator {
             let temp = ir.temp(tidx);
             if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
             else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            else { self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]) }
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                self.build_store_typed(b, temp.ty, $val, self.temps[tidx.0 as usize]);
             }
         }}}
         macro_rules! flush_globals {
@@ -1109,10 +1234,19 @@ impl TbTranslator {
                     let temp = ir.temp(tidx);
                     if temp.kind == TempKind::Global {
                         unsafe {
-                            let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[i], E);
+                            let v = self.build_load_typed(
+                                b,
+                                temp.ty,
+                                self.temps[i],
+                            );
                             let off = self.ci(self.i64t, temp.mem_offset as u64);
                             let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                            let st = LLVMBuildStore(b, v, p);
+                            let st = self.build_store_typed(
+                                b,
+                                temp.ty,
+                                v,
+                                p,
+                            );
                             self.set_tbaa(st, self.tbaa_cpu);
                         }
                     }
@@ -1152,8 +1286,17 @@ impl TbTranslator {
                     if temp.kind == TempKind::Global {
                         let off = self.ci(self.i64t, temp.mem_offset as u64);
                         let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                        let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E);
-                        LLVMBuildStore(b, v, self.temps[i]);
+                        let v = self.build_load_typed(
+                            b,
+                            temp.ty,
+                            p,
+                        );
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            v,
+                            self.temps[i],
+                        );
                     }
                 }
             }
@@ -1174,8 +1317,17 @@ impl TbTranslator {
                     if temp.kind == TempKind::Global {
                         let off = self.ci(self.i64t, temp.mem_offset as u64);
                         let p = LLVMBuildGEP2(b, self.i8t, self.env, [off].as_ptr(), 1, E);
-                        let v = LLVMBuildLoad2(b, self.llvm_ty(temp.ty), p, E);
-                        LLVMBuildStore(b, v, self.temps[i]);
+                        let v = self.build_load_typed(
+                            b,
+                            temp.ty,
+                            p,
+                        );
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            v,
+                            self.temps[i],
+                        );
                     }
                 }
             }
@@ -1271,10 +1423,11 @@ impl TbTranslator {
             } else if temp.kind == TempKind::Fixed {
                 unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) }
             } else {
-                unsafe { LLVMBuildLoad2(
-                    b, self.llvm_ty(temp.ty),
-                    self.temps[tidx.0 as usize], E,
-                ) }
+                self.build_load_typed(
+                    b,
+                    temp.ty,
+                    self.temps[tidx.0 as usize],
+                )
             }
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
@@ -1283,12 +1436,12 @@ impl TbTranslator {
             if temp.kind != TempKind::Const
                 && temp.kind != TempKind::Fixed
             {
-                unsafe {
-                    LLVMBuildStore(
-                        b, $val,
-                        self.temps[tidx.0 as usize],
-                    );
-                }
+                self.build_store_typed(
+                    b,
+                    temp.ty,
+                    $val,
+                    self.temps[tidx.0 as usize],
+                );
             }
         }}}
 
@@ -1300,9 +1453,10 @@ impl TbTranslator {
                     let tidx = TempIdx(i as u32);
                     let temp = ir.temp(tidx);
                     if temp.kind == TempKind::Global {
-                        let v = LLVMBuildLoad2(
-                            b, self.llvm_ty(temp.ty),
-                            self.temps[i], E,
+                        let v = self.build_load_typed(
+                            b,
+                            temp.ty,
+                            self.temps[i],
                         );
                         let off = self.ci(
                             self.i64t,
@@ -1312,7 +1466,12 @@ impl TbTranslator {
                             b, self.i8t, self.env,
                             [off].as_ptr(), 1, E,
                         );
-                        LLVMBuildStore(b, v, p);
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            v,
+                            p,
+                        );
                     }
                 }
                 // func_addr = cargs[1] << 32 | cargs[0]
@@ -1358,10 +1517,17 @@ impl TbTranslator {
                             b, self.i8t, self.env,
                             [off].as_ptr(), 1, E,
                         );
-                        let v = LLVMBuildLoad2(
-                            b, self.llvm_ty(temp.ty), p, E,
+                        let v = self.build_load_typed(
+                            b,
+                            temp.ty,
+                            p,
                         );
-                        LLVMBuildStore(b, v, self.temps[i]);
+                        self.build_store_typed(
+                            b,
+                            temp.ty,
+                            v,
+                            self.temps[i],
+                        );
                     }
                 }
             }
@@ -1453,13 +1619,13 @@ impl TbTranslator {
             let temp = ir.temp(tidx);
             if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
             else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            else { self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]) }
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                self.build_store_typed(b, temp.ty, $val, self.temps[tidx.0 as usize]);
             }
         }}}
 
@@ -1596,13 +1762,13 @@ impl TbTranslator {
             let temp = ir.temp(tidx);
             if temp.kind == TempKind::Const { self.ci(self.llvm_ty(temp.ty), temp.val) }
             else if temp.kind == TempKind::Fixed { unsafe { LLVMBuildPtrToInt(b, self.env, self.i64t, E) } }
-            else { unsafe { LLVMBuildLoad2(b, self.llvm_ty(temp.ty), self.temps[tidx.0 as usize], E) } }
+            else { self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]) }
         }}}
         macro_rules! store_out { ($n:expr, $val:expr) => {{
             let tidx = oarg!($n);
             let temp = ir.temp(tidx);
             if temp.kind != TempKind::Const && temp.kind != TempKind::Fixed {
-                unsafe { LLVMBuildStore(b, $val, self.temps[tidx.0 as usize]); }
+                self.build_store_typed(b, temp.ty, $val, self.temps[tidx.0 as usize]);
             }
         }}}
 
