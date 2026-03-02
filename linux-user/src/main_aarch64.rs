@@ -85,9 +85,14 @@ impl GuestCpu for LinuxCpu {
         pc: u64,
         max_insns: u32,
     ) -> u32 {
+        // SPEC2006 exposes a long-TB correctness issue in AArch64 JIT.
+        // Keep a conservative default cap unless explicitly overridden.
+        const AARCH64_SAFE_MAX_INSNS: u32 = 9;
         let mut max_insns = if self.single_step { 1 } else { max_insns };
         if let Some(v) = self.max_insns_override {
-            max_insns = max_insns.min(v.max(1));
+            max_insns = v.max(1);
+        } else {
+            max_insns = max_insns.min(AARCH64_SAFE_MAX_INSNS);
         }
         let base = self.cpu.guest_base as *const u8;
         if ir.nb_globals() == 0 {
