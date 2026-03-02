@@ -444,10 +444,10 @@ fn run_profile(
         .entries
         .iter()
         .copied()
-        .filter(|e| e.exec_count >= min_exec_count)
+        .filter(|e| e.exec_count > min_exec_count)
         .collect();
     eprintln!(
-        "[aot] keeping {} entries with exec_count >= {} \
+        "[aot] keeping {} entries with exec_count > {} \
          (dropped {})",
         selected_entries.len(),
         min_exec_count,
@@ -455,7 +455,7 @@ fn run_profile(
     );
     if selected_entries.is_empty() {
         eprintln!(
-            "[aot] no profile entries satisfy exec_count >= {}",
+            "[aot] no profile entries satisfy exec_count > {}",
             min_exec_count
         );
         process::exit(1);
@@ -465,7 +465,7 @@ fn run_profile(
     let export_set: HashSet<u64> = profile
         .entries
         .iter()
-        .filter(|e| e.exec_count >= min_exec_count)
+        .filter(|e| e.exec_count > min_exec_count)
         .filter(|e| ProfileData::should_export(e))
         .map(|e| e.file_offset)
         .collect();
