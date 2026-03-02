@@ -433,7 +433,17 @@ fn run_profile(
     let profile_min_exec_count =
         u64::from(profile.threshold.max(1));
     let arch_default_min_exec_count = match arch {
-        Arch::Aarch64 => 25,
+        // AArch64 CoreMark favors more aggressive trimming of
+        // cold TBs to reduce dispatch and code-size pressure.
+        // `profile=1` generally comes from PROFILE_MODE=all and
+        // benefits from a higher floor.
+        Arch::Aarch64 => {
+            if profile_min_exec_count <= 1 {
+                80
+            } else {
+                64
+            }
+        }
         Arch::Riscv64 => profile_min_exec_count,
     };
     let default_min_exec_count = profile_min_exec_count
