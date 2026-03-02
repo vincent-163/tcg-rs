@@ -2075,6 +2075,28 @@ fn a64_difftest_scvtf_d_w_fixedpoint_scale1() {
 }
 
 #[test]
+fn a64_difftest_scvtf_d_d_uses_64bit_source() {
+    // scvtf d2, d1
+    let insn = 0x5e61_d822u32;
+    let src = 0x0000_0001_0000_0001u64;
+    let cpu = run_tcgrs_with_state(&[], &[(1, src, 0)], &[insn]);
+
+    assert_eq!(cpu.vregs[2 * 2], (src as i64 as f64).to_bits());
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ucvtf_d_d_uses_64bit_source() {
+    // ucvtf d3, d4
+    let insn = 0x7e61_d883u32;
+    let src = 0x0000_0002_0000_0003u64;
+    let cpu = run_tcgrs_with_state(&[], &[(4, src, 0)], &[insn]);
+
+    assert_eq!(cpu.vregs[3 * 2], (src as f64).to_bits());
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
 fn a64_difftest_fmul_v2s_by_element() {
     // fmul v2.2s, v2.2s, v0.s[0]
     let insn = 0x0f80_9042u32;
