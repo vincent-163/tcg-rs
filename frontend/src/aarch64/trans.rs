@@ -535,6 +535,13 @@ impl Aarch64DisasContext {
         addr
     }
 
+    // For LDRSB/LDRSH forms, bit22 selects destination width:
+    // 1 => Wt (sign-extend to 32 then zero-extend to 64),
+    // 0 => Xt (sign-extend to 64).
+    fn ldrs_dest_is_w(&self) -> bool {
+        ((self.opcode >> 22) & 1) != 0
+    }
+
     // -- Extend register helper for ADD/SUB extended --
     fn extend_reg(
         ir: &mut Context,
@@ -6979,9 +6986,18 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Move wide immediate --
 
     fn trans_MOVZ(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
-        let val = (a.imm as u64) << (a.hw * 16);
-        let c = ir.new_const(Type::I64, val);
-        self.write_xreg(ir, a.rd, c);
+        let sf = a.sf != 0;
+        let shift = a.hw * 16;
+        if !sf && shift >= 32 {
+            return false;
+        }
+        let ty = Self::sf_type(sf);
+        let mut val = (a.imm as u64) << shift;
+        if !sf {
+            val &= 0xffff_ffff;
+        }
+        let c = ir.new_const(ty, val);
+        self.write_xreg_sz(ir, a.rd, c, sf);
         true
     }
 
@@ -6989,26 +7005,41 @@ impl Decode<Context> for Aarch64DisasContext {
         if a.rd == 31 {
             return true;
         }
+        let sf = a.sf != 0;
         let shift = a.hw * 16;
-        let mask = !(0xffffu64 << shift);
-        let bits = (a.imm as u64) << shift;
-        let old = self.xregs[a.rd as usize];
-        let m = ir.new_const(Type::I64, mask);
-        let t = ir.new_temp(Type::I64);
-        ir.gen_and(Type::I64, t, old, m);
-        let b = ir.new_const(Type::I64, bits);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, d, t, b);
-        self.write_xreg(ir, a.rd, d);
+        if !sf && shift >= 32 {
+            return false;
+        }
+        let ty = Self::sf_type(sf);
+        let mut mask = !(0xffffu64 << shift);
+        let mut bits = (a.imm as u64) << shift;
+        if !sf {
+            mask &= 0xffff_ffff;
+            bits &= 0xffff_ffff;
+        }
+        let old = self.read_xreg(ir, a.rd);
+        let old = Self::trunc32(ir, old, sf);
+        let m = ir.new_const(ty, mask);
+        let t = ir.new_temp(ty);
+        ir.gen_and(ty, t, old, m);
+        let b = ir.new_const(ty, bits);
+        let d = ir.new_temp(ty);
+        ir.gen_or(ty, d, t, b);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_MOVN(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
         let sf = a.sf != 0;
-        let val = !((a.imm as u64) << (a.hw * 16));
+        let shift = a.hw * 16;
+        if !sf && shift >= 32 {
+            return false;
+        }
+        let val = !((a.imm as u64) << shift);
         let val = if !sf { val & 0xffff_ffff } else { val };
-        let c = ir.new_const(Type::I64, val);
-        self.write_xreg(ir, a.rd, c);
+        let ty = Self::sf_type(sf);
+        let c = ir.new_const(ty, val);
+        self.write_xreg_sz(ir, a.rd, c, sf);
         true
     }
 
@@ -8087,6 +8118,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8096,6 +8131,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8183,6 +8222,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8200,11 +8243,8 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_LDRSB_r(&mut self, ir: &mut Context, a: &ArgsLdstReg) -> bool {
         let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, 0);
         let d = ir.new_temp(Type::I64);
-        // sf field (bit22 inverted): sf=0 in decode means 64-bit target (sign-extend to X),
-        // sf=1 means 32-bit target (sign-extend to W, zero-extend to X)
-        // But we use MemOp::sb() which sign-extends to 64-bit, then mask if needed
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
-        if a.sf != 0 {
+        if self.ldrs_dest_is_w() {
             // 32-bit target: mask to 32 bits
             let mask = ir.new_const(Type::I64, 0xffff_ffff);
             ir.gen_and(Type::I64, d, d, mask);
@@ -8254,7 +8294,7 @@ impl Decode<Context> for Aarch64DisasContext {
 
     fn trans_LDR_lit(&mut self, ir: &mut Context, a: &ArgsLdstLit) -> bool {
         let sf = a.sf != 0;
-        let memop = if sf { MemOp::uq() } else { MemOp::sl() };
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let addr_val = (self.base.pc_next as i64 + a.imm * 4) as u64;
         let addr = ir.new_const(Type::I64, addr_val);
         let d = ir.new_temp(Type::I64);
@@ -8354,6 +8394,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -8362,6 +8406,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -8404,6 +8452,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, base, MemOp::sb().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         let wb = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, wb);
@@ -8413,6 +8465,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, base, MemOp::sw().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         let wb = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, wb);
@@ -8442,7 +8498,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
-        let memop = if sf { MemOp::uq() } else { MemOp::sl() };
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d1 = ir.new_temp(Type::I64);
@@ -8478,7 +8534,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
-        let memop = if sf { MemOp::uq() } else { MemOp::sl() };
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d1 = ir.new_temp(Type::I64);
@@ -8516,7 +8572,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let sf = a.sf != 0;
         let scale = if sf { 3i64 } else { 2 };
         let offset = a.imm << scale;
-        let memop = if sf { MemOp::uq() } else { MemOp::sl() };
+        let memop = if sf { MemOp::uq() } else { MemOp::ul() };
         let size = if sf { 8i64 } else { 4 };
         let base = self.read_xreg_sp(ir, a.rn);
         let d1 = ir.new_temp(Type::I64);
@@ -8715,6 +8771,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8723,6 +8783,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
+        if self.ldrs_dest_is_w() {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
