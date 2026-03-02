@@ -308,10 +308,13 @@ impl Aarch64DisasContext {
         }
 
         if let Some(lazy) = self.lazy_nzcv {
-            // Inline Logic and Add only, use helper for Sub
-            if !matches!(lazy, LazyNzcvKind::Sub { .. }) {
-                return self.eval_cond_inline(ir, cond, lazy);
-            }
+            return match lazy {
+                LazyNzcvKind::Sub { sf } => {
+                    let packed = self.pack_lazy_sub_nzcv(ir, sf);
+                    self.eval_cond_from_packed(ir, cond, packed)
+                }
+                _ => self.eval_cond_inline(ir, cond, lazy),
+            };
         }
 
         // cc_op unknown — call runtime helper.
@@ -323,6 +326,128 @@ impl Aarch64DisasContext {
             &[self.cc_op, self.cc_a, self.cc_b, self.cc_result, cond_c],
         );
         result
+    }
+
+    fn extract_nzcv_bit_from(
+        &self, ir: &mut Context, nzcv: TempIdx, bit: u64,
+    ) -> TempIdx {
+        let sh = ir.new_const(Type::I64, bit);
+        let one = ir.new_const(Type::I64, 1);
+        let t = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, t, nzcv, sh);
+        ir.gen_and(Type::I64, t, t, one);
+        t
+    }
+
+    fn eval_cond_from_packed(
+        &self, ir: &mut Context, cond: i64, nzcv: TempIdx,
+    ) -> TempIdx {
+        let n = self.extract_nzcv_bit_from(ir, nzcv, 31);
+        let z = self.extract_nzcv_bit_from(ir, nzcv, 30);
+        let c = self.extract_nzcv_bit_from(ir, nzcv, 29);
+        let v = self.extract_nzcv_bit_from(ir, nzcv, 28);
+        let base_cond = (cond >> 1) as u32;
+        let result = match base_cond {
+            0 => z, // EQ/NE
+            1 => c, // CS/CC
+            2 => n, // MI/PL
+            3 => v, // VS/VC
+            4 => {
+                let t = ir.new_temp(Type::I64);
+                ir.gen_andc(Type::I64, t, c, z); // HI/LS
+                t
+            }
+            5 => {
+                let r = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, r, n, v, Cond::Eq); // GE/LT
+                r
+            }
+            6 => {
+                let nv = ir.new_temp(Type::I64);
+                ir.gen_setcond(Type::I64, nv, n, v, Cond::Eq);
+                let t = ir.new_temp(Type::I64);
+                ir.gen_andc(Type::I64, t, nv, z); // GT/LE
+                t
+            }
+            7 => ir.new_const(Type::I64, 1), // AL
+            _ => unreachable!(),
+        };
+
+        if (cond & 1) != 0 && cond != 0xf {
+            let inv = ir.new_temp(Type::I64);
+            let one = ir.new_const(Type::I64, 1);
+            ir.gen_xor(Type::I64, inv, result, one);
+            inv
+        } else {
+            result
+        }
+    }
+
+    fn pack_lazy_sub_nzcv(
+        &self, ir: &mut Context, sf: bool,
+    ) -> TempIdx {
+        let ty = Self::sf_type(sf);
+        let bits = if sf { 63u64 } else { 31u64 };
+        let a = if sf { self.cc_a } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.cc_a);
+            t
+        };
+        let b = if sf { self.cc_b } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.cc_b);
+            t
+        };
+        let res = if sf { self.cc_result } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.cc_result);
+            t
+        };
+        let zero = ir.new_const(ty, 0);
+        let sh = ir.new_const(ty, bits);
+
+        let n_tmp = ir.new_temp(ty);
+        ir.gen_shr(ty, n_tmp, res, sh);
+        let n_bit = ir.new_temp(Type::I64);
+        if sf { ir.gen_mov(Type::I64, n_bit, n_tmp); }
+        else { ir.gen_ext_u32_i64(n_bit, n_tmp); }
+
+        let z_bit = ir.new_temp(Type::I64);
+        ir.gen_setcond(ty, z_bit, res, zero, Cond::Eq);
+
+        let c_bit = ir.new_temp(Type::I64);
+        ir.gen_setcond(ty, c_bit, a, b, Cond::Geu);
+
+        let xor_ab = ir.new_temp(ty);
+        ir.gen_xor(ty, xor_ab, a, b);
+        let xor_ar = ir.new_temp(ty);
+        ir.gen_xor(ty, xor_ar, a, res);
+        let v_tmp = ir.new_temp(ty);
+        ir.gen_and(ty, v_tmp, xor_ab, xor_ar);
+        let v_sh = ir.new_temp(ty);
+        ir.gen_shr(ty, v_sh, v_tmp, sh);
+        let v_bit = ir.new_temp(Type::I64);
+        if sf { ir.gen_mov(Type::I64, v_bit, v_sh); }
+        else { ir.gen_ext_u32_i64(v_bit, v_sh); }
+
+        let c31 = ir.new_const(Type::I64, 31);
+        let c30 = ir.new_const(Type::I64, 30);
+        let c29 = ir.new_const(Type::I64, 29);
+        let c28 = ir.new_const(Type::I64, 28);
+        let n_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, n_s, n_bit, c31);
+        let z_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, z_s, z_bit, c30);
+        let c_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, c_s, c_bit, c29);
+        let v_s = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, v_s, v_bit, c28);
+        let nzcv = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, nzcv, n_s, z_s);
+        let tmp = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, tmp, c_s, v_s);
+        ir.gen_or(Type::I64, nzcv, nzcv, tmp);
+        nzcv
     }
 
     /// Generate inline condition evaluation from known lazy state.
@@ -8634,4 +8759,3 @@ impl Decode<Context> for Aarch64DisasContext {
         true
     }
 }
-
