@@ -69,12 +69,12 @@ pub fn handle_syscall_aarch64(
     mmap_next: &mut u64,
     elf_path: &str,
 ) -> SyscallResult {
-    let nr = regs[8];  // X8
-    let a0 = regs[0];  // X0
-    let a1 = regs[1];  // X1
-    let a2 = regs[2];  // X2
-    let a3 = regs[3];  // X3
-    let a4 = regs[4];  // X4
+    let nr = regs[8]; // X8
+    let a0 = regs[0]; // X0
+    let a1 = regs[1]; // X1
+    let a2 = regs[2]; // X2
+    let a3 = regs[3]; // X3
+    let a4 = regs[4]; // X4
     if std::env::var("TCG_SYSCALL").is_ok() {
         eprintln!(
             "[syscall] nr={nr} a0={a0:#x} a1={a1:#x} a2={a2:#x} a3={a3:#x} lr={:#x}",
@@ -88,11 +88,7 @@ pub fn handle_syscall_aarch64(
             let len = a2 as usize;
             let host_buf = space.g2h(buf);
             let ret = unsafe {
-                libc::write(
-                    fd,
-                    host_buf as *const libc::c_void,
-                    len,
-                )
+                libc::write(fd, host_buf as *const libc::c_void, len)
             };
             if ret < 0 {
                 let e = unsafe { *libc::__errno_location() };
@@ -101,65 +97,34 @@ pub fn handle_syscall_aarch64(
                 SyscallResult::Continue(ret as u64)
             }
         }
-        SYS_EXIT | SYS_EXIT_GROUP => {
-            SyscallResult::Exit(a0 as i32)
-        }
+        SYS_EXIT | SYS_EXIT_GROUP => SyscallResult::Exit(a0 as i32),
         SYS_BRK => do_brk(space, a0),
         SYS_MMAP => do_mmap(space, a0, a1, a2, mmap_next),
-        SYS_MREMAP => {
-            do_mremap(space, a0, a1, a2, a3, a4, mmap_next)
-        }
+        SYS_MREMAP => do_mremap(space, a0, a1, a2, a3, a4, mmap_next),
         SYS_MPROTECT => {
             let addr = a0;
             let len = a1 as usize;
             let prot = a2 as i32;
             match space.mprotect(addr, len, prot) {
                 Ok(()) => SyscallResult::Continue(0),
-                Err(_) => SyscallResult::Continue(
-                    (-22i64) as u64,
-                ),
+                Err(_) => SyscallResult::Continue((-22i64) as u64),
             }
         }
-        SYS_MUNMAP | SYS_SET_ROBUST_LIST
-        | SYS_RT_SIGACTION | SYS_RT_SIGPROCMASK
-        | SYS_MADVISE => {
-            SyscallResult::Continue(0)
-        }
-        SYS_SET_TID_ADDRESS => {
-            SyscallResult::Continue(host_gettid() as u64)
-        }
-        SYS_GETPID => {
-            SyscallResult::Continue(
-                unsafe { libc::getpid() as u64 },
-            )
-        }
+        SYS_MUNMAP | SYS_SET_ROBUST_LIST | SYS_RT_SIGACTION
+        | SYS_RT_SIGPROCMASK | SYS_MADVISE => SyscallResult::Continue(0),
+        SYS_SET_TID_ADDRESS => SyscallResult::Continue(host_gettid() as u64),
+        SYS_GETPID => SyscallResult::Continue(unsafe { libc::getpid() as u64 }),
         SYS_GETPPID => {
-            SyscallResult::Continue(
-                unsafe { libc::getppid() as u64 },
-            )
+            SyscallResult::Continue(unsafe { libc::getppid() as u64 })
         }
-        SYS_GETTID => {
-            SyscallResult::Continue(host_gettid() as u64)
-        }
-        SYS_GETUID => {
-            SyscallResult::Continue(
-                unsafe { libc::getuid() as u64 },
-            )
-        }
+        SYS_GETTID => SyscallResult::Continue(host_gettid() as u64),
+        SYS_GETUID => SyscallResult::Continue(unsafe { libc::getuid() as u64 }),
         SYS_GETEUID => {
-            SyscallResult::Continue(
-                unsafe { libc::geteuid() as u64 },
-            )
+            SyscallResult::Continue(unsafe { libc::geteuid() as u64 })
         }
-        SYS_GETGID => {
-            SyscallResult::Continue(
-                unsafe { libc::getgid() as u64 },
-            )
-        }
+        SYS_GETGID => SyscallResult::Continue(unsafe { libc::getgid() as u64 }),
         SYS_GETEGID => {
-            SyscallResult::Continue(
-                unsafe { libc::getegid() as u64 },
-            )
+            SyscallResult::Continue(unsafe { libc::getegid() as u64 })
         }
         SYS_GETRANDOM => {
             let buf = a0;
@@ -195,26 +160,16 @@ pub fn handle_syscall_aarch64(
         SYS_READ => do_read(space, a0, a1, a2),
         SYS_LSEEK => do_lseek(a0, a1, a2),
         SYS_FACCESSAT => do_faccessat(space, a0, a1, a2),
-        SYS_PRLIMIT64 => {
-            do_prlimit64(space, a0, a1, a2, a3)
-        }
+        SYS_PRLIMIT64 => do_prlimit64(space, a0, a1, a2, a3),
         SYS_UNAME => do_uname(space, a0),
-        SYS_READLINKAT => {
-            do_readlinkat(space, a0, a1, a2, a3, elf_path)
-        }
-        SYS_CLOCK_GETTIME => {
-            do_clock_gettime(space, a0, a1)
-        }
-        SYS_CLOCK_NANOSLEEP => {
-            do_clock_nanosleep(space, a0, a1, a2, a3)
-        }
+        SYS_READLINKAT => do_readlinkat(space, a0, a1, a2, a3, elf_path),
+        SYS_CLOCK_GETTIME => do_clock_gettime(space, a0, a1),
+        SYS_CLOCK_NANOSLEEP => do_clock_nanosleep(space, a0, a1, a2, a3),
         SYS_CLONE => do_clone(space, a0, a1, a2, a3, a4),
         SYS_WAIT4 => do_wait4(space, a0, a1, a2, a3),
         SYS_EXECVE => SyscallResult::Continue(ENOSYS),
         _ => {
-            eprintln!(
-                "[tcg] unknown syscall {nr} → -ENOSYS"
-            );
+            eprintln!("[tcg] unknown syscall {nr} → -ENOSYS");
             SyscallResult::Continue(ENOSYS)
         }
     };
@@ -232,9 +187,8 @@ pub fn handle_syscall_aarch64(
 }
 
 fn do_fcntl(fd: u64, cmd: u64, arg: u64) -> SyscallResult {
-    let ret = unsafe {
-        libc::fcntl(fd as i32, cmd as i32, arg as libc::c_long)
-    };
+    let ret =
+        unsafe { libc::fcntl(fd as i32, cmd as i32, arg as libc::c_long) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
@@ -252,9 +206,7 @@ fn do_dup(fd: u64) -> SyscallResult {
 }
 
 fn do_dup3(oldfd: u64, newfd: u64, flags: u64) -> SyscallResult {
-    let ret = unsafe {
-        libc::dup3(oldfd as i32, newfd as i32, flags as i32)
-    };
+    let ret = unsafe { libc::dup3(oldfd as i32, newfd as i32, flags as i32) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
@@ -262,7 +214,11 @@ fn do_dup3(oldfd: u64, newfd: u64, flags: u64) -> SyscallResult {
     }
 }
 
-fn do_pipe2(space: &mut GuestSpace, pipefd_addr: u64, flags: u64) -> SyscallResult {
+fn do_pipe2(
+    space: &mut GuestSpace,
+    pipefd_addr: u64,
+    flags: u64,
+) -> SyscallResult {
     let mut fds = [0i32; 2];
     let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), flags as i32) };
     if ret < 0 {
@@ -315,7 +271,11 @@ fn do_wait4(
     let ret = unsafe {
         libc::wait4(
             pid as i32,
-            if status_addr != 0 { &mut status } else { std::ptr::null_mut() },
+            if status_addr != 0 {
+                &mut status
+            } else {
+                std::ptr::null_mut()
+            },
             options as i32,
             std::ptr::null_mut(),
         )
@@ -387,27 +347,40 @@ fn host_gettid() -> i64 {
 }
 
 fn do_brk(space: &mut GuestSpace, addr: u64) -> SyscallResult {
+    let old = space.brk();
     if addr == 0 {
-        SyscallResult::Continue(space.brk())
-    } else if addr >= space.brk() {
-        let old = space.brk();
-        let new_brk =
-            crate::guest_space::page_align_up(addr);
-        let old_aligned =
-            crate::guest_space::page_align_up(old);
+        return SyscallResult::Continue(old);
+    }
+
+    if addr >= old {
+        let new_brk = crate::guest_space::page_align_up(addr);
+        let old_aligned = crate::guest_space::page_align_up(old);
         if new_brk > old_aligned {
             let sz = (new_brk - old_aligned) as usize;
-            let _ = space.mmap_fixed(
-                old_aligned,
-                sz,
-                libc::PROT_READ | libc::PROT_WRITE,
-            );
+            if space
+                .mmap_fixed(old_aligned, sz, libc::PROT_READ | libc::PROT_WRITE)
+                .is_err()
+            {
+                return SyscallResult::Continue(old);
+            }
         }
         space.set_brk(addr);
-        SyscallResult::Continue(addr)
-    } else {
-        SyscallResult::Continue(space.brk())
+        return SyscallResult::Continue(addr);
     }
+
+    // Shrinking brk always succeeds. Make full pages above the new break
+    // inaccessible to catch stale accesses while preserving sub-page tail.
+    let old_aligned = crate::guest_space::page_align_up(old);
+    let new_aligned = crate::guest_space::page_align_up(addr);
+    if old_aligned > new_aligned {
+        let _ = space.mprotect(
+            new_aligned,
+            (old_aligned - new_aligned) as usize,
+            libc::PROT_NONE,
+        );
+    }
+    space.set_brk(addr);
+    SyscallResult::Continue(addr)
 }
 
 fn do_mmap(
@@ -418,8 +391,7 @@ fn do_mmap(
     mmap_next: &mut u64,
 ) -> SyscallResult {
     let prot = prot as i32;
-    let aligned_len =
-        crate::guest_space::page_align_up(len) as usize;
+    let aligned_len = crate::guest_space::page_align_up(len) as usize;
     let guest_addr = if addr != 0 {
         addr
     } else {
@@ -429,9 +401,7 @@ fn do_mmap(
     };
     match space.mmap_fixed(guest_addr, aligned_len, prot) {
         Ok(()) => SyscallResult::Continue(guest_addr),
-        Err(_) => {
-            SyscallResult::Continue((-12i64) as u64)
-        }
+        Err(_) => SyscallResult::Continue((-12i64) as u64),
     }
 }
 
@@ -460,11 +430,7 @@ fn do_mremap(
     let grow_from = old_addr.saturating_add(old_len);
     let grow_len = (new_len - old_len) as usize;
     if space
-        .mmap_fixed(
-            grow_from,
-            grow_len,
-            libc::PROT_READ | libc::PROT_WRITE,
-        )
+        .mmap_fixed(grow_from, grow_len, libc::PROT_READ | libc::PROT_WRITE)
         .is_ok()
     {
         return SyscallResult::Continue(old_addr);
@@ -515,22 +481,13 @@ fn do_writev(
     let mut total: usize = 0;
     for i in 0..cnt {
         let entry = iov_addr + (i as u64) * 16;
-        let base =
-            unsafe { *(space.g2h(entry) as *const u64) };
-        let len = unsafe {
-            *(space.g2h(entry + 8) as *const u64)
-        } as usize;
+        let base = unsafe { *(space.g2h(entry) as *const u64) };
+        let len = unsafe { *(space.g2h(entry + 8) as *const u64) } as usize;
         if len == 0 {
             continue;
         }
         let host = space.g2h(base);
-        let ret = unsafe {
-            libc::write(
-                fd,
-                host as *const libc::c_void,
-                len,
-            )
-        };
+        let ret = unsafe { libc::write(fd, host as *const libc::c_void, len) };
         if ret < 0 {
             return SyscallResult::Continue(errno_ret());
         }
@@ -539,11 +496,7 @@ fn do_writev(
     SyscallResult::Continue(total as u64)
 }
 
-fn do_fstat(
-    space: &mut GuestSpace,
-    fd: u64,
-    buf_addr: u64,
-) -> SyscallResult {
+fn do_fstat(space: &mut GuestSpace, fd: u64, buf_addr: u64) -> SyscallResult {
     let fd = fd as i32;
     let host_buf = space.g2h(buf_addr);
     unsafe {
@@ -557,8 +510,7 @@ fn do_fstat(
         }
         SyscallResult::Continue(0)
     } else {
-        let mut st: libc::stat =
-            unsafe { std::mem::zeroed() };
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::fstat(fd, &mut st) };
         if ret < 0 {
             return SyscallResult::Continue(errno_ret());
@@ -569,22 +521,19 @@ fn do_fstat(
             *(p as *mut u64) = st.st_dev;
             *(p.add(8) as *mut u64) = st.st_ino;
             *(p.add(16) as *mut u32) = st.st_mode;
-            *(p.add(20) as *mut u32) =
-                st.st_nlink as u32;
+            *(p.add(20) as *mut u32) = st.st_nlink as u32;
             *(p.add(24) as *mut u32) = st.st_uid;
             *(p.add(28) as *mut u32) = st.st_gid;
             *(p.add(32) as *mut u64) = st.st_rdev;
             *(p.add(48) as *mut i64) = st.st_size;
-            *(p.add(56) as *mut i32) =
-                st.st_blksize as i32;
+            *(p.add(56) as *mut i32) = st.st_blksize as i32;
             *(p.add(64) as *mut i64) = st.st_blocks;
             *(p.add(72) as *mut i64) = st.st_atime;
             *(p.add(80) as *mut i64) = st.st_atime_nsec;
             *(p.add(88) as *mut i64) = st.st_mtime;
             *(p.add(96) as *mut i64) = st.st_mtime_nsec;
             *(p.add(104) as *mut i64) = st.st_ctime;
-            *(p.add(112) as *mut i64) =
-                st.st_ctime_nsec;
+            *(p.add(112) as *mut i64) = st.st_ctime_nsec;
         }
         SyscallResult::Continue(0)
     }
@@ -607,18 +556,12 @@ fn do_prlimit64(
                 *(p.add(8) as *mut u64) = RLIM_INFINITY;
             }
         } else {
-            let mut rl: libc::rlimit =
-                unsafe { std::mem::zeroed() };
+            let mut rl: libc::rlimit = unsafe { std::mem::zeroed() };
             let ret = unsafe {
-                libc::getrlimit(
-                    resource as libc::__rlimit_resource_t,
-                    &mut rl,
-                )
+                libc::getrlimit(resource as libc::__rlimit_resource_t, &mut rl)
             };
             if ret < 0 {
-                return SyscallResult::Continue(
-                    errno_ret(),
-                );
+                return SyscallResult::Continue(errno_ret());
             }
             unsafe {
                 *(p as *mut u64) = rl.rlim_cur;
@@ -629,31 +572,24 @@ fn do_prlimit64(
     SyscallResult::Continue(0)
 }
 
-fn do_uname(
-    space: &mut GuestSpace,
-    buf_addr: u64,
-) -> SyscallResult {
+fn do_uname(space: &mut GuestSpace, buf_addr: u64) -> SyscallResult {
     let p = space.g2h(buf_addr);
     unsafe {
         std::ptr::write_bytes(p, 0, 390);
     }
     let fields: [&[u8]; 6] = [
-        b"Linux",    // sysname
-        b"tcg-rs",   // nodename
-        b"6.1.0",    // release
-        b"#1 SMP",   // version
-        b"aarch64",  // machine
-        b"(none)",   // domainname
+        b"Linux",   // sysname
+        b"tcg-rs",  // nodename
+        b"6.1.0",   // release
+        b"#1 SMP",  // version
+        b"aarch64", // machine
+        b"(none)",  // domainname
     ];
     for (i, val) in fields.iter().enumerate() {
         let dst = unsafe { p.add(i * 65) };
         let len = val.len().min(64);
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                val.as_ptr(),
-                dst,
-                len,
-            );
+            std::ptr::copy_nonoverlapping(val.as_ptr(), dst, len);
         }
     }
     SyscallResult::Continue(0)
@@ -668,20 +604,14 @@ fn do_readlinkat(
     elf_path: &str,
 ) -> SyscallResult {
     let host_path = space.g2h(path_addr);
-    let path = unsafe {
-        std::ffi::CStr::from_ptr(host_path as *const i8)
-    };
+    let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
     let path_bytes = path.to_bytes();
     if path_bytes == b"/proc/self/exe" {
         let elf = elf_path.as_bytes();
         let len = elf.len().min(bufsiz as usize);
         let dst = space.g2h(buf_addr);
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                elf.as_ptr(),
-                dst,
-                len,
-            );
+            std::ptr::copy_nonoverlapping(elf.as_ptr(), dst, len);
         }
         SyscallResult::Continue(len as u64)
     } else {
@@ -694,10 +624,8 @@ fn do_clock_gettime(
     clk_id: u64,
     tp_addr: u64,
 ) -> SyscallResult {
-    let mut ts: libc::timespec =
-        unsafe { std::mem::zeroed() };
-    let ret =
-        unsafe { libc::clock_gettime(clk_id as i32, &mut ts) };
+    let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
+    let ret = unsafe { libc::clock_gettime(clk_id as i32, &mut ts) };
     if ret < 0 {
         return SyscallResult::Continue(errno_ret());
     }
@@ -716,16 +644,9 @@ fn do_unlinkat(
     flags: u64,
 ) -> SyscallResult {
     let host_path = space.g2h(path_addr);
-    let path = unsafe {
-        std::ffi::CStr::from_ptr(host_path as *const i8)
-    };
-    let ret = unsafe {
-        libc::unlinkat(
-            dirfd as i32,
-            path.as_ptr(),
-            flags as i32,
-        )
-    };
+    let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
+    let ret =
+        unsafe { libc::unlinkat(dirfd as i32, path.as_ptr(), flags as i32) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
@@ -764,9 +685,7 @@ fn do_openat(
     mode: u64,
 ) -> SyscallResult {
     let host_path = space.g2h(path_addr);
-    let path = unsafe {
-        std::ffi::CStr::from_ptr(host_path as *const i8)
-    };
+    let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
     let fd = unsafe {
         libc::openat(
             dirfd as i32,
@@ -813,9 +732,7 @@ fn do_read(
     let fd = fd as i32;
     let len = count as usize;
     let host_buf = space.g2h(buf_addr);
-    let ret = unsafe {
-        libc::read(fd, host_buf as *mut libc::c_void, len)
-    };
+    let ret = unsafe { libc::read(fd, host_buf as *mut libc::c_void, len) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
@@ -838,21 +755,20 @@ fn do_readv(
     let mut total: usize = 0;
     for i in 0..cnt {
         let entry = iov_addr + (i as u64) * 16;
-        let base =
-            unsafe { *(space.g2h(entry) as *const u64) };
-        let len = unsafe {
-            *(space.g2h(entry + 8) as *const u64)
-        } as usize;
-        if len == 0 { continue; }
+        let base = unsafe { *(space.g2h(entry) as *const u64) };
+        let len = unsafe { *(space.g2h(entry + 8) as *const u64) } as usize;
+        if len == 0 {
+            continue;
+        }
         let host = space.g2h(base);
-        let ret = unsafe {
-            libc::read(fd, host as *mut libc::c_void, len)
-        };
+        let ret = unsafe { libc::read(fd, host as *mut libc::c_void, len) };
         if ret < 0 {
             return SyscallResult::Continue(errno_ret());
         }
         total += ret as usize;
-        if (ret as usize) < len { break; }
+        if (ret as usize) < len {
+            break;
+        }
     }
     SyscallResult::Continue(total as u64)
 }
@@ -862,9 +778,7 @@ fn do_readv(
 // ---------------------------------------------------------------
 
 fn do_lseek(fd: u64, offset: u64, whence: u64) -> SyscallResult {
-    let ret = unsafe {
-        libc::lseek(fd as i32, offset as i64, whence as i32)
-    };
+    let ret = unsafe { libc::lseek(fd as i32, offset as i64, whence as i32) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
@@ -884,17 +798,10 @@ fn do_newfstatat(
     flags: u64,
 ) -> SyscallResult {
     let host_path = space.g2h(path_addr);
-    let path = unsafe {
-        std::ffi::CStr::from_ptr(host_path as *const i8)
-    };
+    let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
     let mut st: libc::stat = unsafe { std::mem::zeroed() };
     let ret = unsafe {
-        libc::fstatat(
-            dirfd as i32,
-            path.as_ptr(),
-            &mut st,
-            flags as i32,
-        )
+        libc::fstatat(dirfd as i32, path.as_ptr(), &mut st, flags as i32)
     };
     if ret < 0 {
         return SyscallResult::Continue(errno_ret());
@@ -926,11 +833,7 @@ fn do_newfstatat(
 // fstatfs(fd, buf)
 // ---------------------------------------------------------------
 
-fn do_fstatfs(
-    space: &mut GuestSpace,
-    fd: u64,
-    buf_addr: u64,
-) -> SyscallResult {
+fn do_fstatfs(space: &mut GuestSpace, fd: u64, buf_addr: u64) -> SyscallResult {
     let mut st: libc::statfs = unsafe { std::mem::zeroed() };
     let ret = unsafe { libc::fstatfs(fd as i32, &mut st) };
     if ret < 0 {
@@ -965,12 +868,9 @@ fn do_faccessat(
     mode: u64,
 ) -> SyscallResult {
     let host_path = space.g2h(path_addr);
-    let path = unsafe {
-        std::ffi::CStr::from_ptr(host_path as *const i8)
-    };
-    let ret = unsafe {
-        libc::faccessat(dirfd as i32, path.as_ptr(), mode as i32, 0)
-    };
+    let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
+    let ret =
+        unsafe { libc::faccessat(dirfd as i32, path.as_ptr(), mode as i32, 0) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {

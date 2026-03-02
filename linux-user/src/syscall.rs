@@ -77,24 +77,40 @@ pub fn handle_syscall(
         }
         SYS_EXIT | SYS_EXIT_GROUP => SyscallResult::Exit(a0 as i32),
         SYS_BRK => {
+            let old = space.brk();
             if a0 == 0 {
-                SyscallResult::Continue(space.brk())
-            } else if a0 >= space.brk() {
-                let old = space.brk();
+                SyscallResult::Continue(old)
+            } else if a0 >= old {
                 let new_brk = crate::guest_space::page_align_up(a0);
                 let old_aligned = crate::guest_space::page_align_up(old);
                 if new_brk > old_aligned {
                     let sz = (new_brk - old_aligned) as usize;
-                    let _ = space.mmap_fixed(
-                        old_aligned,
-                        sz,
-                        libc::PROT_READ | libc::PROT_WRITE,
-                    );
+                    if space
+                        .mmap_fixed(
+                            old_aligned,
+                            sz,
+                            libc::PROT_READ | libc::PROT_WRITE,
+                        )
+                        .is_err()
+                    {
+                        return SyscallResult::Continue(old);
+                    }
                 }
                 space.set_brk(a0);
                 SyscallResult::Continue(a0)
             } else {
-                SyscallResult::Continue(space.brk())
+                // Shrinking brk always succeeds; protect full pages above it.
+                let old_aligned = crate::guest_space::page_align_up(old);
+                let new_aligned = crate::guest_space::page_align_up(a0);
+                if old_aligned > new_aligned {
+                    let _ = space.mprotect(
+                        new_aligned,
+                        (old_aligned - new_aligned) as usize,
+                        libc::PROT_NONE,
+                    );
+                }
+                space.set_brk(a0);
+                SyscallResult::Continue(a0)
             }
         }
         SYS_MMAP => {

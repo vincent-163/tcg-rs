@@ -15,114 +15,126 @@ use tcg_backend::translate::translate_and_execute;
 use tcg_backend::HostCodeGen;
 use tcg_backend::X86_64CodeGen;
 use tcg_core::opcode::Opcode;
-use tcg_core::Context;
 use tcg_core::types::MemOp;
+use tcg_core::Context;
 use tcg_frontend::aarch64::cpu::Aarch64Cpu;
-use tcg_frontend::aarch64::{
-    Aarch64DisasContext, Aarch64Translator,
-};
+use tcg_frontend::aarch64::{Aarch64DisasContext, Aarch64Translator};
 use tcg_frontend::translator_loop;
 
 // ── AArch64 instruction encoders ─────────────────────────
 
 // Data processing - immediate - Add/Sub
 fn a64_add_imm(sf: u32, rd: u32, rn: u32, imm12: u32) -> u32 {
-    (sf << 31) | (0b00100010 << 23) | (imm12 << 10)
-        | (rn << 5) | rd
+    (sf << 31) | (0b00100010 << 23) | (imm12 << 10) | (rn << 5) | rd
 }
 fn a64_sub_imm(sf: u32, rd: u32, rn: u32, imm12: u32) -> u32 {
-    (sf << 31) | (0b10100010 << 23) | (imm12 << 10)
-        | (rn << 5) | rd
+    (sf << 31) | (0b10100010 << 23) | (imm12 << 10) | (rn << 5) | rd
 }
 fn a64_adds_imm(sf: u32, rd: u32, rn: u32, imm12: u32) -> u32 {
-    (sf << 31) | (0b01100010 << 23) | (imm12 << 10)
-        | (rn << 5) | rd
+    (sf << 31) | (0b01100010 << 23) | (imm12 << 10) | (rn << 5) | rd
 }
 fn a64_subs_imm(sf: u32, rd: u32, rn: u32, imm12: u32) -> u32 {
-    (sf << 31) | (0b11100010 << 23) | (imm12 << 10)
-        | (rn << 5) | rd
+    (sf << 31) | (0b11100010 << 23) | (imm12 << 10) | (rn << 5) | rd
 }
 
 // Data processing - register - Add/Sub (shifted)
 fn a64_add_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0001011000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b0001011000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_sub_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b1001011000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b1001011000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_adds_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0101011000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b0101011000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_subs_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b1101011000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b1101011000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 
 // Logical (shifted register)
 fn a64_and_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0001010000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b0001010000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_orr_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0101010000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b0101010000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_eor_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b1001010000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b1001010000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_ands_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b1101010000 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b1101010000 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_orn_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0101010001 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b0101010001 << 21) | (rm << 16) | (rn << 5) | rd
 }
 fn a64_bic_r(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0001010001 << 21) | (rm << 16)
-        | (rn << 5) | rd
+    (sf << 31) | (0b0001010001 << 21) | (rm << 16) | (rn << 5) | rd
 }
 
 // Shift variable
 fn a64_lslv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0011010110 << 21) | (rm << 16)
-        | (0b001000 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010110 << 21)
+        | (rm << 16)
+        | (0b001000 << 10)
+        | (rn << 5)
+        | rd
 }
 fn a64_lsrv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0011010110 << 21) | (rm << 16)
-        | (0b001001 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010110 << 21)
+        | (rm << 16)
+        | (0b001001 << 10)
+        | (rn << 5)
+        | rd
 }
 fn a64_asrv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0011010110 << 21) | (rm << 16)
-        | (0b001010 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010110 << 21)
+        | (rm << 16)
+        | (0b001010 << 10)
+        | (rn << 5)
+        | rd
 }
 fn a64_rorv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0011010110 << 21) | (rm << 16)
-        | (0b001011 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010110 << 21)
+        | (rm << 16)
+        | (0b001011 << 10)
+        | (rn << 5)
+        | rd
 }
 
 // Multiply
 fn a64_madd(sf: u32, rd: u32, rn: u32, rm: u32, ra: u32) -> u32 {
-    (sf << 31) | (0b0011011000 << 21) | (rm << 16)
-        | (ra << 10) | (rn << 5) | rd
+    (sf << 31) | (0b0011011000 << 21) | (rm << 16) | (ra << 10) | (rn << 5) | rd
 }
 fn a64_msub(sf: u32, rd: u32, rn: u32, rm: u32, ra: u32) -> u32 {
-    (sf << 31) | (0b0011011000 << 21) | (rm << 16)
-        | (1 << 15) | (ra << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011011000 << 21)
+        | (rm << 16)
+        | (1 << 15)
+        | (ra << 10)
+        | (rn << 5)
+        | rd
 }
 
 // Division
 fn a64_udiv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0011010110 << 21) | (rm << 16)
-        | (0b000010 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010110 << 21)
+        | (rm << 16)
+        | (0b000010 << 10)
+        | (rn << 5)
+        | rd
 }
 fn a64_sdiv(sf: u32, rd: u32, rn: u32, rm: u32) -> u32 {
-    (sf << 31) | (0b0011010110 << 21) | (rm << 16)
-        | (0b000011 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010110 << 21)
+        | (rm << 16)
+        | (0b000011 << 10)
+        | (rn << 5)
+        | rd
 }
 
 // Unsigned high multiply
@@ -132,62 +144,83 @@ fn a64_umulh(rd: u32, rn: u32, rm: u32) -> u32 {
 
 fn a64_ubfm(sf: u32, rd: u32, rn: u32, immr: u32, imms: u32) -> u32 {
     let n = sf;
-    (sf << 31) | (0b10 << 29) | (0b100110 << 23) | (n << 22)
-        | (immr << 16) | (imms << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b10 << 29)
+        | (0b100110 << 23)
+        | (n << 22)
+        | (immr << 16)
+        | (imms << 10)
+        | (rn << 5)
+        | rd
 }
 
 fn a64_sbfm(sf: u32, rd: u32, rn: u32, immr: u32, imms: u32) -> u32 {
     let n = sf;
-    (sf << 31) | (0b00 << 29) | (0b100110 << 23) | (n << 22)
-        | (immr << 16) | (imms << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b00 << 29)
+        | (0b100110 << 23)
+        | (n << 22)
+        | (immr << 16)
+        | (imms << 10)
+        | (rn << 5)
+        | rd
 }
 
 fn a64_bfm(sf: u32, rd: u32, rn: u32, immr: u32, imms: u32) -> u32 {
     let n = sf;
-    (sf << 31) | (0b01 << 29) | (0b100110 << 23) | (n << 22)
-        | (immr << 16) | (imms << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b01 << 29)
+        | (0b100110 << 23)
+        | (n << 22)
+        | (immr << 16)
+        | (imms << 10)
+        | (rn << 5)
+        | rd
 }
 
 // Move wide
 fn a64_movz(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
-    (sf << 31) | (0b10100101 << 23) | (hw << 21)
-        | (imm16 << 5) | rd
+    (sf << 31) | (0b10100101 << 23) | (hw << 21) | (imm16 << 5) | rd
 }
 fn a64_movn(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
-    (sf << 31) | (0b00100101 << 23) | (hw << 21)
-        | (imm16 << 5) | rd
+    (sf << 31) | (0b00100101 << 23) | (hw << 21) | (imm16 << 5) | rd
 }
 fn a64_movk(sf: u32, rd: u32, imm16: u32, hw: u32) -> u32 {
-    (sf << 31) | (0b11100101 << 23) | (hw << 21)
-        | (imm16 << 5) | rd
+    (sf << 31) | (0b11100101 << 23) | (hw << 21) | (imm16 << 5) | rd
 }
 
 // Conditional select
 fn a64_csel(sf: u32, rd: u32, rn: u32, rm: u32, cond: u32) -> u32 {
-    (sf << 31) | (0b0011010100 << 21) | (rm << 16)
-        | (cond << 12) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010100 << 21)
+        | (rm << 16)
+        | (cond << 12)
+        | (rn << 5)
+        | rd
 }
 fn a64_csinc(sf: u32, rd: u32, rn: u32, rm: u32, cond: u32) -> u32 {
-    (sf << 31) | (0b0011010100 << 21) | (rm << 16)
-        | (cond << 12) | (0b01 << 10) | (rn << 5) | rd
+    (sf << 31)
+        | (0b0011010100 << 21)
+        | (rm << 16)
+        | (cond << 12)
+        | (0b01 << 10)
+        | (rn << 5)
+        | rd
 }
 
 // CLZ
 fn a64_clz(sf: u32, rd: u32, rn: u32) -> u32 {
-    (sf << 31) | (0b1011010110 << 21) | (0b000100 << 10)
-        | (rn << 5) | rd
+    (sf << 31) | (0b1011010110 << 21) | (0b000100 << 10) | (rn << 5) | rd
 }
 
 // REV (byte reverse)
 fn a64_rev(sf: u32, rd: u32, rn: u32) -> u32 {
     if sf == 1 {
         // REV X: opc=11
-        (1 << 31) | (0b1011010110 << 21) | (0b000011 << 10)
-            | (rn << 5) | rd
+        (1 << 31) | (0b1011010110 << 21) | (0b000011 << 10) | (rn << 5) | rd
     } else {
         // REV W: opc=10
-        (0b1011010110 << 21) | (0b000010 << 10)
-            | (rn << 5) | rd
+        (0b1011010110 << 21) | (0b000010 << 10) | (rn << 5) | rd
     }
 }
 
@@ -221,10 +254,9 @@ struct BranchTest {
 
 /// AArch64 register names for assembly generation.
 const XREG_NAME: [&str; 32] = [
-    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
-    "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
-    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23",
-    "x24", "x25", "x26", "x27", "x28", "x29", "x30", "sp",
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
+    "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21",
+    "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "sp",
 ];
 
 /// Generate assembly source for an ALU difftest.
@@ -273,9 +305,7 @@ fn gen_alu_asm(test: &AluTest) -> String {
     }
     // Save registers x0-x30 to save area
     for i in 0..31 {
-        asm.push_str(&format!(
-            "    str {}, [x3, #{}]\n", XREG_NAME[i], i * 8
-        ));
+        asm.push_str(&format!("    str {}, [x3, #{}]\n", XREG_NAME[i], i * 8));
     }
     // write(1, save_area, 248)
     asm.push_str(
@@ -339,9 +369,7 @@ fn gen_branch_asm(test: &BranchTest) -> String {
         test.asm
     ));
     for i in 0..31 {
-        asm.push_str(&format!(
-            "    str {}, [x3, #{}]\n", XREG_NAME[i], i * 8
-        ));
+        asm.push_str(&format!("    str {}, [x3, #{}]\n", XREG_NAME[i], i * 8));
     }
     asm.push_str(
         "    mov x8, #64\n\
@@ -364,8 +392,7 @@ fn gen_branch_asm(test: &BranchTest) -> String {
 fn run_qemu(asm_src: &str) -> [u64; 31] {
     let dir = std::env::temp_dir();
     let id = std::process::id();
-    let tid: u64 =
-        unsafe { std::mem::transmute(std::thread::current().id()) };
+    let tid: u64 = unsafe { std::mem::transmute(std::thread::current().id()) };
     let tag = format!("a64_difftest_{id}_{tid}");
     let s_path = dir.join(format!("{tag}.S"));
     let elf_path = dir.join(format!("{tag}.elf"));
@@ -411,9 +438,8 @@ fn run_qemu(asm_src: &str) -> [u64; 31] {
     let mut regs = [0u64; 31];
     for i in 0..31 {
         let off = i * 8;
-        regs[i] = u64::from_le_bytes(
-            qemu.stdout[off..off + 8].try_into().unwrap(),
-        );
+        regs[i] =
+            u64::from_le_bytes(qemu.stdout[off..off + 8].try_into().unwrap());
     }
 
     let _ = std::fs::remove_file(&s_path);
@@ -423,11 +449,8 @@ fn run_qemu(asm_src: &str) -> [u64; 31] {
 }
 
 /// Run instruction(s) through tcg-rs and return the CPU state.
-fn run_tcgrs(
-    init: &[(usize, u64)], insns: &[u32],
-) -> Aarch64Cpu {
-    let code: Vec<u8> =
-        insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+fn run_tcgrs(init: &[(usize, u64)], insns: &[u32]) -> Aarch64Cpu {
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
     let mut mem = vec![0u8; 4096];
     mem[..code.len()].copy_from_slice(&code);
     let guest_base = mem.as_ptr();
@@ -440,8 +463,7 @@ fn run_tcgrs(
     let mut ctx = Context::new();
     backend.init_context(&mut ctx);
 
-    let mut disas =
-        Aarch64DisasContext::new(0, guest_base);
+    let mut disas = Aarch64DisasContext::new(0, guest_base);
     disas.base.max_insns = insns.len() as u32;
     translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
 
@@ -554,11 +576,7 @@ fn difftest_sequence(
         asm.push_str("    mrs x4, nzcv\n");
     }
     for i in 0..31 {
-        asm.push_str(&format!(
-            "    str {}, [x3, #{}]\n",
-            XREG_NAME[i],
-            i * 8
-        ));
+        asm.push_str(&format!("    str {}, [x3, #{}]\n", XREG_NAME[i], i * 8));
     }
     asm.push_str(
         "    mov x8, #64\n\
@@ -609,8 +627,11 @@ const VPATTERN: u64 = 0xDEAD_BEEF_CAFE_BABE;
 
 /// Build an R-type ALU test (64-bit) with two source values.
 fn rtype64(
-    name: &'static str, mnemonic: &str, insn: u32,
-    v1: u64, v2: u64,
+    name: &'static str,
+    mnemonic: &str,
+    insn: u32,
+    v1: u64,
+    v2: u64,
 ) -> AluTest {
     AluTest {
         name,
@@ -624,8 +645,11 @@ fn rtype64(
 
 /// Build an R-type ALU test (32-bit) with two source values.
 fn rtype32(
-    name: &'static str, mnemonic: &str, insn: u32,
-    v1: u64, v2: u64,
+    name: &'static str,
+    mnemonic: &str,
+    insn: u32,
+    v1: u64,
+    v2: u64,
 ) -> AluTest {
     AluTest {
         name,
@@ -639,8 +663,11 @@ fn rtype32(
 
 /// Build a flag-setting R-type test (64-bit).
 fn rtype64_s(
-    name: &'static str, mnemonic: &str, insn: u32,
-    v1: u64, v2: u64,
+    name: &'static str,
+    mnemonic: &str,
+    insn: u32,
+    v1: u64,
+    v2: u64,
 ) -> AluTest {
     AluTest {
         name,
@@ -653,9 +680,7 @@ fn rtype64_s(
 }
 
 /// Build an immediate ALU test (64-bit).
-fn itype64(
-    name: &'static str, asm: &str, insn: u32, v1: u64,
-) -> AluTest {
+fn itype64(name: &'static str, asm: &str, insn: u32, v1: u64) -> AluTest {
     AluTest {
         name,
         asm: asm.to_string(),
@@ -671,144 +696,129 @@ fn itype64(
 #[test]
 fn a64_difftest_add() {
     let cases: Vec<(u64, u64)> = vec![
-        (V0, V0), (V1, VNEG1), (VMAX, V1),
-        (VMIN, VNEG1), (VPATTERN, V32FF),
+        (V0, V0),
+        (V1, VNEG1),
+        (VMAX, V1),
+        (VMIN, VNEG1),
+        (VPATTERN, V32FF),
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "add", "add", a64_add_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("add", "add", a64_add_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_sub() {
     let cases: Vec<(u64, u64)> = vec![
-        (V0, V0), (V0, V1), (VMIN, V1),
-        (VMAX, VNEG1), (VPATTERN, VPATTERN),
+        (V0, V0),
+        (V0, V1),
+        (VMIN, V1),
+        (VMAX, VNEG1),
+        (VPATTERN, VPATTERN),
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "sub", "sub", a64_sub_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("sub", "sub", a64_sub_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_and() {
     let cases: Vec<(u64, u64)> = vec![
-        (VNEG1, VNEG1), (VNEG1, V0),
-        (VPATTERN, V32FF), (0xFF00, 0x0FF0),
+        (VNEG1, VNEG1),
+        (VNEG1, V0),
+        (VPATTERN, V32FF),
+        (0xFF00, 0x0FF0),
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "and", "and", a64_and_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("and", "and", a64_and_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_orr() {
-    let cases: Vec<(u64, u64)> = vec![
-        (V0, V0), (VPATTERN, V0),
-        (0xF0F0, 0x0F0F), (VMIN, VMAX),
-    ];
+    let cases: Vec<(u64, u64)> =
+        vec![(V0, V0), (VPATTERN, V0), (0xF0F0, 0x0F0F), (VMIN, VMAX)];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "orr", "orr", a64_orr_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("orr", "orr", a64_orr_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_eor() {
     let cases: Vec<(u64, u64)> = vec![
-        (VNEG1, VNEG1), (VNEG1, V0),
-        (VPATTERN, VNEG1), (V32MAX, V32FF),
+        (VNEG1, VNEG1),
+        (VNEG1, V0),
+        (VPATTERN, VNEG1),
+        (V32MAX, V32FF),
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "eor", "eor", a64_eor_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("eor", "eor", a64_eor_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 #[ignore] // BUG: backend missing OrC opcode constraints in regalloc
 fn a64_difftest_orn() {
-    let cases: Vec<(u64, u64)> = vec![
-        (V0, V0), (V0, VNEG1), (VPATTERN, V32FF),
-    ];
+    let cases: Vec<(u64, u64)> = vec![(V0, V0), (V0, VNEG1), (VPATTERN, V32FF)];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "orn", "orn", a64_orn_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("orn", "orn", a64_orn_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_bic() {
-    let cases: Vec<(u64, u64)> = vec![
-        (VNEG1, V0), (VNEG1, VNEG1),
-        (VPATTERN, V32FF),
-    ];
+    let cases: Vec<(u64, u64)> =
+        vec![(VNEG1, V0), (VNEG1, VNEG1), (VPATTERN, V32FF)];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "bic", "bic", a64_bic_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("bic", "bic", a64_bic_r(1, 0, 1, 2), a, b));
     }
 }
 // ── Shift variable difftests ─────────────────────────────
 
 #[test]
 fn a64_difftest_lslv() {
-    let cases: Vec<(u64, u64)> = vec![
-        (V1, 0), (V1, 63), (VNEG1, 32),
-        (VPATTERN, 4), (V32MAX, 1),
-    ];
+    let cases: Vec<(u64, u64)> =
+        vec![(V1, 0), (V1, 63), (VNEG1, 32), (VPATTERN, 4), (V32MAX, 1)];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "lslv", "lsl", a64_lslv(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("lslv", "lsl", a64_lslv(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_lsrv() {
     let cases: Vec<(u64, u64)> = vec![
-        (VNEG1, 0), (VNEG1, 1), (VNEG1, 63),
-        (VPATTERN, 16), (VMIN, 32),
+        (VNEG1, 0),
+        (VNEG1, 1),
+        (VNEG1, 63),
+        (VPATTERN, 16),
+        (VMIN, 32),
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "lsrv", "lsr", a64_lsrv(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("lsrv", "lsr", a64_lsrv(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_asrv() {
     let cases: Vec<(u64, u64)> = vec![
-        (VNEG1, 0), (VNEG1, 1), (VNEG1, 63),
-        (VMIN, 32), (VMAX, 32), (VPATTERN, 8),
+        (VNEG1, 0),
+        (VNEG1, 1),
+        (VNEG1, 63),
+        (VMIN, 32),
+        (VMAX, 32),
+        (VPATTERN, 8),
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "asrv", "asr", a64_asrv(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("asrv", "asr", a64_asrv(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_rorv() {
-    let cases: Vec<(u64, u64)> = vec![
-        (VNEG1, 0), (V1, 1), (VPATTERN, 16),
-        (VMIN, 63),
-    ];
+    let cases: Vec<(u64, u64)> =
+        vec![(VNEG1, 0), (V1, 1), (VPATTERN, 16), (VMIN, 63)];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "rorv", "ror", a64_rorv(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("rorv", "ror", a64_rorv(1, 0, 1, 2), a, b));
     }
 }
 
@@ -818,8 +828,11 @@ fn a64_difftest_rorv() {
 fn a64_difftest_madd() {
     // MADD x0, x1, x2, xzr  =>  MUL x0, x1, x2
     let cases: Vec<(u64, u64)> = vec![
-        (V0, V0), (V1, VNEG1), (VMAX, 2),
-        (0x1234, 0x5678), (VMIN, 2),
+        (V0, V0),
+        (V1, VNEG1),
+        (VMAX, 2),
+        (0x1234, 0x5678),
+        (VMIN, 2),
     ];
     for (a, b) in cases {
         difftest_alu(&AluTest {
@@ -856,13 +869,14 @@ fn a64_difftest_msub() {
 #[test]
 fn a64_difftest_udiv() {
     let cases: Vec<(u64, u64)> = vec![
-        (100, 10), (VNEG1, 2), (V0, V1),
-        (VMAX, VMAX), (42, 0), // div by zero → 0
+        (100, 10),
+        (VNEG1, 2),
+        (V0, V1),
+        (VMAX, VMAX),
+        (42, 0), // div by zero → 0
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "udiv", "udiv", a64_udiv(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("udiv", "udiv", a64_udiv(1, 0, 1, 2), a, b));
     }
 }
 
@@ -889,14 +903,7 @@ fn a64_difftest_umulh() {
 
 #[test]
 fn a64_difftest_logical_imm_masks() {
-    let and_cases: Vec<u64> = vec![
-        0,
-        1,
-        7,
-        8,
-        0x1234_5678_9abc_def0,
-        VNEG1,
-    ];
+    let and_cases: Vec<u64> = vec![0, 1, 7, 8, 0x1234_5678_9abc_def0, VNEG1];
     for v in and_cases {
         difftest_alu(&AluTest {
             name: "and_imm_fff8",
@@ -1000,21 +1007,17 @@ fn a64_difftest_ccmp_nzcv_seq() {
     }
 }
 
-
-
 #[test]
 #[ignore] // BUG: helper_sdiv64 panics on i64::MIN / -1 (Rust overflow)
 fn a64_difftest_sdiv() {
     let cases: Vec<(u64, u64)> = vec![
         (100, 10),
-        (VNEG1, 2),     // -1 / 2 = 0
-        (VMIN, VNEG1),  // MIN / -1 = MIN (overflow)
-        (42, 0),        // div by zero → 0
+        (VNEG1, 2),    // -1 / 2 = 0
+        (VMIN, VNEG1), // MIN / -1 = MIN (overflow)
+        (42, 0),       // div by zero → 0
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64(
-            "sdiv", "sdiv", a64_sdiv(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64("sdiv", "sdiv", a64_sdiv(1, 0, 1, 2), a, b));
     }
 }
 
@@ -1022,36 +1025,26 @@ fn a64_difftest_sdiv() {
 
 #[test]
 fn a64_difftest_add_w() {
-    let cases: Vec<(u64, u64)> = vec![
-        (V32MAX, V1), (V0, V0), (VNEG1, V1),
-        (V32MIN, VNEG1),
-    ];
+    let cases: Vec<(u64, u64)> =
+        vec![(V32MAX, V1), (V0, V0), (VNEG1, V1), (V32MIN, VNEG1)];
     for (a, b) in cases {
-        difftest_alu(&rtype32(
-            "add_w", "add", a64_add_r(0, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype32("add_w", "add", a64_add_r(0, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_sub_w() {
-    let cases: Vec<(u64, u64)> = vec![
-        (V0, V1), (V32MIN, V1), (V1, V1),
-    ];
+    let cases: Vec<(u64, u64)> = vec![(V0, V1), (V32MIN, V1), (V1, V1)];
     for (a, b) in cases {
-        difftest_alu(&rtype32(
-            "sub_w", "sub", a64_sub_r(0, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype32("sub_w", "sub", a64_sub_r(0, 0, 1, 2), a, b));
     }
 }
 // ── Immediate ALU difftests ──────────────────────────────
 
 #[test]
 fn a64_difftest_add_imm() {
-    let cases: Vec<(u64, u32)> = vec![
-        (V0, 0), (V0, 4095), (VNEG1, 1),
-        (VMAX, 1), (VPATTERN, 100),
-    ];
+    let cases: Vec<(u64, u32)> =
+        vec![(V0, 0), (V0, 4095), (VNEG1, 1), (VMAX, 1), (VPATTERN, 100)];
     for (a, imm) in cases {
         difftest_alu(&itype64(
             "add_imm",
@@ -1064,10 +1057,8 @@ fn a64_difftest_add_imm() {
 
 #[test]
 fn a64_difftest_sub_imm() {
-    let cases: Vec<(u64, u32)> = vec![
-        (V0, 0), (VNEG1, 1), (VMAX, 4095),
-        (VPATTERN, 1),
-    ];
+    let cases: Vec<(u64, u32)> =
+        vec![(V0, 0), (VNEG1, 1), (VMAX, 4095), (VPATTERN, 1)];
     for (a, imm) in cases {
         difftest_alu(&itype64(
             "sub_imm",
@@ -1083,40 +1074,34 @@ fn a64_difftest_sub_imm() {
 #[test]
 fn a64_difftest_adds() {
     let cases: Vec<(u64, u64)> = vec![
-        (V0, V0),       // Z=1
-        (VMAX, V1),     // overflow → N=1, V=1
-        (VNEG1, V1),    // C=1, Z=1
-        (VMIN, VNEG1),  // C=1, V=1
-        (V1, V1),       // no flags
+        (V0, V0),      // Z=1
+        (VMAX, V1),    // overflow → N=1, V=1
+        (VNEG1, V1),   // C=1, Z=1
+        (VMIN, VNEG1), // C=1, V=1
+        (V1, V1),      // no flags
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64_s(
-            "adds", "adds", a64_adds_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64_s("adds", "adds", a64_adds_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_subs() {
     let cases: Vec<(u64, u64)> = vec![
-        (V0, V0),       // Z=1, C=1
-        (V0, V1),       // N=1
-        (VMIN, V1),     // V=1
-        (VMAX, VNEG1),  // N=1
-        (V1, V1),       // Z=1, C=1
+        (V0, V0),      // Z=1, C=1
+        (V0, V1),      // N=1
+        (VMIN, V1),    // V=1
+        (VMAX, VNEG1), // N=1
+        (V1, V1),      // Z=1, C=1
     ];
     for (a, b) in cases {
-        difftest_alu(&rtype64_s(
-            "subs", "subs", a64_subs_r(1, 0, 1, 2), a, b,
-        ));
+        difftest_alu(&rtype64_s("subs", "subs", a64_subs_r(1, 0, 1, 2), a, b));
     }
 }
 
 #[test]
 fn a64_difftest_adds_imm() {
-    let cases: Vec<(u64, u32)> = vec![
-        (V0, 0), (VNEG1, 1), (VMAX, 1),
-    ];
+    let cases: Vec<(u64, u32)> = vec![(V0, 0), (VNEG1, 1), (VMAX, 1)];
     for (a, imm) in cases {
         difftest_alu(&AluTest {
             name: "adds_imm",
@@ -1131,9 +1116,7 @@ fn a64_difftest_adds_imm() {
 
 #[test]
 fn a64_difftest_subs_imm() {
-    let cases: Vec<(u64, u32)> = vec![
-        (V0, 0), (V0, 1), (V1, 1), (VMIN, 1),
-    ];
+    let cases: Vec<(u64, u32)> = vec![(V0, 0), (V0, 1), (V1, 1), (VMIN, 1)];
     for (a, imm) in cases {
         difftest_alu(&AluTest {
             name: "subs_imm",
@@ -1171,16 +1154,17 @@ fn a64_difftest_ands() {
 #[test]
 fn a64_difftest_movz() {
     let cases: Vec<(u32, u32)> = vec![
-        (0x1234, 0), (0xFFFF, 0), (0xABCD, 1),
-        (0x5678, 2), (0x9ABC, 3),
+        (0x1234, 0),
+        (0xFFFF, 0),
+        (0xABCD, 1),
+        (0x5678, 2),
+        (0x9ABC, 3),
     ];
     for (imm16, hw) in cases {
         let expected = (imm16 as u64) << (hw * 16);
         difftest_alu(&AluTest {
             name: "movz",
-            asm: format!(
-                "movz x0, #0x{imm16:x}, lsl #{}", hw * 16
-            ),
+            asm: format!("movz x0, #0x{imm16:x}, lsl #{}", hw * 16),
             insn: a64_movz(1, 0, imm16, hw),
             init: vec![],
             check_reg: 0,
@@ -1206,9 +1190,7 @@ fn a64_difftest_movn() {
     for (imm16, hw) in cases {
         difftest_alu(&AluTest {
             name: "movn",
-            asm: format!(
-                "movn x0, #0x{imm16:x}, lsl #{}", hw * 16
-            ),
+            asm: format!("movn x0, #0x{imm16:x}, lsl #{}", hw * 16),
             insn: a64_movn(1, 0, imm16, hw),
             init: vec![],
             check_reg: 0,
@@ -1251,10 +1233,8 @@ fn a64_difftest_mov_w_zero_ext() {
         &[0],
         false,
     );
-    let cpu = run_tcgrs(
-        &[(0, 0xffff_ffff_ffff_ffff)],
-        &[a64_movk(0, 0, 0xabcd, 1)],
-    );
+    let cpu =
+        run_tcgrs(&[(0, 0xffff_ffff_ffff_ffff)], &[a64_movk(0, 0, 0xabcd, 1)]);
     assert_eq!(cpu.xregs[0], 0x0000_0000_abcd_ffff);
 
     difftest_sequence(
@@ -1265,10 +1245,8 @@ fn a64_difftest_mov_w_zero_ext() {
         &[0],
         false,
     );
-    let cpu = run_tcgrs(
-        &[(0, 0x0123_4567_89ab_cdef)],
-        &[a64_movn(0, 0, 0x0, 0)],
-    );
+    let cpu =
+        run_tcgrs(&[(0, 0x0123_4567_89ab_cdef)], &[a64_movn(0, 0, 0x0, 0)]);
     assert_eq!(cpu.xregs[0], 0x0000_0000_ffff_ffff);
 }
 
@@ -1276,9 +1254,8 @@ fn a64_difftest_mov_w_zero_ext() {
 
 #[test]
 fn a64_difftest_clz() {
-    let cases: Vec<u64> = vec![
-        V0, V1, VMAX, VMIN, VNEG1, 0x0000_0001_0000_0000,
-    ];
+    let cases: Vec<u64> =
+        vec![V0, V1, VMAX, VMIN, VNEG1, 0x0000_0001_0000_0000];
     for a in cases {
         difftest_alu(&AluTest {
             name: "clz",
@@ -1293,9 +1270,7 @@ fn a64_difftest_clz() {
 
 #[test]
 fn a64_difftest_rev() {
-    let cases: Vec<u64> = vec![
-        V0, VNEG1, 0x0102030405060708, VPATTERN,
-    ];
+    let cases: Vec<u64> = vec![V0, VNEG1, 0x0102030405060708, VPATTERN];
     for a in cases {
         difftest_alu(&AluTest {
             name: "rev",
@@ -1314,10 +1289,8 @@ fn a64_difftest_csel() {
     // CSEL depends on NZCV. We set flags via SUBS first,
     // then run CSEL. Two-instruction sequence.
     // SUBS xzr, x1, x2 (compare) then CSEL x0, x5, x6, EQ
-    let subs_cmp =
-        a64_subs_r(1, 31, 1, 2); // CMP x1, x2
-    let csel_eq =
-        a64_csel(1, 0, 5, 6, 0); // CSEL x0, x5, x6, EQ
+    let subs_cmp = a64_subs_r(1, 31, 1, 2); // CMP x1, x2
+    let csel_eq = a64_csel(1, 0, 5, 6, 0); // CSEL x0, x5, x6, EQ
 
     // Equal case: x1==x2 → select x5
     let cpu = run_tcgrs(
@@ -1378,8 +1351,7 @@ fn a64_tbz(_sf: u32, rt: u32, bit: u32, imm14: i32) -> u32 {
     let imm = ((imm14 >> 2) as u32) & 0x3FFF;
     let b5 = (bit >> 5) & 1;
     let b40 = bit & 0x1F;
-    (b5 << 31) | (0b0110110 << 24) | (b40 << 19)
-        | (imm << 5) | rt
+    (b5 << 31) | (0b0110110 << 24) | (b40 << 19) | (imm << 5) | rt
 }
 
 // TBNZ encoding: b5 0110111 b40 imm14 rt
@@ -1387,44 +1359,29 @@ fn a64_tbnz(_sf: u32, rt: u32, bit: u32, imm14: i32) -> u32 {
     let imm = ((imm14 >> 2) as u32) & 0x3FFF;
     let b5 = (bit >> 5) & 1;
     let b40 = bit & 0x1F;
-    (b5 << 31) | (0b0110111 << 24) | (b40 << 19)
-        | (imm << 5) | rt
+    (b5 << 31) | (0b0110111 << 24) | (b40 << 19) | (imm << 5) | rt
 }
 
 #[test]
 fn a64_difftest_cbz() {
     // CBZ x1, +16: if x1==0 → taken (pc=16), else pc=4
-    let cases: Vec<(u64, bool)> = vec![
-        (0, true), (1, false), (VNEG1, false), (VMIN, false),
-    ];
+    let cases: Vec<(u64, bool)> =
+        vec![(0, true), (1, false), (VNEG1, false), (VMIN, false)];
     for (val, expect_taken) in cases {
-        let cpu = run_tcgrs(
-            &[(1, val)],
-            &[a64_cbz(1, 1, 16)],
-        );
+        let cpu = run_tcgrs(&[(1, val)], &[a64_cbz(1, 1, 16)]);
         let taken = cpu.pc == 16;
-        assert_eq!(
-            taken, expect_taken,
-            "cbz x1={val:#x}: pc={:#x}", cpu.pc
-        );
+        assert_eq!(taken, expect_taken, "cbz x1={val:#x}: pc={:#x}", cpu.pc);
     }
 }
 
 #[test]
 fn a64_difftest_cbnz() {
-    let cases: Vec<(u64, bool)> = vec![
-        (0, false), (1, true), (VNEG1, true), (VMIN, true),
-    ];
+    let cases: Vec<(u64, bool)> =
+        vec![(0, false), (1, true), (VNEG1, true), (VMIN, true)];
     for (val, expect_taken) in cases {
-        let cpu = run_tcgrs(
-            &[(1, val)],
-            &[a64_cbnz(1, 1, 16)],
-        );
+        let cpu = run_tcgrs(&[(1, val)], &[a64_cbnz(1, 1, 16)]);
         let taken = cpu.pc == 16;
-        assert_eq!(
-            taken, expect_taken,
-            "cbnz x1={val:#x}: pc={:#x}", cpu.pc
-        );
+        assert_eq!(taken, expect_taken, "cbnz x1={val:#x}: pc={:#x}", cpu.pc);
     }
 }
 
@@ -1439,14 +1396,12 @@ fn a64_difftest_tbz() {
         (0, 63, true),
     ];
     for (val, bit, expect_taken) in cases {
-        let cpu = run_tcgrs(
-            &[(1, val)],
-            &[a64_tbz(1, 1, bit, 16)],
-        );
+        let cpu = run_tcgrs(&[(1, val)], &[a64_tbz(1, 1, bit, 16)]);
         let taken = cpu.pc == 16;
         assert_eq!(
             taken, expect_taken,
-            "tbz x1={val:#x} bit={bit}: pc={:#x}", cpu.pc
+            "tbz x1={val:#x} bit={bit}: pc={:#x}",
+            cpu.pc
         );
     }
 }
@@ -1461,14 +1416,12 @@ fn a64_difftest_tbnz() {
         (0, 63, false),
     ];
     for (val, bit, expect_taken) in cases {
-        let cpu = run_tcgrs(
-            &[(1, val)],
-            &[a64_tbnz(1, 1, bit, 16)],
-        );
+        let cpu = run_tcgrs(&[(1, val)], &[a64_tbnz(1, 1, bit, 16)]);
         let taken = cpu.pc == 16;
         assert_eq!(
             taken, expect_taken,
-            "tbnz x1={val:#x} bit={bit}: pc={:#x}", cpu.pc
+            "tbnz x1={val:#x} bit={bit}: pc={:#x}",
+            cpu.pc
         );
     }
 }
@@ -1481,49 +1434,141 @@ fn a64_difftest_bcond() {
     let beq = a64_bcond(0, 12); // +12 from bcond (pc=4+12=16)
 
     // Equal → taken
-    let cpu = run_tcgrs(
-        &[(1, 42), (2, 42)],
-        &[subs_cmp, beq],
-    );
+    let cpu = run_tcgrs(&[(1, 42), (2, 42)], &[subs_cmp, beq]);
     assert_eq!(cpu.pc, 16, "b.eq taken: pc={:#x}", cpu.pc);
 
     // Not equal → not taken
-    let cpu = run_tcgrs(
-        &[(1, 42), (2, 99)],
-        &[subs_cmp, beq],
-    );
+    let cpu = run_tcgrs(&[(1, 42), (2, 99)], &[subs_cmp, beq]);
     assert_eq!(cpu.pc, 8, "b.eq not taken: pc={:#x}", cpu.pc);
 
     // B.NE +12 (cond=1)
     let bne = a64_bcond(1, 12);
-    let cpu = run_tcgrs(
-        &[(1, 42), (2, 99)],
-        &[subs_cmp, bne],
-    );
+    let cpu = run_tcgrs(&[(1, 42), (2, 99)], &[subs_cmp, bne]);
     assert_eq!(cpu.pc, 16, "b.ne taken: pc={:#x}", cpu.pc);
 
     // B.LT +12 (cond=0b1011)
     let blt = a64_bcond(0b1011, 12);
     // -1 < 0 → taken (signed)
-    let cpu = run_tcgrs(
-        &[(1, VNEG1), (2, V0)],
-        &[subs_cmp, blt],
-    );
+    let cpu = run_tcgrs(&[(1, VNEG1), (2, V0)], &[subs_cmp, blt]);
     assert_eq!(cpu.pc, 16, "b.lt taken: pc={:#x}", cpu.pc);
 
     // 1 < 0 → not taken
-    let cpu = run_tcgrs(
-        &[(1, V1), (2, V0)],
-        &[subs_cmp, blt],
-    );
+    let cpu = run_tcgrs(&[(1, V1), (2, V0)], &[subs_cmp, blt]);
     assert_eq!(cpu.pc, 8, "b.lt not taken: pc={:#x}", cpu.pc);
+}
+
+#[test]
+fn a64_difftest_w_add_sub_then_cmp_x_zeroext() {
+    // Branchless equivalent of the 403.gcc probe-loop pattern:
+    //   add w0, w1, w2
+    //   cmp x5, x0
+    //   csinc w6, wzr, wzr, hi   ; x6=1 when HI is false
+    //   sub w0, w0, w5
+    //   mov x1, x0
+    //
+    // W writes must clear upper 32 bits before subsequent X users.
+    let insns = [
+        a64_add_r(0, 0, 1, 2),      // add w0, w1, w2
+        a64_subs_r(1, 31, 5, 0),    // cmp x5, x0
+        a64_csinc(0, 6, 31, 31, 8), // csinc w6, wzr, wzr, hi
+        a64_sub_r(0, 0, 0, 5),      // sub w0, w0, w5
+        a64_orr_r(1, 1, 0, 31),     // mov x1, x0
+    ];
+
+    difftest_sequence(
+        "w_add_sub_then_cmp_x_zeroext",
+        &[
+            (0, 0xdead_beef_0000_0000),
+            (1, 0x0000_0000_003f_ff80),
+            (2, 0x0000_0000_0000_0200),
+            (5, 0x0000_0000_003f_ff81),
+        ],
+        &insns,
+        "    add w0, w1, w2\n\
+         \x20   cmp x5, x0\n\
+         \x20   csinc w6, wzr, wzr, hi\n\
+         \x20   sub w0, w0, w5\n\
+         \x20   mov x1, x0\n",
+        &[0, 1, 6],
+        false,
+    );
+}
+
+#[test]
+fn a64_difftest_bhi_fallthrough_next_tb() {
+    // Same branch shape as the 403.gcc probe loop:
+    // add w0,w1,w2; cmp x5,x0; b.hi skip; sub w0,w0,w5; mov x1,x0; skip:
+    let insns = [
+        a64_add_r(0, 0, 1, 2),
+        a64_subs_r(1, 31, 5, 0),
+        a64_bcond(0b1000, 8), // b.hi -> skip sub+mov
+        a64_sub_r(0, 0, 0, 5),
+        a64_orr_r(1, 1, 0, 31),
+    ];
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 4096];
+    mem[..code.len()].copy_from_slice(&code);
+    let guest_base = mem.as_ptr();
+
+    let mut cpu = Aarch64Cpu::new();
+    cpu.xregs[0] = 0xdead_beef_0000_0000;
+    cpu.xregs[1] = 0x0000_0000_003f_ff80;
+    cpu.xregs[2] = 0x0000_0000_0000_0200;
+    cpu.xregs[5] = 0x0000_0000_003f_ff81;
+
+    // TB1: starts at pc=0, ends at B.cond exit.
+    {
+        let mut backend = X86_64CodeGen::new();
+        let mut buf = CodeBuffer::new(4096).unwrap();
+        backend.emit_prologue(&mut buf);
+        backend.emit_epilogue(&mut buf);
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(0, guest_base);
+        disas.base.max_insns = insns.len() as u32;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+        unsafe {
+            translate_and_execute(
+                &mut ctx,
+                &backend,
+                &mut buf,
+                &mut cpu as *mut Aarch64Cpu as *mut u8,
+            );
+        }
+    }
+
+    // HI should be false (x5 < x0 is false), so fallthrough to pc=12.
+    assert_eq!(cpu.pc, 12, "expected B.HI fallthrough");
+
+    // TB2: execute sub+mov at fallthrough.
+    {
+        let mut backend = X86_64CodeGen::new();
+        let mut buf = CodeBuffer::new(4096).unwrap();
+        backend.emit_prologue(&mut buf);
+        backend.emit_epilogue(&mut buf);
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(12, guest_base);
+        disas.base.max_insns = 4;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+        unsafe {
+            translate_and_execute(
+                &mut ctx,
+                &backend,
+                &mut buf,
+                &mut cpu as *mut Aarch64Cpu as *mut u8,
+            );
+        }
+    }
+
+    assert_eq!(cpu.xregs[0], 0x1ff, "sub w0,w0,w5 result");
+    assert_eq!(cpu.xregs[1], 0x1ff, "mov x1,x0 result");
 }
 
 // ── Load semantics difftests ─────────────────────────────
 
 fn translated_qemu_ld_memops(insns: &[u32]) -> Vec<u32> {
-    let code: Vec<u8> =
-        insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
     let mut mem = vec![0u8; 4096];
     mem[..code.len()].copy_from_slice(&code);
     let guest_base = mem.as_ptr();
