@@ -1810,6 +1810,10 @@ impl Aarch64DisasContext {
         if insn & 0xdf20_0400 == 0x5e20_0400 {
             return self.neon_scalar_3same(ir, insn);
         }
+        // AdvSIMD scalar shift by immediate: 01 U 111110 immh immb opcode 1 Rn Rd
+        if insn & 0xdf80_0400 == 0x5f00_0400 {
+            return self.neon_scalar_shift_imm(ir, insn);
+        }
         // FADDP scalar: 01 1 11110 sz 1 10000 01101 10 Rn Rd (mask 0xff3e0c00 == 0x7e300800)
         if insn & 0xff3e_0c00 == 0x7e30_0800 {
             let sz = (insn >> 22) & 1; // 0=f32, 1=f64
@@ -3232,6 +3236,38 @@ impl Aarch64DisasContext {
         false
     }
 
+    /// Scalar AdvSIMD shift-by-immediate: 01 U 111110 immh immb opcode 1 Rn Rd
+    fn neon_scalar_shift_imm(
+        &mut self,
+        ir: &mut Context,
+        insn: u32,
+    ) -> bool {
+        let u = (insn >> 29) & 1;
+        let immh = (insn >> 19) & 0xf;
+        let immb = (insn >> 16) & 0x7;
+        let opcode = (insn >> 11) & 0x1f;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+
+        // SHL Dd, Dn, #imm : U=0 opcode=01010 and 64-bit element class (immh=1xxx)
+        if u == 0 && opcode == 0b01010 && (immh & 0b1000) != 0 {
+            let immhb = (immh << 3) | immb;
+            if immhb < 64 {
+                return false;
+            }
+            let shift = (immhb - 64) as u64;
+            let src = self.read_vreg_lo(ir, rn);
+            let sh = ir.new_const(Type::I64, shift);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_call(d, helper_shl64 as u64, &[src, sh]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        false
+    }
+
     /// AdvSIMD three different (widening): 0 Q U 01110 size 1 Rm opcode 00 Rn Rd
     fn neon_3diff(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
@@ -3517,6 +3553,46 @@ impl Aarch64DisasContext {
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let r_hi = ir.new_temp(Type::I64);
                 ir.gen_call(r_hi, helper_vfmla32 as u64, &[d_hi, n_hi, scalar]);
+                self.write_vreg_hi(ir, rd, r_hi);
+            } else {
+                self.clear_vreg_hi(ir, rd);
+            }
+            return Some(true);
+        }
+        // FMUL .4S/.2S by element: U=0 size=10 opcode=1001
+        if u == 0 && size == 0b10 && opcode == 0b1001 {
+            let idx = ((h << 1) | l) as usize;
+            let vrm = (m << 4) as usize | rm;
+            let half = if idx < 2 {
+                self.read_vreg_lo(ir, vrm)
+            } else {
+                self.read_vreg_hi(ir, vrm)
+            };
+            let bit_off = (idx % 2) * 32;
+            let elem = ir.new_temp(Type::I64);
+            if bit_off > 0 {
+                let sh = ir.new_const(Type::I64, bit_off as u64);
+                ir.gen_shr(Type::I64, elem, half, sh);
+            } else {
+                ir.gen_mov(Type::I64, elem, half);
+            }
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, elem, elem, mask);
+            // Broadcast scalar into both 32-bit lanes.
+            let sh32 = ir.new_const(Type::I64, 32);
+            let scalar = ir.new_temp(Type::I64);
+            let hi_part = ir.new_temp(Type::I64);
+            ir.gen_shl(Type::I64, hi_part, elem, sh32);
+            ir.gen_or(Type::I64, scalar, elem, hi_part);
+
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let r_lo = ir.new_temp(Type::I64);
+            ir.gen_call(r_lo, helper_vfmul32 as u64, &[n_lo, scalar]);
+            self.write_vreg_lo(ir, rd, r_lo);
+            if q != 0 {
+                let n_hi = self.read_vreg_hi(ir, rn);
+                let r_hi = ir.new_temp(Type::I64);
+                ir.gen_call(r_hi, helper_vfmul32 as u64, &[n_hi, scalar]);
                 self.write_vreg_hi(ir, rd, r_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
