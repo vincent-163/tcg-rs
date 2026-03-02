@@ -793,6 +793,54 @@ fn a64_difftest_sub() {
 }
 
 #[test]
+fn a64_difftest_sbc_carry_in_64() {
+    // cmp x7, x8; sbc x0, x1, x2
+    let seq = [0xeb08_00ff_u32, 0xda02_0020_u32];
+    for (name, x7, x8, expected) in [
+        ("sbc64_c1", 5_u64, 4_u64, 0_u64),
+        ("sbc64_c0", 4_u64, 5_u64, u64::MAX),
+    ] {
+        let cpu = run_tcgrs(&[(1, 0), (2, 0), (7, x7), (8, x8)], &seq);
+        assert_eq!(
+            cpu.xregs[0], expected,
+            "unexpected sbc64 result for {name}"
+        );
+        difftest_sequence(
+            name,
+            &[(1, 0), (2, 0), (7, x7), (8, x8)],
+            &seq,
+            "    cmp x7, x8\n    sbc x0, x1, x2\n",
+            &[0],
+            false,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_sbc_carry_in_32() {
+    // cmp w7, w8; sbc w0, w1, w2
+    let seq = [0x6b08_00ff_u32, 0x5a02_0020_u32];
+    for (name, w7, w8, expected) in [
+        ("sbc32_c1", 5_u64, 4_u64, 0_u64),
+        ("sbc32_c0", 4_u64, 5_u64, 0xffff_ffff_u64),
+    ] {
+        let cpu = run_tcgrs(&[(1, 0), (2, 0), (7, w7), (8, w8)], &seq);
+        assert_eq!(
+            cpu.xregs[0], expected,
+            "unexpected sbc32 result for {name}"
+        );
+        difftest_sequence(
+            name,
+            &[(1, 0), (2, 0), (7, w7), (8, w8)],
+            &seq,
+            "    cmp w7, w8\n    sbc w0, w1, w2\n",
+            &[0],
+            false,
+        );
+    }
+}
+
+#[test]
 fn a64_difftest_sub_shifted_reg_patterns() {
     // Patterns seen in glibc strcmp.
     let neg_lsl3 = 0xcb01_0fe9u32; // neg x9, x1, lsl #3
