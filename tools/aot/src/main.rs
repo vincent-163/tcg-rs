@@ -430,7 +430,30 @@ fn run_profile(
     let arch = detect_arch(&elf_data);
     let (load_vaddr, load_file_offset) =
         parse_elf_load(&elf_data);
-    let min_exec_count = u64::from(profile.threshold.max(1));
+    let profile_min_exec_count =
+        u64::from(profile.threshold.max(1));
+    let min_exec_count = match env::var(
+        "TCG_AOT_MIN_EXEC_COUNT",
+    ) {
+        Ok(s) => {
+            let parsed = s.parse::<u64>().unwrap_or_else(
+                |_| {
+                    eprintln!(
+                        "[aot] invalid \
+                         TCG_AOT_MIN_EXEC_COUNT={s:?}"
+                    );
+                    process::exit(1);
+                },
+            );
+            eprintln!(
+                "[aot] override min_exec_count: \
+                 profile={} -> env={}",
+                profile_min_exec_count, parsed
+            );
+            parsed
+        }
+        Err(_) => profile_min_exec_count,
+    };
 
     eprintln!(
         "[aot] profile mode ({arch:?}): {} entries, \
