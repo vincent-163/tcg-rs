@@ -732,6 +732,59 @@ fn a64_difftest_sub() {
 }
 
 #[test]
+fn a64_difftest_sub_shifted_reg_patterns() {
+    // Patterns seen in glibc strcmp.
+    let neg_lsl3 = 0xcb01_0fe9u32; // neg x9, x1, lsl #3
+    for v in [0, 1, 6, 0x1234_5678_9abc_def0, VNEG1] {
+        difftest_sequence(
+            "neg_x_lsl3",
+            &[(1, v)],
+            &[neg_lsl3],
+            "    neg x9, x1, lsl #3\n",
+            &[9],
+            false,
+        );
+    }
+
+    let sub_lsr56 = 0xcb47_e040u32; // sub x0, x2, x7, lsr #56
+    for (x2, x7) in [
+        (0x1122_3344_5566_7788, 0x8877_6655_4433_2211),
+        (VNEG1, VMAX),
+        (0, VNEG1),
+        (VPATTERN, 0x0102_0304_0506_0708),
+    ] {
+        difftest_sequence(
+            "sub_x_lsr56",
+            &[(2, x2), (7, x7)],
+            &[sub_lsr56],
+            "    sub x0, x2, x7, lsr #56\n",
+            &[0],
+            false,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_neg_lsl3_then_lsrv_mask64() {
+    // strcmp uses:
+    //   neg x9, x1, lsl #3
+    //   lsr x6, x8, x9
+    // Shift amount must use low 6 bits of x9 (64-bit variable shift).
+    let seq = [0xcb01_0fe9u32, 0x9ac9_2506u32];
+    for low in 0u64..8 {
+        let x1 = 0x1234_5678_9abc_de00u64 | low;
+        difftest_sequence(
+            "neg_lsl3_then_lsrv_mask64",
+            &[(1, x1), (8, 0x0101_0101_0101_0101)],
+            &seq,
+            "    neg x9, x1, lsl #3\n    lsr x6, x8, x9\n",
+            &[6, 9],
+            false,
+        );
+    }
+}
+
+#[test]
 fn a64_difftest_and() {
     let cases: Vec<(u64, u64)> = vec![
         (VNEG1, VNEG1),
@@ -783,12 +836,41 @@ fn a64_difftest_bic() {
         difftest_alu(&rtype64("bic", "bic", a64_bic_r(1, 0, 1, 2), a, b));
     }
 }
+
+#[test]
+fn a64_difftest_bics() {
+    let cases: Vec<(u64, u64)> = vec![
+        (VNEG1, V0),
+        (VNEG1, VNEG1),
+        (VPATTERN, V32FF),
+        (0x0101_0101_0101_0101, 0x7f7f_7f7f_7f7f_7f7f),
+    ];
+    for (a, b) in cases {
+        difftest_alu(&AluTest {
+            name: "bics",
+            asm: "bics x0, x1, x2".to_string(),
+            insn: 0xea22_0020, // bics x0, x1, x2
+            init: vec![(1, a), (2, b)],
+            check_reg: 0,
+            check_nzcv: true,
+        });
+    }
+}
 // ── Shift variable difftests ─────────────────────────────
 
 #[test]
 fn a64_difftest_lslv() {
     let cases: Vec<(u64, u64)> =
-        vec![(V1, 0), (V1, 63), (VNEG1, 32), (VPATTERN, 4), (V32MAX, 1)];
+        vec![
+            (V1, 0),
+            (V1, 63),
+            (VNEG1, 32),
+            (VPATTERN, 4),
+            (V32MAX, 1),
+            (VPATTERN, 64),
+            (VPATTERN, 65),
+            (VPATTERN, 0xffff_ffff_ffff_ffff),
+        ];
     for (a, b) in cases {
         difftest_alu(&rtype64("lslv", "lsl", a64_lslv(1, 0, 1, 2), a, b));
     }
@@ -802,6 +884,9 @@ fn a64_difftest_lsrv() {
         (VNEG1, 63),
         (VPATTERN, 16),
         (VMIN, 32),
+        (VPATTERN, 64),
+        (VPATTERN, 65),
+        (VPATTERN, 0xffff_ffff_ffff_ffff),
     ];
     for (a, b) in cases {
         difftest_alu(&rtype64("lsrv", "lsr", a64_lsrv(1, 0, 1, 2), a, b));
@@ -817,6 +902,9 @@ fn a64_difftest_asrv() {
         (VMIN, 32),
         (VMAX, 32),
         (VPATTERN, 8),
+        (VPATTERN, 64),
+        (VPATTERN, 65),
+        (VPATTERN, 0xffff_ffff_ffff_ffff),
     ];
     for (a, b) in cases {
         difftest_alu(&rtype64("asrv", "asr", a64_asrv(1, 0, 1, 2), a, b));
@@ -826,7 +914,15 @@ fn a64_difftest_asrv() {
 #[test]
 fn a64_difftest_rorv() {
     let cases: Vec<(u64, u64)> =
-        vec![(VNEG1, 0), (V1, 1), (VPATTERN, 16), (VMIN, 63)];
+        vec![
+            (VNEG1, 0),
+            (V1, 1),
+            (VPATTERN, 16),
+            (VMIN, 63),
+            (VPATTERN, 64),
+            (VPATTERN, 65),
+            (VPATTERN, 0xffff_ffff_ffff_ffff),
+        ];
     for (a, b) in cases {
         difftest_alu(&rtype64("rorv", "ror", a64_rorv(1, 0, 1, 2), a, b));
     }
@@ -932,6 +1028,26 @@ fn a64_difftest_logical_imm_masks() {
         check_reg: 0,
         check_nzcv: false,
     });
+
+    // Masks used by glibc strcmp hot path.
+    for v in [0, 1, VNEG1, VPATTERN, 0x0102_0304_0506_0708] {
+        difftest_alu(&AluTest {
+            name: "orr_imm_7f7f",
+            asm: "orr x6, x2, #0x7f7f7f7f7f7f7f7f".to_string(),
+            insn: 0xb200_d846,
+            init: vec![(2, v)],
+            check_reg: 6,
+            check_nzcv: false,
+        });
+    }
+    difftest_alu(&AluTest {
+        name: "mov_imm_0101",
+        asm: "mov x8, #0x0101010101010101".to_string(),
+        insn: 0xb200_c3e8,
+        init: vec![],
+        check_reg: 8,
+        check_nzcv: false,
+    });
 }
 
 #[test]
@@ -1034,6 +1150,34 @@ fn a64_difftest_ccmp_i_false_path_followed_by_cset() {
             &seq,
             "    cmp x19, #0\n    ccmp w0, #0, #4, eq\n    cset w5, eq\n",
             &[5],
+            true,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_ccmp_after_bics_eq_gate() {
+    // Pattern used by glibc strcmp hot loop:
+    //   bics x4, x4, x6
+    //   ccmp x2, x3, #0, eq
+    //   cset w0, eq
+    //
+    // ccmp must consume Z from the prior logic-flags producer.
+    let seq = [0xea26_0084u32, 0xfa47_0040u32, a64_csinc(0, 0, 31, 31, 1)];
+    let cases: Vec<(u64, u64, u64, u64)> = vec![
+        (5, 5, 0x10, 0x10), // bics Z=1, x2==x3 => 1
+        (5, 7, 0x10, 0x10), // bics Z=1, x2!=x3 => 0
+        (5, 5, 0x11, 0x10), // bics Z=0 => ccmp false path => 0
+        (9, 9, 0x0, 0xffff_ffff_ffff_ffff), // bics Z=1 path
+        (9, 8, 0x0, 0xffff_ffff_ffff_ffff),
+    ];
+    for (x2, x7, x4, x6) in cases {
+        difftest_sequence(
+            "ccmp_after_bics_eq_gate",
+            &[(2, x2), (7, x7), (4, x4), (6, x6)],
+            &seq,
+            "    bics x4, x4, x6\n    ccmp x2, x7, #0, eq\n    cset w0, eq\n",
+            &[0],
             true,
         );
     }
@@ -1159,6 +1303,38 @@ fn a64_difftest_subs_imm() {
             check_nzcv: true,
         });
     }
+}
+
+#[test]
+fn a64_difftest_add_sub_ext_w_semantics() {
+    // 32-bit extended-register ops must truncate to W operands and
+    // zero-extend results, while SUBS still updates NZCV from W math.
+    let seq = [
+        0x0b22_4020u32, // add  w0,  w1,  w2,  uxtw
+        0x4b25_c08cu32, // sub  w12, w4,  w5,  sxtw
+        0x2b28_40e6u32, // adds w6,  w7,  w8,  uxtw
+        0x6b2b_c149u32, // subs w9,  w10, w11, sxtw
+    ];
+    difftest_sequence(
+        "add_sub_ext_w_semantics",
+        &[
+            (1, 0xffff_ffff_0000_0010),
+            (2, 0xffff_ffff_ffff_fff0),
+            (4, 5),
+            (5, 0xffff_ffff_8000_0000),
+            (7, 0xffff_ffff_7fff_ffff),
+            (8, 1),
+            (10, 1),
+            (11, 0xffff_ffff_8000_0000),
+        ],
+        &seq,
+        "    add w0, w1, w2, uxtw\n\
+         \x20   sub w12, w4, w5, sxtw\n\
+         \x20   adds w6, w7, w8, uxtw\n\
+         \x20   subs w9, w10, w11, sxtw\n",
+        &[0, 6, 9, 12],
+        true,
+    );
 }
 
 #[test]

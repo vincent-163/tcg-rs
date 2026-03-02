@@ -31,15 +31,20 @@ fn eval_cond(a: u64, b: u64, cond: Cond, ty: Type) -> bool {
     let mask = type_mask(ty);
     let a = a & mask;
     let b = b & mask;
+    let (a_s, b_s) = if ty == Type::I32 {
+        (a as u32 as i32 as i64, b as u32 as i32 as i64)
+    } else {
+        (a as i64, b as i64)
+    };
     match cond {
         Cond::Always => true,
         Cond::Never => false,
         Cond::Eq => a == b,
         Cond::Ne => a != b,
-        Cond::Lt => (a as i64) < (b as i64),
-        Cond::Ge => (a as i64) >= (b as i64),
-        Cond::Le => (a as i64) <= (b as i64),
-        Cond::Gt => (a as i64) > (b as i64),
+        Cond::Lt => a_s < b_s,
+        Cond::Ge => a_s >= b_s,
+        Cond::Le => a_s <= b_s,
+        Cond::Gt => a_s > b_s,
         Cond::Ltu => a < b,
         Cond::Geu => a >= b,
         Cond::Leu => a <= b,
@@ -313,8 +318,16 @@ fn fold_mov(
     let si = ti(info, src);
     if si.is_const {
         set_const(info, dst, si.val & type_mask(ty));
-    } else {
+    } else if ctx.temp(dst).ty == ty
+        && ctx.temp(src).ty == ty
+        && ctx.temp(src).is_global_or_fixed()
+    {
+        // Restrict non-const copy tracking to readonly sources.
+        // This avoids invalid substitutions on aliases/newreg ops when
+        // the copied source temp can still be clobbered within the EBB.
         set_copy(info, dst, src);
+    } else {
+        invalidate_one(info, dst);
     }
     // Keep the mov as-is; liveness/DCE will clean up.
     let _ = (ctx, op_idx);
@@ -354,27 +367,8 @@ fn fold_ext(
     args: [TempIdx; tcg_core::MAX_OP_ARGS],
 ) {
     let dst = args[0];
-    let src = args[1];
-    let si = ti(info, src);
-    if !si.is_const {
-        invalidate_one(info, dst);
-        return;
-    }
-    let val = match opc {
-        Opcode::ExtI32I64 => {
-            // sign-extend i32 -> i64
-            (si.val as u32 as i32 as i64) as u64
-        }
-        Opcode::ExtUI32I64 => si.val & 0xFFFF_FFFF,
-        Opcode::ExtrlI64I32 => si.val & 0xFFFF_FFFF,
-        Opcode::ExtrhI64I32 => (si.val >> 32) & 0xFFFF_FFFF,
-        _ => unreachable!(),
-    };
-    let out_ty = match opc {
-        Opcode::ExtI32I64 | Opcode::ExtUI32I64 => Type::I64,
-        _ => Type::I32,
-    };
-    replace_with_const(ctx, info, op_idx, dst, val, out_ty);
+    let _ = (ctx, op_idx, opc, args);
+    invalidate_one(info, dst);
 }
 
 /// Binary arithmetic/logic ops.
@@ -631,5 +625,18 @@ fn invalidate_one(info: &mut Vec<TempInfo>, dst: TempIdx) {
         if ti.copy_of == Some(dst) {
             ti.copy_of = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eval_cond_i32_signed_compare_sign_extends() {
+        // 0xFFFFFF88 is -120 as i32; compare against +178.
+        assert!(eval_cond(0xFFFF_FF88, 178, Cond::Lt, Type::I32));
+        assert!(!eval_cond(0xFFFF_FF88, 178, Cond::Gt, Type::I32));
+        assert!(!eval_cond(0xFFFF_FF88, 178, Cond::Ge, Type::I32));
     }
 }

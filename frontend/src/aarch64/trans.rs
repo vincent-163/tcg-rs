@@ -7401,27 +7401,41 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Move wide immediate --
 
     fn trans_MOVZ(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
+        let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let val = (a.imm as u64) << (a.hw * 16);
-        let c = ir.new_const(Type::I64, val);
-        self.write_xreg(ir, a.rd, c);
+        let c = ir.new_const(ty, val);
+        self.write_xreg_sz(ir, a.rd, c, sf);
         true
     }
 
     fn trans_MOVK(&mut self, ir: &mut Context, a: &ArgsRi16) -> bool {
+        let sf = a.sf != 0;
         if a.rd == 31 {
             return true;
         }
+        let ty = Self::sf_type(sf);
         let shift = a.hw * 16;
-        let mask = !(0xffffu64 << shift);
+        let mask = if sf {
+            !(0xffffu64 << shift)
+        } else {
+            (!(0xffffu64 << shift)) & 0xffff_ffff
+        };
         let bits = (a.imm as u64) << shift;
-        let old = self.xregs[a.rd as usize];
-        let m = ir.new_const(Type::I64, mask);
-        let t = ir.new_temp(Type::I64);
-        ir.gen_and(Type::I64, t, old, m);
-        let b = ir.new_const(Type::I64, bits);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_or(Type::I64, d, t, b);
-        self.write_xreg(ir, a.rd, d);
+        let old = if sf {
+            self.xregs[a.rd as usize]
+        } else {
+            let t = ir.new_temp(Type::I32);
+            ir.gen_extrl_i64_i32(t, self.xregs[a.rd as usize]);
+            t
+        };
+        let m = ir.new_const(ty, mask);
+        let t = ir.new_temp(ty);
+        ir.gen_and(ty, t, old, m);
+        let b = ir.new_const(ty, bits);
+        let d = ir.new_temp(ty);
+        ir.gen_or(ty, d, t, b);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
@@ -7914,47 +7928,64 @@ impl Decode<Context> for Aarch64DisasContext {
     // -- Add/Sub extended register --
 
     fn trans_ADD_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let _sf = a.sf != 0;
+        let sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
+        let src2 = Self::trunc32(ir, src2, sf);
         let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext, sf);
         let d = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, d, src1, ext);
-        self.write_xreg_sp(ir, a.rd, d);
+        let d = Self::trunc32(ir, d, sf);
+        self.write_xreg_sp_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_SUB_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
+        let sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
+        let src2 = Self::trunc32(ir, src2, sf);
         let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext, sf);
         let d = ir.new_temp(Type::I64);
         ir.gen_sub(Type::I64, d, src1, ext);
-        self.write_xreg_sp(ir, a.rd, d);
+        let d = Self::trunc32(ir, d, sf);
+        self.write_xreg_sp_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_ADDS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let _sf = a.sf != 0;
+        let sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
+        let src2 = Self::trunc32(ir, src2, sf);
         let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext, sf);
         let d = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, d, src1, ext);
-        self.gen_nzcv_add_sub(ir, src1, ext, d, true, false);
-        self.write_xreg(ir, a.rd, d);
+        let d = Self::trunc32(ir, d, sf);
+        self.gen_nzcv_add_sub(ir, src1, ext, d, sf, false);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_SUBS_ext(&mut self, ir: &mut Context, a: &ArgsExtReg) -> bool {
-        let _sf = a.sf != 0;
+        let sf = a.sf != 0;
         let src1 = self.read_xreg_sp(ir, a.rn);
+        let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
+        let src2 = Self::trunc32(ir, src2, sf);
         let ext = Self::extend_reg(ir, src2, a.option, a.imm);
+        let ext = Self::trunc32(ir, ext, sf);
         let d = ir.new_temp(Type::I64);
         ir.gen_sub(Type::I64, d, src1, ext);
-        self.gen_nzcv_add_sub(ir, src1, ext, d, true, true);
-        self.write_xreg(ir, a.rd, d);
+        let d = Self::trunc32(ir, d, sf);
+        self.gen_nzcv_add_sub(ir, src1, ext, d, sf, true);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
@@ -8508,6 +8539,11 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
+        if a.sf != 0 {
+            // W destination form: sign-extend to 32, then clear upper 32 bits.
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8517,6 +8553,11 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if a.sf != 0 {
+            // W destination form: sign-extend to 32, then clear upper 32 bits.
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8604,6 +8645,11 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_reg(ir, a.rn, a.rm, a.option, shift);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if a.sf != 0 {
+            // W destination form: sign-extend to 32, then clear upper 32 bits.
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -8775,6 +8821,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
+        if a.sf != 0 {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -8783,6 +8833,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if a.sf != 0 {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -8825,6 +8879,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, base, MemOp::sb().bits() as u32);
+        if a.sf != 0 {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         let wb = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, wb);
@@ -8834,6 +8892,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let base = self.read_xreg_sp(ir, a.rn);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, base, MemOp::sw().bits() as u32);
+        if a.sf != 0 {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         let wb = self.compute_addr_imm(ir, a.rn, a.imm);
         self.write_xreg_sp(ir, a.rn, wb);
@@ -9138,6 +9200,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sw().bits() as u32);
+        if a.sf != 0 {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
@@ -9146,6 +9212,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let addr = self.compute_addr_imm(ir, a.rn, a.imm);
         let d = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d, addr, MemOp::sb().bits() as u32);
+        if a.sf != 0 {
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            ir.gen_and(Type::I64, d, d, mask);
+        }
         self.write_xreg(ir, a.rd, d);
         true
     }
