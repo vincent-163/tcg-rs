@@ -1929,6 +1929,36 @@ fn a64_difftest_scvtf_d_w_fixedpoint_scale1() {
     assert_eq!(cpu.pc, 4);
 }
 
+#[test]
+fn a64_difftest_fmul_v2s_by_element() {
+    // fmul v2.2s, v2.2s, v0.s[0]
+    let insn = 0x0f80_9042u32;
+    let n0 = 2.0f32.to_bits() as u64;
+    let n1 = (-3.0f32).to_bits() as u64;
+    let n = n0 | (n1 << 32);
+    let s0 = 0.5f32.to_bits() as u64;
+    let m = s0;
+
+    let cpu = run_tcgrs_with_state(&[], &[(2, n, 0), (0, m, 0)], &[insn]);
+
+    let out = cpu.vregs[2 * 2];
+    let want0 = 1.0f32.to_bits() as u64;
+    let want1 = (-1.5f32).to_bits() as u64;
+    let want = want0 | (want1 << 32);
+    assert_eq!(out, want);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_shl_d_imm3() {
+    // shl d0, d0, #3
+    let insn = 0x5f43_5400u32;
+    let cpu = run_tcgrs_with_state(&[], &[(0, 5, 0)], &[insn]);
+
+    assert_eq!(cpu.vregs[0], 40);
+    assert_eq!(cpu.pc, 4);
+}
+
 // ── Load semantics difftests ─────────────────────────────
 
 fn translated_qemu_ld_memops(insns: &[u32]) -> Vec<u32> {
