@@ -729,11 +729,11 @@ fn compile_aot(
     }
     eprintln!("[aot] IR dumped to {ll_path}");
 
-    // Run O2 optimization
-    eprintln!("[aot] running O2 optimization...");
+    // Run O3 optimization
+    eprintln!("[aot] running O3 optimization...");
     unsafe {
         let opts = LLVMCreatePassBuilderOptions();
-        let passes = c"default<O2>";
+        let passes = c"default<O3>";
         let err =
             LLVMRunPasses(module, passes.as_ptr(), tm, opts);
         if !err.is_null() {
