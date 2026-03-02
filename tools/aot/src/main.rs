@@ -432,6 +432,12 @@ fn run_profile(
         parse_elf_load(&elf_data);
     let profile_min_exec_count =
         u64::from(profile.threshold.max(1));
+    let arch_default_min_exec_count = match arch {
+        Arch::Aarch64 => 25,
+        Arch::Riscv64 => profile_min_exec_count,
+    };
+    let default_min_exec_count = profile_min_exec_count
+        .max(arch_default_min_exec_count);
     let min_exec_count = match env::var(
         "TCG_AOT_MIN_EXEC_COUNT",
     ) {
@@ -452,8 +458,17 @@ fn run_profile(
             );
             parsed
         }
-        Err(_) => profile_min_exec_count,
+        Err(_) => default_min_exec_count,
     };
+    if min_exec_count == default_min_exec_count
+        && min_exec_count != profile_min_exec_count
+    {
+        eprintln!(
+            "[aot] applying default min_exec_count floor \
+             for {arch:?}: profile={} -> default={}",
+            profile_min_exec_count, min_exec_count
+        );
+    }
 
     eprintln!(
         "[aot] profile mode ({arch:?}): {} entries, \
