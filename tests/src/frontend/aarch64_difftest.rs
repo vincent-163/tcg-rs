@@ -1018,6 +1018,28 @@ fn a64_difftest_ccmp_nzcv_seq() {
 }
 
 #[test]
+fn a64_difftest_ccmp_i_false_path_followed_by_cset() {
+    // Pattern from SPEC 403.gcc:
+    //   cmp  x19, #0
+    //   ccmp w0, #0, #4, eq
+    //   cset w5, eq
+    // When cmp is not equal, CCMP must force NZCV from immediate #4 (Z=1),
+    // and cset w5, eq must produce 1.
+    let seq = [a64_subs_imm(1, 31, 19, 0), 0x7a40_0804, a64_csinc(0, 5, 31, 31, 1)];
+    let cases: Vec<(u64, u64)> = vec![(1, 1), (1, 0), (0, 1), (0, 0)];
+    for (x19, x0) in cases {
+        difftest_sequence(
+            "ccmp_i_false_path_followed_by_cset",
+            &[(19, x19), (0, x0)],
+            &seq,
+            "    cmp x19, #0\n    ccmp w0, #0, #4, eq\n    cset w5, eq\n",
+            &[5],
+            true,
+        );
+    }
+}
+
+#[test]
 #[ignore] // BUG: helper_sdiv64 panics on i64::MIN / -1 (Rust overflow)
 fn a64_difftest_sdiv() {
     let cases: Vec<(u64, u64)> = vec![
