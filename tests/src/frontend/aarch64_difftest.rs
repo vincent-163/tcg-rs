@@ -1919,6 +1919,16 @@ fn a64_difftest_scvtf_v2s_decode() {
     assert_eq!(cpu.pc, 4);
 }
 
+#[test]
+fn a64_difftest_scvtf_d_w_fixedpoint_scale1() {
+    // scvtf d13, w1, #1
+    let insn = 0x1e42_fc2du32;
+    let cpu = run_tcgrs_with_state(&[(1, 3)], &[], &[insn]);
+
+    assert_eq!(cpu.vregs[13 * 2], 1.5f64.to_bits());
+    assert_eq!(cpu.pc, 4);
+}
+
 // ── Load semantics difftests ─────────────────────────────
 
 fn translated_qemu_ld_memops(insns: &[u32]) -> Vec<u32> {

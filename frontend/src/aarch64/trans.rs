@@ -2676,6 +2676,52 @@ impl Aarch64DisasContext {
             self.clear_vreg_hi(ir, rd);
             return Some(true);
         }
+        // SCVTF/UCVTF fixed-point (scalar):
+        //   scvtf d,w,#fbits : 0x1e42_0000 (masked by 0xff7f_0000)
+        //   scvtf d,x,#fbits : 0x9e42_0000
+        //   scvtf s,w,#fbits : 0x1e02_0000
+        //   scvtf s,x,#fbits : 0x9e02_0000
+        //   ucvtf d,w,#fbits : 0x1e43_0000
+        //   ucvtf d,x,#fbits : 0x9e43_0000
+        //   ucvtf s,w,#fbits : 0x1e03_0000
+        //   ucvtf s,x,#fbits : 0x9e03_0000
+        //
+        // scale = bits[15:10], fbits = 64 - scale.
+        // Exercised by SPEC2006 gobmk: scvtf d13, w1, #1 (0x1e42fc2d).
+        let int_to_fp_fix = insn & 0xff7f_0000;
+        if int_to_fp_fix == 0x1e42_0000
+            || int_to_fp_fix == 0x9e42_0000
+            || int_to_fp_fix == 0x1e02_0000
+            || int_to_fp_fix == 0x9e02_0000
+            || int_to_fp_fix == 0x1e43_0000
+            || int_to_fp_fix == 0x9e43_0000
+            || int_to_fp_fix == 0x1e03_0000
+            || int_to_fp_fix == 0x9e03_0000
+        {
+            let scale = ((insn >> 10) & 0x3f) as u64;
+            if scale == 0 || scale > 64 {
+                return Some(false);
+            }
+            let fbits = 64 - scale;
+            let src = self.read_xreg(ir, rn as i64);
+            let fb = ir.new_const(Type::I64, fbits);
+            let d = ir.new_temp(Type::I64);
+            let helper = match int_to_fp_fix {
+                0x1e42_0000 => helper_scvtf_d_w_fixed as u64,
+                0x9e42_0000 => helper_scvtf_d_x_fixed as u64,
+                0x1e02_0000 => helper_scvtf_s_w_fixed as u64,
+                0x9e02_0000 => helper_scvtf_s_x_fixed as u64,
+                0x1e43_0000 => helper_ucvtf_d_w_fixed as u64,
+                0x9e43_0000 => helper_ucvtf_d_x_fixed as u64,
+                0x1e03_0000 => helper_ucvtf_s_w_fixed as u64,
+                0x9e03_0000 => helper_ucvtf_s_x_fixed as u64,
+                _ => unreachable!(),
+            };
+            ir.gen_call(d, helper, &[src, fb]);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return Some(true);
+        }
         // FCVTZS/FCVTZU fixed-point (scalar):
         //   fcvtzs w,s,#fbits : 0x1e18_0000 (masked by 0xff3f_0000)
         //   fcvtzu w,s,#fbits : 0x1e19_0000
@@ -5328,6 +5374,38 @@ unsafe extern "C" fn helper_ucvtf_s_w(a: u64) -> u64 {
 }
 unsafe extern "C" fn helper_ucvtf_s_x(a: u64) -> u64 {
     (a as f32).to_bits() as u64
+}
+unsafe extern "C" fn helper_scvtf_d_w_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f64).powi(fbits as i32);
+    (((a as u32 as i32) as f64) / scale).to_bits()
+}
+unsafe extern "C" fn helper_scvtf_d_x_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f64).powi(fbits as i32);
+    ((a as i64) as f64 / scale).to_bits()
+}
+unsafe extern "C" fn helper_ucvtf_d_w_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f64).powi(fbits as i32);
+    ((a as u32) as f64 / scale).to_bits()
+}
+unsafe extern "C" fn helper_ucvtf_d_x_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f64).powi(fbits as i32);
+    (a as f64 / scale).to_bits()
+}
+unsafe extern "C" fn helper_scvtf_s_w_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f32).powi(fbits as i32);
+    (((a as u32 as i32) as f32) / scale).to_bits() as u64
+}
+unsafe extern "C" fn helper_scvtf_s_x_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f32).powi(fbits as i32);
+    ((a as i64) as f32 / scale).to_bits() as u64
+}
+unsafe extern "C" fn helper_ucvtf_s_w_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f32).powi(fbits as i32);
+    ((a as u32) as f32 / scale).to_bits() as u64
+}
+unsafe extern "C" fn helper_ucvtf_s_x_fixed(a: u64, fbits: u64) -> u64 {
+    let scale = (2.0f32).powi(fbits as i32);
+    (a as f32 / scale).to_bits() as u64
 }
 // Single-precision: integer-in-Sn register to float-in-Sd
 unsafe extern "C" fn helper_scvtf_s_s(a: u64) -> u64 {
