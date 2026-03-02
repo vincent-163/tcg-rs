@@ -1727,13 +1727,19 @@ impl Aarch64DisasContext {
         // CMGE d,d,#0 (U=1 size=11 opcode=01000) / CMGT d,d,#0 (U=0 size=11 opcode=01000)
         // CMLE d,d,#0 (U=1 size=11 opcode=01001) / CMEQ d,d,#0 (U=0 size=11 opcode=01001)
         // CMLT d,d,#0 (U=0 size=11 opcode=01010)
-        // SCVTF scalar (s,s) / SCVTF scalar (d,d): opcode=11101, size=00→single, size=11→double
+        // SCVTF scalar (s,s) / SCVTF scalar (d,d): opcode=11101.
+        // In this AdvSIMD scalar encoding, size=00 => 32-bit, size=01 => 64-bit.
         if insn & 0xdf3e_0c00 == 0x5e20_0800 {
             let u = (insn >> 29) & 1;
             let size = (insn >> 22) & 3;
             let opcode = (insn >> 12) & 0x1f;
             let rn = ((insn >> 5) & 0x1f) as usize;
             let rd = (insn & 0x1f) as usize;
+            let is_64 = match size {
+                0b00 => false,
+                0b01 => true,
+                _ => return false,
+            };
             let src = self.read_vreg_lo(ir, rn);
             let zero = ir.new_const(Type::I64, 0);
             let d = ir.new_temp(Type::I64);
@@ -1762,7 +1768,7 @@ impl Aarch64DisasContext {
                 }
                 (1, 0b11101) => {
                     // UCVTF scalar: int-in-reg → float
-                    let helper = if size == 0b11 {
+                    let helper = if is_64 {
                         helper_ucvtf_d_x as u64
                     } else {
                         helper_ucvtf_s_s as u64
@@ -1775,7 +1781,7 @@ impl Aarch64DisasContext {
                 }
                 (0, 0b11101) => {
                     // SCVTF scalar: int-in-reg → float
-                    let helper = if size == 0b11 {
+                    let helper = if is_64 {
                         helper_scvtf_d_d as u64
                     } else {
                         helper_scvtf_s_s as u64
@@ -1784,7 +1790,7 @@ impl Aarch64DisasContext {
                 }
                 (0, 0b11011) => {
                     // FCVTZS scalar: float → int (truncate toward zero)
-                    let helper = if size == 0b11 {
+                    let helper = if is_64 {
                         helper_fcvtzs_x_d as u64
                     } else {
                         helper_fcvtzs_w_s as u64
@@ -1793,7 +1799,7 @@ impl Aarch64DisasContext {
                 }
                 (1, 0b11011) => {
                     // FCVTZU scalar: float → uint (truncate toward zero)
-                    let helper = if size == 0b11 {
+                    let helper = if is_64 {
                         helper_fcvtzu_x_d as u64
                     } else {
                         helper_fcvtzu_w_s as u64
