@@ -462,6 +462,8 @@ fn run_tcgrs(init: &[(usize, u64)], insns: &[u32]) -> Aarch64Cpu {
     let guest_base = mem.as_ptr();
 
     let mut backend = X86_64CodeGen::new();
+    backend.guest_base_offset =
+        tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
     let mut buf = CodeBuffer::new(4096).unwrap();
     backend.emit_prologue(&mut buf);
     backend.emit_epilogue(&mut buf);
@@ -524,6 +526,7 @@ fn run_tcgrs_with_state(
     translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
 
     let mut cpu = Aarch64Cpu::new();
+    cpu.guest_base = guest_base as u64;
     for &(reg, val) in x_init {
         if reg < 31 {
             cpu.xregs[reg] = val;
@@ -2270,4 +2273,56 @@ fn a64_difftest_ldrs_w_vs_x_masking() {
     assert!(!has_mask_after_ld(0x7980_04a4)); // ldrsh x4, [x5, #2]
     assert!(!has_mask_after_ld(0x38bf_c8a7)); // ldrsb x7, [x5, wzr, sxtw]
     assert!(!has_mask_after_ld(0x78aa_d8a9)); // ldrsh x9, [x5, w10, sxtw #1]
+}
+
+#[test]
+fn a64_difftest_ldr_reg_scaled_offset() {
+    fn shl_consts(insns: &[u32]) -> Vec<u64> {
+        let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+        let mut mem = vec![0u8; 4096];
+        mem[..code.len()].copy_from_slice(&code);
+        let guest_base = mem.as_ptr();
+
+        let backend = X86_64CodeGen::new();
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(0, guest_base);
+        disas.base.max_insns = insns.len() as u32;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+
+        let mut out = Vec::new();
+        for op in ctx.ops() {
+            if op.opc != Opcode::Shl {
+                continue;
+            }
+            let iargs = op.iargs();
+            if iargs.len() != 2 {
+                continue;
+            }
+            let sh = ctx.temp(iargs[1]);
+            if sh.is_const() {
+                out.push(sh.val);
+            }
+        }
+        out
+    }
+
+    // ldr w0, [x1, x2, lsl #2]
+    let shls_w = shl_consts(&[0xb862_7820u32]);
+    assert!(
+        shls_w.contains(&2),
+        "expected scaled LDR W reg-offset to emit shl #2, got {shls_w:?}"
+    );
+    // ldrh w3, [x4, x5, lsl #1]
+    let shls_h = shl_consts(&[0x7865_7883u32]);
+    assert!(
+        shls_h.contains(&1),
+        "expected scaled LDRH reg-offset to emit shl #1, got {shls_h:?}"
+    );
+    // ldr x6, [x7, x8, lsl #3]
+    let shls_x = shl_consts(&[0xf868_78e6u32]);
+    assert!(
+        shls_x.contains(&3),
+        "expected scaled LDR X reg-offset to emit shl #3, got {shls_x:?}"
+    );
 }

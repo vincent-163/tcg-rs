@@ -21,6 +21,7 @@
 %sf22     22:1
 %shift    22:2
 %option   13:3
+%sbit     12:1
 %imm3     10:3
 %imm9     12:s9
 %imm7     15:s7
@@ -189,25 +190,25 @@ STRH_i      01 11 1001 00 ............ ..... .....  &ldst_imm sf=0 opc_lo=1 imm=
 
 # *** Loads - register offset ***
 LDR_r       1 . 11 1000 01 1 ..... ... . 10 ..... ..... \
-            &ldst_reg sf=%sf30 opc_lo=0 %rm option=%option shift=0 %rn %rd
+            &ldst_reg sf=%sf30 opc_lo=0 %rm option=%option shift=%sbit %rn %rd
 LDRB_r      00 11 1000 01 1 ..... ... . 10 ..... ..... \
             &ldst_reg sf=0 opc_lo=0 %rm option=%option shift=0 %rn %rd
 LDRH_r      01 11 1000 01 1 ..... ... . 10 ..... ..... \
-            &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=0 %rn %rd
+            &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=%sbit %rn %rd
 LDRSH_r     01 11 1000 1 . 1 ..... ... . 10 ..... ..... \
-            &ldst_reg sf=%sf22 opc_lo=3 %rm option=%option shift=0 %rn %rd
+            &ldst_reg sf=%sf22 opc_lo=3 %rm option=%option shift=%sbit %rn %rd
 LDRSW_r     10 11 1000 10 1 ..... ... . 10 ..... ..... \
-            &ldst_reg sf=1 opc_lo=2 %rm option=%option shift=0 %rn %rd
+            &ldst_reg sf=1 opc_lo=2 %rm option=%option shift=%sbit %rn %rd
 LDRSB_r     00 11 1000 1 . 1 ..... ... . 10 ..... ..... \
             &ldst_reg sf=%sf22 opc_lo=2 %rm option=%option shift=0 %rn %rd
 
 # *** Stores - register offset ***
 STR_r       1 . 11 1000 00 1 ..... ... . 10 ..... ..... \
-            &ldst_reg sf=%sf30 opc_lo=0 %rm option=%option shift=0 %rn %rd
+            &ldst_reg sf=%sf30 opc_lo=0 %rm option=%option shift=%sbit %rn %rd
 STRB_r      00 11 1000 00 1 ..... ... . 10 ..... ..... \
             &ldst_reg sf=0 opc_lo=0 %rm option=%option shift=0 %rn %rd
 STRH_r      01 11 1000 00 1 ..... ... . 10 ..... ..... \
-            &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=0 %rn %rd
+            &ldst_reg sf=0 opc_lo=1 %rm option=%option shift=%sbit %rn %rd
 
 # *** Loads - PC-relative literal ***
 LDR_lit     . . 011 000 ................... .....  &ldst_lit sf=%sf30 opc_lo=0 imm=%imm19 %rd
