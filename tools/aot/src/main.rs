@@ -488,7 +488,7 @@ fn run_profile(
         profile.entries.len()
     );
 
-    let selected_entries: Vec<_> = profile
+    let mut selected_entries: Vec<_> = profile
         .entries
         .iter()
         .copied()
@@ -509,11 +509,49 @@ fn run_profile(
         process::exit(1);
     }
 
+    // Deterministic hotness order for optional prefix selection:
+    // sort by exec_count descending, then file_offset ascending.
+    selected_entries.sort_by(|a, b| {
+        b.exec_count
+            .cmp(&a.exec_count)
+            .then_with(|| a.file_offset.cmp(&b.file_offset))
+    });
+
+    let prefix_limit = match env::var("TCG_AOT_PROFILE_PREFIX") {
+        Ok(s) => {
+            let parsed = s.parse::<usize>().unwrap_or_else(|_| {
+                eprintln!("[aot] invalid TCG_AOT_PROFILE_PREFIX={s:?}");
+                process::exit(1);
+            });
+            if parsed == 0 {
+                eprintln!(
+                    "[aot] invalid TCG_AOT_PROFILE_PREFIX={s:?} (must be >= 1)"
+                );
+                process::exit(1);
+            }
+            Some(parsed)
+        }
+        Err(_) => None,
+    };
+    if let Some(limit) = prefix_limit {
+        let before = selected_entries.len();
+        if limit < before {
+            selected_entries.truncate(limit);
+            eprintln!(
+                "[aot] applying hot-TB prefix: top {} of {} entries",
+                limit, before
+            );
+        } else if limit > before {
+            eprintln!(
+                "[aot] hot-TB prefix {} exceeds selected entries {}; keeping all",
+                limit, before
+            );
+        }
+    }
+
     // Determine which TBs to export vs keep internal
-    let export_set: HashSet<u64> = profile
-        .entries
+    let export_set: HashSet<u64> = selected_entries
         .iter()
-        .filter(|e| e.exec_count > min_exec_count)
         .filter(|e| ProfileData::should_export(e))
         .map(|e| e.file_offset)
         .collect();
