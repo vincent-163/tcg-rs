@@ -80,10 +80,8 @@ fn effective_max_insns(
     let mut max_insns = if single_step { 1 } else { max_insns };
     if let Some(v) = max_insns_override {
         max_insns = v.max(1);
-    } else {
-        max_insns = max_insns.min(AARCH64_SAFE_MAX_INSNS);
     }
-    max_insns
+    max_insns.min(AARCH64_SAFE_MAX_INSNS)
 }
 
 impl GuestCpu for LinuxCpu {
@@ -507,11 +505,15 @@ mod tests {
         );
         assert_eq!(
             effective_max_insns(true, 32, Some(6)),
-            6
+            AARCH64_SAFE_MAX_INSNS
         );
         assert_eq!(
             effective_max_insns(false, 32, Some(1)),
             1
+        );
+        assert_eq!(
+            effective_max_insns(false, 32, Some(99)),
+            AARCH64_SAFE_MAX_INSNS
         );
     }
 }
