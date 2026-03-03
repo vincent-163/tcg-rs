@@ -108,21 +108,6 @@ cd "$RUN_DIR"
 $TCG_A64 ./mcf_base.aarch64.Ofast.cogbt inp.in > inp.out 2> inp.err
 ```
 
-### 3.4 AOT hot-prefix bisect (debugging)
-
-`tcg-aot` supports limiting profile-guided AOT to the top-N hottest TBs
-after the usual `min_exec_count` filter:
-
-```bash
-TCG_AOT_PROFILE_PREFIX=<N> ./target/release/tcg-aot <profile.bin> <elf> -o /tmp/aot.o
-```
-
-- Ordering is deterministic: `exec_count` descending, then `file_offset` ascending.
-- This is intended for correctness bisection: run with increasing prefixes (`1, 2, 4, ...`)
-  or binary search to find the first failing prefix.
-- If even prefix `1` fails, the issue is likely not caused only by “too many AOT TBs”
-  (for example, it may already reproduce in shared JIT/runtime paths).
-
 ## 4. Current AArch64 benchmark status
 
 - CoreMark executes successfully.
