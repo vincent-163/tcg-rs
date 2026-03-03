@@ -2589,3 +2589,271 @@ fn a64_difftest_ldp_w_hotspot_runtime() {
     assert_eq!(cpu.xregs[4], 0xffff_ffff);
     assert_eq!(cpu.pc, 4);
 }
+
+#[test]
+fn a64_difftest_ldrh_w_reg_offset_rd_alias_rm_runtime() {
+    // 0x786778a7: ldrh w7, [x5, x7, lsl #1]
+    // Alias case (rd == rm) must use old index value from x7.
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(5, 0x200), (7, 3)],
+        &[0x7867_78a7],
+        &[(0x206, 0x34), (0x207, 0x12)],
+    );
+    assert_eq!(cpu.xregs[7], 0x1234);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrb_preindex_writeback_runtime() {
+    // 0x38401c01: ldrb w1, [x0, #1]!
+    // Pre-indexed addressing must update base and read from updated address.
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(0, 0x200), (1, 0xffff_ffff_ffff_ffff)],
+        &[0x3840_1c01],
+        &[(0x201, 0xab)],
+    );
+    assert_eq!(cpu.xregs[0], 0x201);
+    assert_eq!(cpu.xregs[1], 0xab);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_cmp_w_uxtb_hotspot_flags() {
+    // 0x6b20017f: cmp w11, w0, uxtb
+    // Hot-path compare in 401.bzip2 (`cmp w11, w0, uxtb`).
+    difftest_sequence(
+        "cmp_w_uxtb_hotspot_flags",
+        &[(0, 0x1234_56f8), (11, 0x80)],
+        &[0x6b20_017f],
+        "    cmp w11, w0, uxtb\n",
+        &[],
+        true,
+    );
+}
+
+#[test]
+fn a64_difftest_add_x_uxtb_lsl2_hotspot() {
+    // 0x8b220a62: add x2, x19, w2, uxtb #2
+    // Hot-path address computation in 401.bzip2.
+    difftest_sequence(
+        "add_x_uxtb_lsl2_hotspot",
+        &[(2, 0xffff_ffff_ffff_00ff), (19, 0x1000)],
+        &[0x8b22_0a62],
+        "    add x2, x19, w2, uxtb #2\n",
+        &[2],
+        false,
+    );
+}
+
+#[test]
+fn a64_difftest_strh_ldrh_sxtw_roundtrip_runtime() {
+    // 0x7824db01: strh w1, [x24, w4, sxtw #1]
+    // 0x7864db02: ldrh w2, [x24, w4, sxtw #1]
+    // Validate SXTW-indexed halfword store/load roundtrip.
+    let cpu = run_tcgrs_with_guest_mem(
+        &[
+            (24, 0x200),
+            (4, 0xffff_ffff), // w4 = -1 => offset -2 with sxtw #1
+            (1, 0xabcd),
+        ],
+        &[0x7824_db01, 0x7864_db02],
+        &[],
+    );
+    assert_eq!(cpu.xregs[2], 0xabcd);
+    assert_eq!(cpu.xregs[24], 0x200);
+    assert_eq!(cpu.pc, 8);
+}
+
+#[test]
+fn a64_difftest_add_x_sxtw_lsl2_hotspot() {
+    // 0x8b25cb8e: add x14, x28, w5, sxtw #2
+    difftest_sequence(
+        "add_x_sxtw_lsl2_hotspot",
+        &[(28, 0x1000), (5, 0xffff_ffff_ffff_fffe)],
+        &[0x8b25_cb8e],
+        "    add x14, x28, w5, sxtw #2\n",
+        &[14],
+        false,
+    );
+}
+
+#[test]
+fn a64_difftest_cmp_uxtb_then_csel_mi_hotspot() {
+    // 0x6b20017f: cmp  w11, w0, uxtb
+    // 0x1a8040a0: csel w0,  w5,  w0, mi
+    // If N=1 after cmp, CSEL selects w3.
+    difftest_sequence(
+        "cmp_uxtb_then_csel_mi_hotspot_taken",
+        &[(0, 0x80), (5, 0x1234_5678), (11, 0)],
+        &[0x6b20_017f, 0x1a80_40a0],
+        "    cmp w11, w0, uxtb\n    csel w0, w5, w0, mi\n",
+        &[0],
+        true,
+    );
+}
+
+#[test]
+fn a64_difftest_cmp_uxtb_then_csel_mi_hotspot_not_taken() {
+    // Same sequence, but N=0 so CSEL keeps original w0.
+    difftest_sequence(
+        "cmp_uxtb_then_csel_mi_hotspot_not_taken",
+        &[(0, 0x80), (5, 0x1234_5678), (11, 0x90)],
+        &[0x6b20_017f, 0x1a80_40a0],
+        "    cmp w11, w0, uxtb\n    csel w0, w5, w0, mi\n",
+        &[0],
+        true,
+    );
+}
+
+#[test]
+fn a64_difftest_ldr_w_uxtw_indexed_hotspot_runtime() {
+    // 0xb86959c0: ldr w0, [x14, w9, uxtw #2]
+    let mut bytes = Vec::new();
+    for (i, b) in 0xcafe_babeu32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x204usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(14, 0x200), (9, 0xffff_ffff_0000_0001)],
+        &[0xb869_59c0],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[0], 0xcafe_babe);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_str_ldr_w_lsl_indexed_roundtrip_runtime() {
+    // 0xb8307823: str w3, [x1, x16, lsl #2]
+    // 0xb8707820: ldr w0, [x1, x16, lsl #2]
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(1, 0x200), (16, 2), (3, 0xdead_beef)],
+        &[0xb830_7823, 0xb870_7820],
+        &[],
+    );
+    assert_eq!(cpu.xregs[0], 0xdead_beef);
+    assert_eq!(cpu.pc, 8);
+}
+
+#[test]
+fn a64_difftest_umov_w_from_h_lane_runtime() {
+    // 0x0e023c00: umov w0, v0.h[0]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(0, 0x1234_5678_9abc_def0, 0)],
+        &[0x0e02_3c00],
+    );
+    assert_eq!(cpu.xregs[0], 0xdef0);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_dup_v2_2d_from_x0_runtime() {
+    // 0x4e080c02: dup v2.2d, x0
+    let cpu = run_tcgrs_with_state(
+        &[(0, 0x1122_3344_5566_7788)],
+        &[],
+        &[0x4e08_0c02],
+    );
+    assert_eq!(cpu.vregs[2 * 2], 0x1122_3344_5566_7788);
+    assert_eq!(cpu.vregs[2 * 2 + 1], 0x1122_3344_5566_7788);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_cmeq_v0_4s_zero_runtime() {
+    // 0x4ea09800: cmeq v0.4s, v0.4s, #0
+    // Input lanes: [0, 1, 0xffffffff, 0]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(0, 0x0000_0001_0000_0000, 0x0000_0000_ffff_ffff)],
+        &[0x4ea0_9800],
+    );
+    // Output lanes: [0xffffffff, 0, 0, 0xffffffff]
+    assert_eq!(cpu.vregs[0], 0x0000_0000_ffff_ffff);
+    assert_eq!(cpu.vregs[1], 0xffff_ffff_0000_0000);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_uxtl2_v4_4s_from_v4_8h_runtime() {
+    // 0x6f10a484: uxtl2 v4.4s, v4.8h
+    // High halfword lanes [4..7] become 32-bit lanes [0..3].
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(4, 0xdddd_cccc_bbbb_aaaa, 0xffff_8000_7fff_0001)],
+        &[0x6f10_a484],
+    );
+    assert_eq!(cpu.vregs[4 * 2], 0x0000_7fff_0000_0001);
+    assert_eq!(cpu.vregs[4 * 2 + 1], 0x0000_ffff_0000_8000);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_dup_st1_lane_store_runtime() {
+    // 0x4e040d21: dup v1.4s, w9
+    // 0x0d009081: st1 {v1.s}[1], [x4]
+    // 0xb940008a: ldr w10, [x4]
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(4, 0x200), (9, 0x1234_5678)],
+        &[0x4e04_0d21, 0x0d00_9081, 0xb940_008a],
+        &[],
+    );
+    assert_eq!(cpu.xregs[10], 0x1234_5678);
+    assert_eq!(cpu.pc, 12);
+}
+
+#[test]
+fn a64_difftest_cmge_v3_4s_runtime() {
+    // 0x4ea73c63: cmge v3.4s, v3.4s, v7.4s (signed >=)
+    // v3 lanes: [1, -1, 5, -6]
+    // v7 lanes: [0, -2, 6, -6]
+    // result : [0xffffffff, 0xffffffff, 0x0, 0xffffffff]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (3, 0xffff_ffff_0000_0001, 0xffff_fffa_0000_0005),
+            (7, 0xffff_fffe_0000_0000, 0xffff_fffa_0000_0006),
+        ],
+        &[0x4ea7_3c63],
+    );
+    assert_eq!(cpu.vregs[3 * 2], 0xffff_ffff_ffff_ffff);
+    assert_eq!(cpu.vregs[3 * 2 + 1], 0xffff_ffff_0000_0000);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_smin_v4_4s_runtime() {
+    // 0x4ea56c84: smin v4.4s, v4.4s, v5.4s
+    // v4 lanes: [1, -1, 5, -6]
+    // v5 lanes: [0, -2, 6, -7]
+    // result : [0, -2, 5, -7]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (4, 0xffff_ffff_0000_0001, 0xffff_fffa_0000_0005),
+            (5, 0xffff_fffe_0000_0000, 0xffff_fff9_0000_0006),
+        ],
+        &[0x4ea5_6c84],
+    );
+    assert_eq!(cpu.vregs[4 * 2], 0xffff_fffe_0000_0000);
+    assert_eq!(cpu.vregs[4 * 2 + 1], 0xffff_fff9_0000_0005);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_shl_v1_4s_imm8_runtime() {
+    // 0x4f285401: shl v1.4s, v0.4s, #8
+    // Shift each 32-bit lane left by 8 (wrapping in 32-bit lane width).
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(0, 0x0102_0304_7fff_ff00, 0x8000_0001_0000_00ff)],
+        &[0x4f28_5401],
+    );
+    // lane0: 0x7fffff00 << 8 -> 0xffff0000
+    // lane1: 0x01020304 << 8 -> 0x02030400
+    // lane2: 0x000000ff << 8 -> 0x0000ff00
+    // lane3: 0x80000001 << 8 -> 0x00000100
+    assert_eq!(cpu.vregs[1 * 2], 0x0203_0400_ffff_0000);
+    assert_eq!(cpu.vregs[1 * 2 + 1], 0x0000_0100_0000_ff00);
+    assert_eq!(cpu.pc, 4);
+}
