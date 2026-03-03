@@ -2260,6 +2260,42 @@ fn a64_difftest_fcmgt_d_d_zero_decode() {
 }
 
 #[test]
+fn a64_difftest_fcmp_s_uses_single_precision_bits() {
+    // fcmp s0, s1
+    let insn = 0x1e21_2000u32;
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, (-1.0f32).to_bits() as u64, 0),
+            (1, 0.5f32.to_bits() as u64, 0),
+        ],
+        &[insn],
+    );
+
+    // -1.0f < 0.5f => N=1, Z=0, C=0, V=0
+    assert_eq!(cpu.nzcv, 0x8000_0000);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_fcmpe_s_uses_single_precision_bits() {
+    // fcmpe s0, s1
+    let insn = 0x1e21_2010u32;
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 1.25f32.to_bits() as u64, 0),
+            (1, 1.25f32.to_bits() as u64, 0),
+        ],
+        &[insn],
+    );
+
+    // equal => N=0, Z=1, C=1, V=0
+    assert_eq!(cpu.nzcv, 0x6000_0000);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
 fn a64_difftest_fcvtzs_s_s_decode() {
     // fcvtzs s8, s8
     let insn = 0x5ea1_b908u32;

@@ -2601,7 +2601,12 @@ impl Aarch64DisasContext {
                 self.read_vreg_lo(ir, rm)
             };
             let d = ir.new_temp(Type::I64);
-            ir.gen_call(d, helper_fcmp64 as u64, &[a, b]);
+            let helper = if is_double {
+                helper_fcmp64 as u64
+            } else {
+                helper_fcmp32 as u64
+            };
+            ir.gen_call(d, helper, &[a, b]);
             self.set_nzcv_eager(ir, d);
             return Some(true);
         }
