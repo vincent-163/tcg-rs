@@ -514,6 +514,8 @@ fn run_tcgrs_with_state(
     let guest_base = mem.as_ptr();
 
     let mut backend = X86_64CodeGen::new();
+    backend.guest_base_offset =
+        tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
     let mut buf = CodeBuffer::new(4096).unwrap();
     backend.emit_prologue(&mut buf);
     backend.emit_epilogue(&mut buf);
@@ -1249,6 +1251,122 @@ fn a64_difftest_msub() {
             check_reg: 0,
             check_nzcv: false,
         });
+    }
+}
+
+#[test]
+fn a64_difftest_umaddl() {
+    // 0x9ba21020: umaddl x0, w1, w2, x4
+    for (name, w1, w2, x3) in [
+        ("umaddl_zeroext_small", 3_u64, 7_u64, 11_u64),
+        ("umaddl_zeroext_highbits", 0xffff_ffff_ffff_fffe, 5, 9),
+        (
+            "umaddl_zeroext_wrap",
+            0xffff_ffff_ffff_fffe,
+            0xffff_ffff_ffff_fffd,
+            5,
+        ),
+    ] {
+        difftest_sequence(
+            name,
+            &[(1, w1), (2, w2), (4, x3)],
+            &[0x9ba2_1020],
+            "    umaddl x0, w1, w2, x4\n",
+            &[0],
+            false,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_umsubl() {
+    // 0x9ba6a0a4: umsubl x4, w5, w6, x8
+    for (name, w5, w6, x7) in [
+        ("umsubl_zeroext_small", 3_u64, 7_u64, 100_u64),
+        ("umsubl_zeroext_highbits", 0xffff_ffff_ffff_fffe, 5, 9),
+        (
+            "umsubl_zeroext_wrap",
+            0xffff_ffff_ffff_fffe,
+            0xffff_ffff_ffff_fffd,
+            5,
+        ),
+    ] {
+        difftest_sequence(
+            name,
+            &[(5, w5), (6, w6), (8, x7)],
+            &[0x9ba6_a0a4],
+            "    umsubl x4, w5, w6, x8\n",
+            &[4],
+            false,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_smaddl() {
+    // 0x9b2a3128: smaddl x8, w9, w10, x12
+    for (name, w9, w10, x11) in [
+        ("smaddl_signed_small", 3_u64, 7_u64, 11_u64),
+        ("smaddl_signed_neg", 0xffff_ffff_ffff_fffe, 5, 9),
+        (
+            "smaddl_signed_both_neg",
+            0xffff_ffff_ffff_fffe,
+            0xffff_ffff_ffff_fffd,
+            5,
+        ),
+    ] {
+        difftest_sequence(
+            name,
+            &[(9, w9), (10, w10), (12, x11)],
+            &[0x9b2a_3128],
+            "    smaddl x8, w9, w10, x12\n",
+            &[8],
+            false,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_smsubl() {
+    // 0x9b2ec1ac: smsubl x12, w13, w14, x16
+    for (name, w13, w14, x15) in [
+        ("smsubl_signed_small", 3_u64, 7_u64, 100_u64),
+        ("smsubl_signed_neg", 0xffff_ffff_ffff_fffe, 5, 9),
+        (
+            "smsubl_signed_both_neg",
+            0xffff_ffff_ffff_fffe,
+            0xffff_ffff_ffff_fffd,
+            5,
+        ),
+    ] {
+        difftest_sequence(
+            name,
+            &[(13, w13), (14, w14), (16, x15)],
+            &[0x9b2e_c1ac],
+            "    smsubl x12, w13, w14, x16\n",
+            &[12],
+            false,
+        );
+    }
+}
+
+#[test]
+fn a64_difftest_smull_alias() {
+    // Hot scalar pattern from SPEC401:
+    // 0x9b307ca0: smull x0, w5, w16  (alias of smaddl with xzr accumulator)
+    for (name, w5, w16) in [
+        ("smull_pos", 7_u64, 9_u64),
+        ("smull_neg_lhs", 0xffff_ffff_ffff_fffe, 9_u64),
+        ("smull_neg_both", 0xffff_ffff_ffff_fffe, 0xffff_ffff_ffff_fffd),
+    ] {
+        difftest_sequence(
+            name,
+            &[(5, w5), (16, w16)],
+            &[0x9b30_7ca0],
+            "    smull x0, w5, w16\n",
+            &[0],
+            false,
+        );
     }
 }
 
@@ -2800,6 +2918,82 @@ fn a64_difftest_dup_st1_lane_store_runtime() {
     );
     assert_eq!(cpu.xregs[10], 0x1234_5678);
     assert_eq!(cpu.pc, 12);
+}
+
+#[test]
+fn a64_difftest_st1_s_lane_2_3_runtime() {
+    // Hot pattern from SPEC401/BZ2_compressBlock:
+    // 0x4d008068: st1 {v8.s}[2], [x3]
+    // 0x4d009048: st1 {v8.s}[3], [x2]
+    // Follow with scalar loads to validate stored lanes.
+    let cpu = run_tcgrs_with_state(
+        &[(2, 0x204), (3, 0x200)],
+        &[(8, 0x2222_2222_1111_1111, 0x4444_4444_3333_3333)],
+        &[0x4d00_8068, 0xb940_006a, 0x4d00_9048, 0xb940_004b],
+    );
+    assert_eq!(cpu.xregs[10], 0x3333_3333);
+    assert_eq!(cpu.xregs[11], 0x4444_4444);
+    assert_eq!(cpu.pc, 16);
+}
+
+#[test]
+fn a64_difftest_uxtl2_v1_8h_alias_runtime() {
+    // Hot pattern from SPEC401/BZ2_compressBlock:
+    // 0x6f08a421: uxtl2 v1.8h, v1.16b
+    // Takes high 8 bytes of v1 and widens to 8x16-bit.
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(1, 0x0807_0605_0403_0201, 0x1817_1615_1413_1211)],
+        &[0x6f08_a421],
+    );
+    assert_eq!(cpu.vregs[1 * 2], 0x0014_0013_0012_0011);
+    assert_eq!(cpu.vregs[1 * 2 + 1], 0x0018_0017_0016_0015);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_shll2_v16_4s_alias_runtime() {
+    // Hot pattern from SPEC401/BZ2_compressBlock:
+    // 0x6e613a10: shll2 v16.4s, v16.8h, #16
+    // Takes high 4 halfwords of v16, widens to 4x32, then <<16.
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(16, 0x0004_0003_0002_0001, 0x1234_abcd_8000_7fff)],
+        &[0x6e61_3a10],
+    );
+    assert_eq!(cpu.vregs[16 * 2], 0x8000_0000_7fff_0000);
+    assert_eq!(cpu.vregs[16 * 2 + 1], 0x1234_0000_abcd_0000);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_uzp1_v16b_runtime() {
+    // Hot pattern from SPEC401:
+    // 0x4e1c1827: uzp1 v7.16b, v1.16b, v28.16b
+    // Result should be even-indexed bytes from v1 then v28.
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(1, 0x0706_0504_0302_0100, 0x0f0e_0d0c_0b0a_0908), (28, 0x1716_1514_1312_1110, 0x1f1e_1d1c_1b1a_1918)],
+        &[0x4e1c_1827],
+    );
+    assert_eq!(cpu.vregs[7 * 2], 0x0e0c_0a08_0604_0200);
+    assert_eq!(cpu.vregs[7 * 2 + 1], 0x1e1c_1a18_1614_1210);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_uzp2_v16b_alias_runtime() {
+    // Hot pattern from SPEC401:
+    // 0x4e1b5884: uzp2 v4.16b, v4.16b, v27.16b
+    // Alias destination/source and take odd-indexed bytes.
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(4, 0x0706_0504_0302_0100, 0x0f0e_0d0c_0b0a_0908), (27, 0x1716_1514_1312_1110, 0x1f1e_1d1c_1b1a_1918)],
+        &[0x4e1b_5884],
+    );
+    assert_eq!(cpu.vregs[4 * 2], 0x0f0d_0b09_0705_0301);
+    assert_eq!(cpu.vregs[4 * 2 + 1], 0x1f1d_1b19_1715_1311);
+    assert_eq!(cpu.pc, 4);
 }
 
 #[test]
