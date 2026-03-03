@@ -4472,11 +4472,37 @@ unsafe extern "C" fn helper_cmeq32_zero(a: u64) -> u64 {
 unsafe extern "C" fn helper_cmeq16_zero(a: u64) -> u64 {
     helper_cmeq16(a, 0)
 }
+/// CMLT #0 8-bit: each 8-bit element -> -1 if negative, else 0
+unsafe extern "C" fn helper_cmlt8_zero(a: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..8 {
+        let v = ((a >> (i * 8)) & 0xff) as u8 as i8;
+        if v < 0 {
+            r |= 0xffu64 << (i * 8);
+        }
+    }
+    r
+}
+/// CMLT #0 16-bit: each 16-bit element -> -1 if negative, else 0
+unsafe extern "C" fn helper_cmlt16_zero(a: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..4 {
+        let v = ((a >> (i * 16)) & 0xffff) as u16 as i16;
+        if v < 0 {
+            r |= 0xffffu64 << (i * 16);
+        }
+    }
+    r
+}
 /// CMLT #0 32-bit: each 32-bit element → -1 if negative, else 0
 unsafe extern "C" fn helper_cmlt32_zero(a: u64) -> u64 {
     let lo: u32 = if (a as i32) < 0 { !0 } else { 0 };
     let hi: u32 = if ((a >> 32) as i32) < 0 { !0 } else { 0 };
     lo as u64 | ((hi as u64) << 32)
+}
+/// CMLT #0 64-bit: lane -> -1 if negative, else 0
+unsafe extern "C" fn helper_cmlt64_zero(a: u64) -> u64 {
+    if (a as i64) < 0 { !0u64 } else { 0 }
 }
 /// UZP2 32-bit: take odd-indexed 32-bit elements (high halves)
 unsafe extern "C" fn helper_uzp2_32(a: u64, b: u64) -> u64 {
@@ -6827,6 +6853,32 @@ impl Aarch64DisasContext {
             // CMLT #0 .4S/.2S: U=0 size=10 opcode=01010
             (0, 0b10, 0b01010) => {
                 self.neon_call1_halves(ir, q, rd, rn, helper_cmlt32_zero);
+                true
+            }
+            // CMLT #0 .8B/.16B: U=0 size=00 opcode=01010
+            (0, 0b00, 0b01010) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_cmlt8_zero);
+                true
+            }
+            // CMLT #0 .4H/.8H: U=0 size=01 opcode=01010
+            (0, 0b01, 0b01010) => {
+                self.neon_call1_halves(ir, q, rd, rn, helper_cmlt16_zero);
+                true
+            }
+            // CMLT #0 .1D/.2D: U=0 size=11 opcode=01010
+            (0, 0b11, 0b01010) => {
+                let lo = self.read_vreg_lo(ir, rn);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_cmlt64_zero as u64, &[lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
+                if q != 0 {
+                    let hi = self.read_vreg_hi(ir, rn);
+                    let d_hi = ir.new_temp(Type::I64);
+                    ir.gen_call(d_hi, helper_cmlt64_zero as u64, &[hi]);
+                    self.write_vreg_hi(ir, rd, d_hi);
+                } else {
+                    self.clear_vreg_hi(ir, rd);
+                }
                 true
             }
             // SHLL/SHLL2 .4S, .4H/.8H, #16: U=1 size=01 opcode=10011

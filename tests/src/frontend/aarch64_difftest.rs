@@ -2893,6 +2893,20 @@ fn a64_difftest_cmeq_v0_4s_zero_runtime() {
 }
 
 #[test]
+fn a64_difftest_cmlt_v0_16b_zero_runtime() {
+    // 0x4e20a800: cmlt v0.16b, v0.16b, #0
+    // Hot opcode seen in SPEC2006 400.perlbench (`tr.t` path).
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(0, 0xff7f_8001_00fe_0281, 0x0180_7f00_ff10_f008)],
+        &[0x4e20_a800],
+    );
+    assert_eq!(cpu.vregs[0], 0xff00_ff00_00ff_00ff);
+    assert_eq!(cpu.vregs[1], 0x00ff_0000_ff00_ff00);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
 fn a64_difftest_uxtl2_v4_4s_from_v4_8h_runtime() {
     // 0x6f10a484: uxtl2 v4.4s, v4.8h
     // High halfword lanes [4..7] become 32-bit lanes [0..3].

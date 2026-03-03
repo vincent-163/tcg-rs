@@ -39,6 +39,7 @@ const SYS_GETEUID: u64 = 175;
 const SYS_GETGID: u64 = 176;
 const SYS_GETEGID: u64 = 177;
 const SYS_GETTID: u64 = 178;
+const SYS_SYSINFO: u64 = 179;
 const SYS_BRK: u64 = 214;
 const SYS_MUNMAP: u64 = 215;
 const SYS_MREMAP: u64 = 216;
@@ -119,6 +120,7 @@ pub fn handle_syscall_aarch64(
             SyscallResult::Continue(unsafe { libc::getppid() as u64 })
         }
         SYS_GETTID => SyscallResult::Continue(host_gettid() as u64),
+        SYS_SYSINFO => do_sysinfo(space, a0),
         SYS_GETUID => SyscallResult::Continue(unsafe { libc::getuid() as u64 }),
         SYS_GETEUID => {
             SyscallResult::Continue(unsafe { libc::geteuid() as u64 })
@@ -214,6 +216,21 @@ fn do_dup3(oldfd: u64, newfd: u64, flags: u64) -> SyscallResult {
     } else {
         SyscallResult::Continue(ret as u64)
     }
+}
+
+fn do_sysinfo(space: &mut GuestSpace, info_addr: u64) -> SyscallResult {
+    let mut si: libc::sysinfo = unsafe { std::mem::zeroed() };
+    let ret = unsafe { libc::sysinfo(&mut si as *mut libc::sysinfo) };
+    if ret < 0 {
+        return SyscallResult::Continue(errno_ret());
+    }
+    let p = (&si as *const libc::sysinfo).cast::<u8>();
+    let n = std::mem::size_of::<libc::sysinfo>();
+    let bytes = unsafe { std::slice::from_raw_parts(p, n) };
+    unsafe {
+        space.write_bytes(info_addr, bytes);
+    }
+    SyscallResult::Continue(0)
 }
 
 fn do_pipe2(
@@ -984,6 +1001,38 @@ mod tests {
         let host = space.g2h(guest_buf);
         let bytes = unsafe { std::slice::from_raw_parts(host, len) };
         assert_eq!(bytes[len - 1], 0);
+    }
+
+    #[test]
+    fn test_handle_sysinfo_syscall() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let guest_buf = 0x12000u64;
+        let map_len = 4096usize;
+        space
+            .mmap_fixed(guest_buf, map_len, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map sysinfo buffer");
+
+        let mut regs = [0u64; 31];
+        regs[8] = SYS_SYSINFO;
+        regs[0] = guest_buf;
+        let mut sp = 0u64;
+        let mut mmap_next = 0u64;
+        let res = handle_syscall_aarch64(
+            &mut space,
+            &mut regs,
+            &mut sp,
+            &mut mmap_next,
+            "/tmp/guest",
+        );
+        match res {
+            SyscallResult::Continue(v) => assert_eq!(v, 0),
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        }
+
+        // Verify the guest buffer contains non-zero uptime from host sysinfo.
+        let host = space.g2h(guest_buf);
+        let uptime = unsafe { *(host as *const libc::c_long) };
+        assert!(uptime > 0);
     }
 
     #[test]
