@@ -37,14 +37,20 @@ where B: HostCodeGen, C: GuestCpu,
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     let tb_trace = tb_limit > 0;
+    let tb_dump = std::env::var("TCG_TB_DUMP").is_ok();
     let mut tb_count: u64 = 0;
+    let mut tb_dump_idx: u64 = 0;
     let mut last_pcs: [u64; 8] = [0; 8];
 
     loop {
         per_cpu.stats.loop_iters += 1;
+        let iter_pc = cpu.get_pc();
+        if tb_dump {
+            eprintln!("[tb] {} {:#x}", tb_dump_idx, iter_pc);
+            tb_dump_idx += 1;
+        }
         if tb_trace {
-            let pc = cpu.get_pc();
-            last_pcs[(tb_count as usize) & 7] = pc;
+            last_pcs[(tb_count as usize) & 7] = iter_pc;
             tb_count += 1;
             if tb_count > tb_limit {
                 eprintln!("[exec] TB limit reached after {} TBs", tb_count);
@@ -59,9 +65,8 @@ where B: HostCodeGen, C: GuestCpu,
         let tb_ptr = match next_tb_hint.take() {
             Some(ptr) => { per_cpu.stats.hint_used += 1; ptr }
             None => {
-                let pc = cpu.get_pc();
                 let flags = cpu.get_flags();
-                match tb_find(shared, per_cpu, cpu, pc, flags) {
+                match tb_find(shared, per_cpu, cpu, iter_pc, flags) {
                     Some(ptr) => ptr,
                     None => return ExitReason::BufferFull,
                 }
