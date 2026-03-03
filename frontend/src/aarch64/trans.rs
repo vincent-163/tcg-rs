@@ -1735,29 +1735,36 @@ impl Aarch64DisasContext {
             let opcode = (insn >> 12) & 0x1f;
             let rn = ((insn >> 5) & 0x1f) as usize;
             let rd = (insn & 0x1f) as usize;
-            let is_64 = match size {
-                0b00 => false,
-                0b01 => true,
-                _ => return false,
-            };
             let src = self.read_vreg_lo(ir, rn);
             let zero = ir.new_const(Type::I64, 0);
             let d = ir.new_temp(Type::I64);
             match (u, opcode) {
                 (1, 0b01000) => {
                     // CMGE #0
+                    if size != 0b11 {
+                        return false;
+                    }
                     ir.gen_call(d, helper_cmge_scalar as u64, &[src]);
                 }
                 (0, 0b01000) => {
                     // CMGT #0
+                    if size != 0b11 {
+                        return false;
+                    }
                     ir.gen_call(d, helper_cmgt_scalar as u64, &[src]);
                 }
                 (1, 0b01001) => {
                     // CMLE #0
+                    if size != 0b11 {
+                        return false;
+                    }
                     ir.gen_call(d, helper_cmle_scalar as u64, &[src]);
                 }
                 (0, 0b01001) => {
                     // CMEQ #0
+                    if size != 0b11 {
+                        return false;
+                    }
                     let _ = d;
                     let d2 = ir.new_temp(Type::I64);
                     ir.gen_setcond(Type::I64, d2, src, zero, Cond::Eq);
@@ -1768,6 +1775,11 @@ impl Aarch64DisasContext {
                 }
                 (1, 0b11101) => {
                     // UCVTF scalar: int-in-reg → float
+                    let is_64 = match size {
+                        0b00 => false,
+                        0b01 => true,
+                        _ => return false,
+                    };
                     let helper = if is_64 {
                         helper_ucvtf_d_x as u64
                     } else {
@@ -1777,10 +1789,18 @@ impl Aarch64DisasContext {
                 }
                 (0, 0b01100) => {
                     // FCMGT #0 scalar: (src > 0.0) ? -1 : 0
+                    if size != 0b11 {
+                        return false;
+                    }
                     ir.gen_call(d, helper_fcmgt_zero_scalar as u64, &[src]);
                 }
                 (0, 0b11101) => {
                     // SCVTF scalar: int-in-reg → float
+                    let is_64 = match size {
+                        0b00 => false,
+                        0b01 => true,
+                        _ => return false,
+                    };
                     let helper = if is_64 {
                         helper_scvtf_d_d as u64
                     } else {
@@ -1790,6 +1810,11 @@ impl Aarch64DisasContext {
                 }
                 (0, 0b11011) => {
                     // FCVTZS scalar: float → int (truncate toward zero)
+                    let is_64 = match size {
+                        0b10 => false,
+                        0b11 => true,
+                        _ => return false,
+                    };
                     let helper = if is_64 {
                         helper_fcvtzs_x_d as u64
                     } else {
@@ -1799,6 +1824,11 @@ impl Aarch64DisasContext {
                 }
                 (1, 0b11011) => {
                     // FCVTZU scalar: float → uint (truncate toward zero)
+                    let is_64 = match size {
+                        0b10 => false,
+                        0b11 => true,
+                        _ => return false,
+                    };
                     let helper = if is_64 {
                         helper_fcvtzu_x_d as u64
                     } else {

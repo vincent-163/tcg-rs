@@ -2100,6 +2100,37 @@ fn a64_difftest_ucvtf_d_d_uses_64bit_source() {
 }
 
 #[test]
+fn a64_difftest_fcmgt_d_d_zero_decode() {
+    // fcmgt d2, d0, #0.0
+    let insn = 0x5ee0_c802u32;
+
+    let cpu_pos =
+        run_tcgrs_with_state(&[], &[(0, 1.25f64.to_bits(), 0)], &[insn]);
+    let cpu_neg =
+        run_tcgrs_with_state(&[], &[(0, (-0.5f64).to_bits(), 0)], &[insn]);
+
+    assert_eq!(cpu_pos.vregs[2 * 2], u64::MAX);
+    assert_eq!(cpu_neg.vregs[2 * 2], 0);
+    assert_eq!(cpu_pos.pc, 4);
+    assert_eq!(cpu_neg.pc, 4);
+}
+
+#[test]
+fn a64_difftest_fcvtzs_s_s_decode() {
+    // fcvtzs s8, s8
+    let insn = 0x5ea1_b908u32;
+    let cases = [
+        (3.75f32.to_bits() as u64, 3u64),
+        ((-2.25f32).to_bits() as u64, 0xffff_fffeu64),
+    ];
+    for (src, want) in cases {
+        let cpu = run_tcgrs_with_state(&[], &[(8, src, 0)], &[insn]);
+        assert_eq!(cpu.vregs[8 * 2], want);
+        assert_eq!(cpu.pc, 4);
+    }
+}
+
+#[test]
 fn a64_difftest_fmul_v2s_by_element() {
     // fmul v2.2s, v2.2s, v0.s[0]
     let insn = 0x0f80_9042u32;
