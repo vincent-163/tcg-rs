@@ -559,6 +559,62 @@ fn run_tcgrs_with_state(
     cpu
 }
 
+fn run_tcgrs_with_guest_mem(
+    init: &[(usize, u64)],
+    insns: &[u32],
+    mem_bytes: &[(usize, u8)],
+) -> Aarch64Cpu {
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 8192];
+    mem[..code.len()].copy_from_slice(&code);
+    for &(off, b) in mem_bytes {
+        assert!(off < mem.len(), "mem init offset out of range: {off}");
+        mem[off] = b;
+    }
+    let guest_base = mem.as_ptr();
+
+    let mut backend = X86_64CodeGen::new();
+    backend.guest_base_offset =
+        tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
+    let mut buf = CodeBuffer::new(4096).unwrap();
+    backend.emit_prologue(&mut buf);
+    backend.emit_epilogue(&mut buf);
+
+    let mut ctx = Context::new();
+    backend.init_context(&mut ctx);
+
+    let mut disas = Aarch64DisasContext::new(0, guest_base);
+    disas.base.max_insns = insns.len() as u32;
+    translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+
+    let mut cpu = Aarch64Cpu::new();
+    cpu.guest_base = guest_base as u64;
+    for &(reg, val) in init {
+        if reg < 31 {
+            cpu.xregs[reg] = val;
+        }
+    }
+
+    unsafe {
+        translate_and_execute(
+            &mut ctx,
+            &backend,
+            &mut buf,
+            &mut cpu as *mut Aarch64Cpu as *mut u8,
+        );
+    }
+    use tcg_frontend::aarch64::cpu::{
+        helper_lazy_nzcv_to_packed, CC_OP_EAGER,
+    };
+    if cpu.cc_op != CC_OP_EAGER {
+        cpu.nzcv = helper_lazy_nzcv_to_packed(
+            cpu.cc_op, cpu.cc_a, cpu.cc_b, cpu.cc_result,
+        );
+        cpu.cc_op = CC_OP_EAGER;
+    }
+    cpu
+}
+
 /// Run an ALU difftest: compare tcg-rs vs QEMU.
 fn difftest_alu(test: &AluTest) {
     let asm = gen_alu_asm(test);
@@ -1037,6 +1093,22 @@ fn a64_difftest_lslv() {
 }
 
 #[test]
+fn a64_difftest_lslv_w() {
+    let cases: Vec<(u64, u64)> = vec![
+        (0x0000_0001, 0),
+        (0x0000_0001, 1),
+        (0x8000_0000, 31),
+        (0x1234_5678, 32),
+        (0x1234_5678, 33),
+        (0xffff_ffff, 63),
+        (0x89ab_cdef, 0xffff_ffff_ffff_ffff),
+    ];
+    for (a, b) in cases {
+        difftest_alu(&rtype32("lslv_w", "lsl", a64_lslv(0, 0, 1, 2), a, b));
+    }
+}
+
+#[test]
 fn a64_difftest_lsrv() {
     let cases: Vec<(u64, u64)> = vec![
         (VNEG1, 0),
@@ -1050,6 +1122,22 @@ fn a64_difftest_lsrv() {
     ];
     for (a, b) in cases {
         difftest_alu(&rtype64("lsrv", "lsr", a64_lsrv(1, 0, 1, 2), a, b));
+    }
+}
+
+#[test]
+fn a64_difftest_lsrv_w() {
+    let cases: Vec<(u64, u64)> = vec![
+        (0xffff_ffff, 0),
+        (0xffff_ffff, 1),
+        (0xffff_ffff, 31),
+        (0xffff_ffff, 32),
+        (0xdead_beef, 33),
+        (0xdead_beef, 63),
+        (0xdead_beef, 0xffff_ffff_ffff_ffff),
+    ];
+    for (a, b) in cases {
+        difftest_alu(&rtype32("lsrv_w", "lsr", a64_lsrv(0, 0, 1, 2), a, b));
     }
 }
 
@@ -1072,6 +1160,22 @@ fn a64_difftest_asrv() {
 }
 
 #[test]
+fn a64_difftest_asrv_w() {
+    let cases: Vec<(u64, u64)> = vec![
+        (0xffff_ffff, 0),
+        (0xffff_ffff, 1),
+        (0x8000_0000, 31),
+        (0x8000_0000, 32),
+        (0x7fff_ffff, 32),
+        (0x7fff_ffff, 63),
+        (0xdead_beef, 0xffff_ffff_ffff_ffff),
+    ];
+    for (a, b) in cases {
+        difftest_alu(&rtype32("asrv_w", "asr", a64_asrv(0, 0, 1, 2), a, b));
+    }
+}
+
+#[test]
 fn a64_difftest_rorv() {
     let cases: Vec<(u64, u64)> =
         vec![
@@ -1085,6 +1189,22 @@ fn a64_difftest_rorv() {
         ];
     for (a, b) in cases {
         difftest_alu(&rtype64("rorv", "ror", a64_rorv(1, 0, 1, 2), a, b));
+    }
+}
+
+#[test]
+fn a64_difftest_rorv_w() {
+    let cases: Vec<(u64, u64)> = vec![
+        (0xffff_ffff, 0),
+        (0x8000_0001, 1),
+        (0xdead_beef, 16),
+        (0xdead_beef, 32),
+        (0xdead_beef, 33),
+        (0x1234_5678, 63),
+        (0x1234_5678, 0xffff_ffff_ffff_ffff),
+    ];
+    for (a, b) in cases {
+        difftest_alu(&rtype32("rorv_w", "ror", a64_rorv(0, 0, 1, 2), a, b));
     }
 }
 
@@ -1856,6 +1976,30 @@ fn a64_difftest_bcond() {
 }
 
 #[test]
+fn a64_difftest_bcond_w_mi_le() {
+    // 32-bit flag producer + MI/LE consumers, matching 401 hot paths.
+    let subs_w = a64_subs_r(0, 2, 2, 7); // subs w2, w2, w7
+    let bmi = a64_bcond(0b0100, 12); // b.mi +12
+    let ble = a64_bcond(0b1101, 12); // b.le +12
+
+    // Negative result => MI taken
+    let cpu = run_tcgrs(&[(2, 1), (7, 2)], &[subs_w, bmi]);
+    assert_eq!(cpu.pc, 16, "b.mi (w) taken: pc={:#x}", cpu.pc);
+    // Non-negative result => MI not taken
+    let cpu = run_tcgrs(&[(2, 2), (7, 1)], &[subs_w, bmi]);
+    assert_eq!(cpu.pc, 8, "b.mi (w) not taken: pc={:#x}", cpu.pc);
+
+    // <= 0 => LE taken
+    let cpu = run_tcgrs(&[(2, 1), (7, 2)], &[subs_w, ble]);
+    assert_eq!(cpu.pc, 16, "b.le (w) taken neg: pc={:#x}", cpu.pc);
+    let cpu = run_tcgrs(&[(2, 1), (7, 1)], &[subs_w, ble]);
+    assert_eq!(cpu.pc, 16, "b.le (w) taken zero: pc={:#x}", cpu.pc);
+    // > 0 => LE not taken
+    let cpu = run_tcgrs(&[(2, 2), (7, 1)], &[subs_w, ble]);
+    assert_eq!(cpu.pc, 8, "b.le (w) not taken: pc={:#x}", cpu.pc);
+}
+
+#[test]
 fn a64_difftest_w_add_sub_then_cmp_x_zeroext() {
     // Branchless equivalent of the 403.gcc probe-loop pattern:
     //   add w0, w1, w2
@@ -2356,4 +2500,56 @@ fn a64_difftest_ldr_reg_scaled_offset() {
         shls_x.contains(&3),
         "expected scaled LDR X reg-offset to emit shl #3, got {shls_x:?}"
     );
+}
+
+#[test]
+fn a64_difftest_ldr_w_reg_offset_rd_alias_rn_runtime() {
+    // 0xb8617842: ldr w2, [x2, x1, lsl #2]
+    // Alias case (rd == rn) must use old base for address calculation.
+    let mut bytes = Vec::new();
+    let val = 0xdead_beefu32.to_le_bytes();
+    for (i, b) in val.iter().enumerate() {
+        bytes.push((0x20cusize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(1, 3), (2, 0x200)],
+        &[0xb861_7842],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[2], 0xdead_beef);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrb_w_reg_offset_rd_alias_rm_runtime() {
+    // 0x38624ae2: ldrb w2, [x23, w2, uxtw]
+    // Alias case (rd == rm) must use old index value.
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(2, 5), (23, 0x200)],
+        &[0x3862_4ae2],
+        &[(0x205, 0xab)],
+    );
+    assert_eq!(cpu.xregs[2], 0xab);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldp_w_hotspot_runtime() {
+    // 0x294b9263: ldp w3, w4, [x19, #92]
+    // Hot-path instruction in 401.bzip2 profile.
+    let mut bytes = Vec::new();
+    for (i, b) in 0x8000_0001u32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x15cusize + i, *b));
+    }
+    for (i, b) in 0xffff_ffffu32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x160usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(19, 0x100)],
+        &[0x294b_9263],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[3], 0x8000_0001);
+    assert_eq!(cpu.xregs[4], 0xffff_ffff);
+    assert_eq!(cpu.pc, 4);
 }
