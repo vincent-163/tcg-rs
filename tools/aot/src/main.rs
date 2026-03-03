@@ -56,7 +56,10 @@ Guest architecture is auto-detected from the ELF e_machine
 field (supports riscv64 and aarch64).
 
 Options:
-  -o <file>   Output object file (default: aot.o)";
+  -o <file>   Output object file (default: aot.o)
+
+Env:
+  TCG_AOT_DUMP_LL=1  dump pre-optimization LLVM IR to <output>.ll";
 
 // ELF e_machine constants (little-endian, offset 18)
 const EM_AARCH64: u16 = 183;
@@ -760,22 +763,36 @@ fn compile_aot(
         }
     }
 
-    // Dump pre-optimization IR
-    let ll_path = format!("{output}.ll");
-    unsafe {
-        let c_path =
-            CString::new(ll_path.as_str()).unwrap();
-        let mut err: *mut i8 = ptr::null_mut();
-        LLVMPrintModuleToFile(
-            module,
-            c_path.as_ptr(),
-            &mut err,
-        );
-        if !err.is_null() {
-            LLVMDisposeMessage(err);
+    // Dump pre-optimization IR only when explicitly requested.
+    let dump_ll = matches!(
+        env::var("TCG_AOT_DUMP_LL")
+            .ok()
+            .as_deref(),
+        Some("1")
+            | Some("true")
+            | Some("TRUE")
+            | Some("yes")
+            | Some("YES")
+            | Some("on")
+            | Some("ON")
+    );
+    if dump_ll {
+        let ll_path = format!("{output}.ll");
+        unsafe {
+            let c_path = CString::new(ll_path.as_str())
+                .unwrap();
+            let mut err: *mut i8 = ptr::null_mut();
+            LLVMPrintModuleToFile(
+                module,
+                c_path.as_ptr(),
+                &mut err,
+            );
+            if !err.is_null() {
+                LLVMDisposeMessage(err);
+            }
         }
+        eprintln!("[aot] IR dumped to {ll_path}");
     }
-    eprintln!("[aot] IR dumped to {ll_path}");
 
     // Run O3 optimization
     eprintln!("[aot] running O3 optimization...");
