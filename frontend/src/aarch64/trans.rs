@@ -7903,7 +7903,7 @@ impl Decode<Context> for Aarch64DisasContext {
         let val = !((a.imm as u64) << (a.hw * 16));
         let val = if !sf { val & 0xffff_ffff } else { val };
         let c = ir.new_const(Type::I64, val);
-        self.write_xreg(ir, a.rd, c);
+        self.write_xreg_sz(ir, a.rd, c, sf);
         true
     }
 
@@ -9836,7 +9836,7 @@ impl Decode<Context> for Aarch64DisasContext {
             ir.gen_rotr(ty, d, src1, sh);
             self.write_xreg_sz(ir, a.rd, d, sf);
         } else if imms == 0 {
-            self.write_xreg_sz(ir, a.rd, src1, sf);
+            self.write_xreg_sz(ir, a.rd, src2, sf);
         } else {
             let bits = if sf { 64u64 } else { 32 };
             let sh_lo = ir.new_const(ty, imms);
