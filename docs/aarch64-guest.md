@@ -86,6 +86,20 @@ Edit this line in `aarch64.Ofast.tcgrs.local.cfg`:
 submit = TCG_RS=<ABSOLUTE_PATH_TO_TCG_A64> $[SPEC]/bin/submit-tcgrs.sh -- $command
 ```
 
+Also set a unique `ext` value for tcg-rs runs to avoid reusing stale run
+directories that may contain `speccmds.cmd` generated for another runner
+(for example old `submit-cogbt.sh` commands):
+
+```text
+ext = aarch64.Ofast.tcgrs.local
+```
+
+If you keep `ext` unchanged, clear old run dirs before rerunning:
+
+```bash
+rm -rf "$SPEC_ROOT/benchspec/CPU2006/<bench>/run/run_base_test_<old-ext>.*"
+```
+
 2. Run a known-good smoke benchmark:
 
 ```bash
@@ -95,6 +109,14 @@ bin/runspec --config=aarch64.Ofast.tcgrs.local --size=test --iterations=1 999.sp
 ```
 
 `999.specrand` is the easiest correctness baseline for this flow.
+
+Before trusting a `runspec` result, spot-check that the active run dir uses the
+expected submit wrapper:
+
+```bash
+RUN_DIR="$SPEC_ROOT/benchspec/CPU2006/999.specrand/run/run_base_test_aarch64.Ofast.tcgrs.local.0001"
+rg -n "submit-tcgrs.sh|TCG_RS=" "$RUN_DIR/speccmds.cmd"
+```
 
 ### 3.3 Run a specific benchmark command manually
 
