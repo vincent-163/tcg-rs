@@ -172,6 +172,15 @@ impl GuestSpace {
         (dst as *mut u64).write_unaligned(val);
     }
 
+    /// Write a u8 at a guest address.
+    ///
+    /// # Safety
+    /// The guest region must be mapped writable.
+    pub unsafe fn write_u8(&self, guest_addr: u64, val: u8) {
+        let dst = self.g2h(guest_addr);
+        *(dst as *mut u8) = val;
+    }
+
     /// Read a u64 from a guest address (LE).
     ///
     /// # Safety

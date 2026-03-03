@@ -261,6 +261,8 @@ fn setup_stack(
     let execfn_addr = pos;
     unsafe {
         space.write_bytes(execfn_addr, execfn_bytes);
+        // Write NUL terminator
+        space.write_u8(execfn_addr + execfn_bytes.len() as u64, 0);
     }
 
     // Write env strings, collect guest addrs
@@ -271,7 +273,8 @@ fn setup_stack(
         envp_addrs.push(pos);
         unsafe {
             space.write_bytes(pos, bytes);
-            // NUL terminator (mmap zero-init)
+            // Write NUL terminator
+            space.write_u8(pos + bytes.len() as u64, 0);
         }
     }
     envp_addrs.reverse();
@@ -284,6 +287,8 @@ fn setup_stack(
         argv_addrs.push(pos);
         unsafe {
             space.write_bytes(pos, bytes);
+            // Write NUL terminator
+            space.write_u8(pos + bytes.len() as u64, 0);
         }
     }
     argv_addrs.reverse();

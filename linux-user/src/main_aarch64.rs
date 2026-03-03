@@ -599,6 +599,14 @@ fn main() {
     let guest_argv: Vec<&str> =
         args[1..].iter().map(|s| s.as_str()).collect();
 
+    // Collect host environment variables (limit to first 10 for debugging)
+    let guest_envp: Vec<String> = env::vars()
+        .take(10)
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
+    let guest_envp_refs: Vec<&str> =
+        guest_envp.iter().map(|s| s.as_str()).collect();
+
     // Load ELF
     let mut space = GuestSpace::new()
         .expect("failed to create guest space");
@@ -606,7 +614,7 @@ fn main() {
         std::path::Path::new(elf_path),
         &mut space,
         &guest_argv,
-        &[],
+        &guest_envp_refs,
         EM_AARCH64,
     )
     .expect("failed to load ELF");
