@@ -8100,8 +8100,12 @@ impl Decode<Context> for Aarch64DisasContext {
             let len = imms + 1;
             let pos = bits - immr;
             // Mask the low `len` bits, shift left by `pos`
-            let mask_val = if len >= 64 {
-                u64::MAX
+            let mask_val = if len >= bits {
+                if sf {
+                    u64::MAX
+                } else {
+                    0xffff_ffff
+                }
             } else {
                 (1u64 << len) - 1
             };
@@ -9821,6 +9825,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let sf = a.sf != 0;
         let ty = Self::sf_type(sf);
         let imms = ((self.opcode >> 10) & 0x3f) as u64;
+        // For 32-bit form (sf=0), imms must be < 32
+        if !sf && imms >= 32 {
+            return false; // UNDEFINED
+        }
         let src1 = self.read_xreg(ir, a.rn);
         let src1 = Self::trunc32(ir, src1, sf);
         let src2 = self.read_xreg(ir, a.rm);
