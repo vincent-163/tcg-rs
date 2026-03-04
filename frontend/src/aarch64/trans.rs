@@ -499,7 +499,7 @@ impl Aarch64DisasContext {
         lazy: LazyNzcvKind,
     ) -> TempIdx {
         let base_cond = (cond >> 1) as u32;
-        let invert = (cond & 1) != 0;
+        let invert = (cond & 1) != 0 && cond != 0xf;
 
         // Read operands from globals (always live, unlike local temps).
         let result = match lazy {
@@ -7981,7 +7981,7 @@ impl Decode<Context> for Aarch64DisasContext {
         } else {
             // SBFIZ
             let len = imms + 1;
-            let pos = bits - immr;
+            let pos = (bits - immr) % bits;
             // Sign-extend low `len` bits, then shift left by pos
             let d = if len == 8 || len == 16 || len == 32 {
                 let t = ir.new_temp(ty);
@@ -8036,7 +8036,7 @@ impl Decode<Context> for Aarch64DisasContext {
             // BFI
             let len = imms + 1;
             let bits = if sf { 64u32 } else { 32u32 };
-            let pos = bits - immr;
+            let pos = (bits - immr) % bits;
             if a.rd == 31 {
                 return true;
             }
@@ -8098,7 +8098,7 @@ impl Decode<Context> for Aarch64DisasContext {
             // UBFIZ / LSL: insert low bits of src
             // at position pos in zero
             let len = imms + 1;
-            let pos = bits - immr;
+            let pos = (bits - immr) % bits;
             // Mask the low `len` bits, shift left by `pos`
             let mask_val = if len >= bits {
                 if sf {
@@ -8334,6 +8334,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_add(ty, d, src1, b);
@@ -8349,6 +8353,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_sub(ty, d, src1, b);
@@ -8364,6 +8372,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_add(ty, d, src1, b);
@@ -8380,6 +8392,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_sub(ty, d, src1, b);
@@ -8462,6 +8478,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_and(ty, d, src1, b);
@@ -8477,6 +8497,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_andc(ty, d, src1, b);
@@ -8492,6 +8516,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_or(ty, d, src1, b);
@@ -8507,6 +8535,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let nb = ir.new_temp(ty);
         ir.gen_not(ty, nb, b);
@@ -8524,6 +8556,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_xor(ty, d, src1, b);
@@ -8539,6 +8575,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_eqv(ty, d, src1, b);
@@ -8554,6 +8594,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_and(ty, d, src1, b);
@@ -8570,6 +8614,10 @@ impl Decode<Context> for Aarch64DisasContext {
         let src2 = self.read_xreg(ir, a.rm);
         let src2 = Self::trunc32(ir, src2, sf);
         let imm6 = (self.opcode >> 10) & 0x3f;
+        // For 32-bit ops, shift amount must be < 32 (bit 15 must be 0)
+        if !sf && imm6 >= 32 {
+            return false;
+        }
         let b = Self::apply_shift(ir, ty, src2, a.shift, imm6 as i64);
         let d = ir.new_temp(ty);
         ir.gen_andc(ty, d, src1, b);
