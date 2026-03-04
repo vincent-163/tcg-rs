@@ -8921,72 +8921,68 @@ impl Decode<Context> for Aarch64DisasContext {
 
     fn trans_CSEL(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
-        let zero = ir.new_const(Type::I64, 0);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m, Cond::Ne);
-        if sf {
-            self.write_xreg(ir, a.rd, d);
-        } else {
-            self.write_xreg_sz(ir, a.rd, d, false);
-        }
+        let m = Self::trunc32(ir, m, sf);
+        let zero = ir.new_const(ty, 0);
+        let d = ir.new_temp(ty);
+        ir.gen_movcond(ty, d, cond_val, zero, n, m, Cond::Ne);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_CSINC(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
-        let one = ir.new_const(Type::I64, 1);
-        let m_inc = ir.new_temp(Type::I64);
-        ir.gen_add(Type::I64, m_inc, m, one);
-        let zero = ir.new_const(Type::I64, 0);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m_inc, Cond::Ne);
-        if sf {
-            self.write_xreg(ir, a.rd, d);
-        } else {
-            self.write_xreg_sz(ir, a.rd, d, false);
-        }
+        let m = Self::trunc32(ir, m, sf);
+        let one = ir.new_const(ty, 1);
+        let m_inc = ir.new_temp(ty);
+        ir.gen_add(ty, m_inc, m, one);
+        let zero = ir.new_const(ty, 0);
+        let d = ir.new_temp(ty);
+        ir.gen_movcond(ty, d, cond_val, zero, n, m_inc, Cond::Ne);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_CSINV(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
-        let m_inv = ir.new_temp(Type::I64);
-        ir.gen_not(Type::I64, m_inv, m);
-        let zero = ir.new_const(Type::I64, 0);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m_inv, Cond::Ne);
-        if sf {
-            self.write_xreg(ir, a.rd, d);
-        } else {
-            self.write_xreg_sz(ir, a.rd, d, false);
-        }
+        let m = Self::trunc32(ir, m, sf);
+        let m_inv = ir.new_temp(ty);
+        ir.gen_not(ty, m_inv, m);
+        let zero = ir.new_const(ty, 0);
+        let d = ir.new_temp(ty);
+        ir.gen_movcond(ty, d, cond_val, zero, n, m_inv, Cond::Ne);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
     fn trans_CSNEG(&mut self, ir: &mut Context, a: &ArgsCsel) -> bool {
         let sf = a.sf != 0;
+        let ty = Self::sf_type(sf);
         let cond_val = self.eval_cond(ir, a.cond);
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
-        let m_neg = ir.new_temp(Type::I64);
-        ir.gen_neg(Type::I64, m_neg, m);
-        let zero = ir.new_const(Type::I64, 0);
-        let d = ir.new_temp(Type::I64);
-        ir.gen_movcond(Type::I64, d, cond_val, zero, n, m_neg, Cond::Ne);
-        if sf {
-            self.write_xreg(ir, a.rd, d);
-        } else {
-            self.write_xreg_sz(ir, a.rd, d, false);
-        }
+        let m = Self::trunc32(ir, m, sf);
+        let m_neg = ir.new_temp(ty);
+        ir.gen_neg(ty, m_neg, m);
+        let zero = ir.new_const(ty, 0);
+        let d = ir.new_temp(ty);
+        ir.gen_movcond(ty, d, cond_val, zero, n, m_neg, Cond::Ne);
+        self.write_xreg_sz(ir, a.rd, d, sf);
         true
     }
 
