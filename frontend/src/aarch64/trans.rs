@@ -499,7 +499,7 @@ impl Aarch64DisasContext {
         lazy: LazyNzcvKind,
     ) -> TempIdx {
         let base_cond = (cond >> 1) as u32;
-        let invert = (cond & 1) != 0;
+        let invert = (cond & 1) != 0 && cond != 0xf;
 
         // Read operands from globals (always live, unlike local temps).
         let result = match lazy {
