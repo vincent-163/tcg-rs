@@ -1053,6 +1053,8 @@ impl Aarch64DisasContext {
             self.write_vreg_hi(ir, reg, hi);
         } else {
             let memop = match log2 {
+                0 => MemOp::ub(),
+                1 => MemOp::uw(),
                 2 => MemOp::ul(),
                 3 => MemOp::uq(),
                 _ => return,
@@ -1082,6 +1084,8 @@ impl Aarch64DisasContext {
             ir.gen_qemu_st(Type::I64, hi, addr_hi, MemOp::uq().bits() as u32);
         } else {
             let memop = match log2 {
+                0 => MemOp::ub(),
+                1 => MemOp::uw(),
                 2 => MemOp::ul(),
                 3 => MemOp::uq(),
                 _ => return,
@@ -1342,7 +1346,7 @@ impl Aarch64DisasContext {
 
             // Post-index writeback
             let post_index = (insn >> 23) & 1 != 0;
-            if post_index && rn != 31 {
+            if post_index {
                 let rm = ((insn >> 16) & 0x1f) as i64;
                 let total_bytes = (nregs as u64) * bytes_per_reg;
                 let inc = if rm == 31 {
@@ -1352,7 +1356,7 @@ impl Aarch64DisasContext {
                 };
                 let new_addr = ir.new_temp(Type::I64);
                 ir.gen_add(Type::I64, new_addr, addr, inc);
-                self.write_xreg(ir, rn, new_addr);
+                self.write_xreg_sp(ir, rn, new_addr);
             }
             return true;
         }
@@ -1489,7 +1493,7 @@ impl Aarch64DisasContext {
             };
             let new_addr = ir.new_temp(Type::I64);
             ir.gen_add(Type::I64, new_addr, addr, inc);
-            self.write_xreg(ir, rn, new_addr);
+            self.write_xreg_sp(ir, rn, new_addr);
         }
 
         true
