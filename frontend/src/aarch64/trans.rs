@@ -1053,6 +1053,8 @@ impl Aarch64DisasContext {
             self.write_vreg_hi(ir, reg, hi);
         } else {
             let memop = match log2 {
+                0 => MemOp::ub(),
+                1 => MemOp::uw(),
                 2 => MemOp::ul(),
                 3 => MemOp::uq(),
                 _ => return,
@@ -1082,6 +1084,8 @@ impl Aarch64DisasContext {
             ir.gen_qemu_st(Type::I64, hi, addr_hi, MemOp::uq().bits() as u32);
         } else {
             let memop = match log2 {
+                0 => MemOp::ub(),
+                1 => MemOp::uw(),
                 2 => MemOp::ul(),
                 3 => MemOp::uq(),
                 _ => return,
@@ -1342,7 +1346,7 @@ impl Aarch64DisasContext {
 
             // Post-index writeback
             let post_index = (insn >> 23) & 1 != 0;
-            if post_index && rn != 31 {
+            if post_index {
                 let rm = ((insn >> 16) & 0x1f) as i64;
                 let total_bytes = (nregs as u64) * bytes_per_reg;
                 let inc = if rm == 31 {
@@ -1352,7 +1356,7 @@ impl Aarch64DisasContext {
                 };
                 let new_addr = ir.new_temp(Type::I64);
                 ir.gen_add(Type::I64, new_addr, addr, inc);
-                self.write_xreg(ir, rn, new_addr);
+                self.write_xreg_sp(ir, rn, new_addr);
             }
             return true;
         }
@@ -1489,7 +1493,7 @@ impl Aarch64DisasContext {
             };
             let new_addr = ir.new_temp(Type::I64);
             ir.gen_add(Type::I64, new_addr, addr, inc);
-            self.write_xreg(ir, rn, new_addr);
+            self.write_xreg_sp(ir, rn, new_addr);
         }
 
         true
@@ -3880,7 +3884,7 @@ impl Aarch64DisasContext {
         }
         // ZIP1 .8B/.16B: opcode=011, size=00
         // Q=0: d_lo = zip1(n_lo, m_lo) — interleave low 4 bytes of Vn and Vm
-        // Q=1: d_lo = zip1(n_lo, m_lo), d_hi = zip1(n_hi, m_hi) — pairs from matching halves
+        // Q=1: d_lo = zip1(n_lo, m_lo), d_hi = zip2(n_lo, m_lo) — interleave low 8 bytes
         if opcode == 3 && size == 0 {
             let n_lo = self.read_vreg_lo(ir, rn);
             let m_lo = self.read_vreg_lo(ir, rm);
@@ -3888,10 +3892,8 @@ impl Aarch64DisasContext {
             ir.gen_call(d_lo, helper_zip1_8 as u64, &[n_lo, m_lo]);
             self.write_vreg_lo(ir, rd, d_lo);
             if q != 0 {
-                let n_hi = self.read_vreg_hi(ir, rn);
-                let m_hi = self.read_vreg_hi(ir, rm);
                 let d_hi = ir.new_temp(Type::I64);
-                ir.gen_call(d_hi, helper_zip1_8 as u64, &[n_hi, m_hi]);
+                ir.gen_call(d_hi, helper_zip2_8 as u64, &[n_lo, m_lo]);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
@@ -3899,19 +3901,24 @@ impl Aarch64DisasContext {
             return true;
         }
         // ZIP2 .8B/.16B: opcode=111, size=00
+        // Q=0: d_lo = zip2(n_lo, m_lo) — interleave high 4 bytes of Vn and Vm
+        // Q=1: d_lo = zip1(n_hi, m_hi), d_hi = zip2(n_hi, m_hi) — interleave high 8 bytes
         if opcode == 7 && size == 0 {
-            let n_lo = self.read_vreg_lo(ir, rn);
-            let m_lo = self.read_vreg_lo(ir, rm);
-            let d_lo = ir.new_temp(Type::I64);
-            ir.gen_call(d_lo, helper_zip2_8 as u64, &[n_lo, m_lo]);
-            self.write_vreg_lo(ir, rd, d_lo);
             if q != 0 {
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_zip1_8 as u64, &[n_hi, m_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_zip2_8 as u64, &[n_hi, m_hi]);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_zip2_8 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
                 self.clear_vreg_hi(ir, rd);
             }
             return true;
@@ -3924,10 +3931,8 @@ impl Aarch64DisasContext {
             ir.gen_call(d_lo, helper_zip1_16 as u64, &[n_lo, m_lo]);
             self.write_vreg_lo(ir, rd, d_lo);
             if q != 0 {
-                let n_hi = self.read_vreg_hi(ir, rn);
-                let m_hi = self.read_vreg_hi(ir, rm);
                 let d_hi = ir.new_temp(Type::I64);
-                ir.gen_call(d_hi, helper_zip1_16 as u64, &[n_hi, m_hi]);
+                ir.gen_call(d_hi, helper_zip2_16 as u64, &[n_lo, m_lo]);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
@@ -3936,18 +3941,21 @@ impl Aarch64DisasContext {
         }
         // ZIP2 .4H/.8H: opcode=111, size=01
         if opcode == 7 && size == 1 {
-            let n_lo = self.read_vreg_lo(ir, rn);
-            let m_lo = self.read_vreg_lo(ir, rm);
-            let d_lo = ir.new_temp(Type::I64);
-            ir.gen_call(d_lo, helper_zip2_16 as u64, &[n_lo, m_lo]);
-            self.write_vreg_lo(ir, rd, d_lo);
             if q != 0 {
                 let n_hi = self.read_vreg_hi(ir, rn);
                 let m_hi = self.read_vreg_hi(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_zip1_16 as u64, &[n_hi, m_hi]);
+                self.write_vreg_lo(ir, rd, d_lo);
                 let d_hi = ir.new_temp(Type::I64);
                 ir.gen_call(d_hi, helper_zip2_16 as u64, &[n_hi, m_hi]);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
+                let n_lo = self.read_vreg_lo(ir, rn);
+                let m_lo = self.read_vreg_lo(ir, rm);
+                let d_lo = ir.new_temp(Type::I64);
+                ir.gen_call(d_lo, helper_zip2_16 as u64, &[n_lo, m_lo]);
+                self.write_vreg_lo(ir, rd, d_lo);
                 self.clear_vreg_hi(ir, rd);
             }
             return true;
