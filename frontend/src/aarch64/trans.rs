@@ -4005,7 +4005,8 @@ fn vfp_expand_imm32(imm8: u64) -> u32 {
 
 // ── Division helper functions ────────────────────────────
 
-unsafe extern "C" fn helper_udiv64(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_udiv64(n: u64, m: u64) -> u64 {
     if m == 0 {
         0
     } else {
@@ -4013,7 +4014,8 @@ unsafe extern "C" fn helper_udiv64(n: u64, m: u64) -> u64 {
     }
 }
 
-unsafe extern "C" fn helper_udiv32(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_udiv32(n: u64, m: u64) -> u64 {
     let n = n as u32;
     let m = m as u32;
     if m == 0 {
@@ -4023,7 +4025,8 @@ unsafe extern "C" fn helper_udiv32(n: u64, m: u64) -> u64 {
     }
 }
 
-unsafe extern "C" fn helper_sdiv64(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sdiv64(n: u64, m: u64) -> u64 {
     let n = n as i64;
     let m = m as i64;
     if m == 0 {
@@ -4033,7 +4036,8 @@ unsafe extern "C" fn helper_sdiv64(n: u64, m: u64) -> u64 {
     }
 }
 
-unsafe extern "C" fn helper_sdiv32(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sdiv32(n: u64, m: u64) -> u64 {
     let n = n as u32 as i32;
     let m = m as u32 as i32;
     if m == 0 {
@@ -4043,44 +4047,53 @@ unsafe extern "C" fn helper_sdiv32(n: u64, m: u64) -> u64 {
     }
 }
 
-unsafe extern "C" fn helper_adc64(n: u64, m: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_adc64(n: u64, m: u64, c: u64) -> u64 {
     n.wrapping_add(m).wrapping_add(c & 1)
 }
 
-unsafe extern "C" fn helper_adc32(n: u64, m: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_adc32(n: u64, m: u64, c: u64) -> u64 {
     let carry = (c & 1) as u32;
     let n = n as u32;
     let m = m as u32;
     n.wrapping_add(m).wrapping_add(carry) as u64
 }
 
-unsafe extern "C" fn helper_sbc64(n: u64, m: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sbc64(n: u64, m: u64, c: u64) -> u64 {
     let carry = c & 1;
     n.wrapping_sub(m).wrapping_sub(1u64.wrapping_sub(carry))
 }
 
-unsafe extern "C" fn helper_sbc32(n: u64, m: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sbc32(n: u64, m: u64, c: u64) -> u64 {
     let carry = (c & 1) as u32;
     let n = n as u32;
     let m = m as u32;
     n.wrapping_sub(m).wrapping_sub(1u32.wrapping_sub(carry)) as u64
 }
 
-unsafe extern "C" fn helper_rbit64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rbit64(a: u64) -> u64 {
     a.reverse_bits()
 }
-unsafe extern "C" fn helper_rbit32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rbit32(a: u64) -> u64 {
     (a as u32).reverse_bits() as u64
 }
-unsafe extern "C" fn helper_rev16_64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rev16_64(a: u64) -> u64 {
     ((a & 0x00ff_00ff_00ff_00ff) << 8) | ((a & 0xff00_ff00_ff00_ff00) >> 8)
 }
-unsafe extern "C" fn helper_rev16_32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rev16_32(a: u64) -> u64 {
     let x = a as u32;
     let y = ((x & 0x00ff_00ff) << 8) | ((x & 0xff00_ff00) >> 8);
     y as u64
 }
-unsafe extern "C" fn helper_rev32_64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rev32_64(a: u64) -> u64 {
     let lo = (a as u32).swap_bytes() as u64;
     let hi = ((a >> 32) as u32).swap_bytes() as u64;
     lo | (hi << 32)
@@ -4089,7 +4102,8 @@ unsafe extern "C" fn helper_rev32_64(a: u64) -> u64 {
 // ── NEON helper functions (called via gen_call) ─────────
 
 /// Byte-wise compare equal: each byte → 0xFF if equal, 0x00 otherwise.
-unsafe extern "C" fn helper_cmeq8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmeq8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
@@ -4102,7 +4116,8 @@ unsafe extern "C" fn helper_cmeq8(a: u64, b: u64) -> u64 {
 }
 
 /// Halfword-wise compare equal: each 16-bit lane -> 0xFFFF if equal.
-unsafe extern "C" fn helper_cmeq16(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmeq16(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let ab = (a >> (i * 16)) & 0xffff;
@@ -4115,7 +4130,8 @@ unsafe extern "C" fn helper_cmeq16(a: u64, b: u64) -> u64 {
 }
 
 /// CMTST .16B/.8B: each byte → 0xFF if (a & b) != 0, else 0x00.
-unsafe extern "C" fn helper_cmtst8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmtst8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
@@ -4128,7 +4144,8 @@ unsafe extern "C" fn helper_cmtst8(a: u64, b: u64) -> u64 {
 }
 
 /// CMTST .8H/.4H: each 16-bit lane -> 0xFFFF if (a & b) != 0.
-unsafe extern "C" fn helper_cmtst16(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmtst16(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let ab = (a >> (i * 16)) & 0xffff;
@@ -4141,7 +4158,8 @@ unsafe extern "C" fn helper_cmtst16(a: u64, b: u64) -> u64 {
 }
 
 /// Byte-wise unsigned compare higher or same.
-unsafe extern "C" fn helper_cmhs8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmhs8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
@@ -4154,12 +4172,14 @@ unsafe extern "C" fn helper_cmhs8(a: u64, b: u64) -> u64 {
 }
 
 /// Byte-wise BIT: Vd = (Vd & ~Vm) | (Vn & Vm).
-unsafe extern "C" fn helper_bit(vd: u64, vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_bit(vd: u64, vn: u64, vm: u64) -> u64 {
     (vd & !vm) | (vn & vm)
 }
 
 /// Byte-wise unsigned max pairwise (8B→8B, adjacent pairs).
-unsafe extern "C" fn helper_umaxp8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_umaxp8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let a0 = (a >> (i * 16)) & 0xff;
@@ -4175,7 +4195,8 @@ unsafe extern "C" fn helper_umaxp8(a: u64, b: u64) -> u64 {
 }
 
 /// Byte-wise unsigned min pairwise.
-unsafe extern "C" fn helper_uminp8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uminp8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let a0 = (a >> (i * 16)) & 0xff;
@@ -4191,7 +4212,8 @@ unsafe extern "C" fn helper_uminp8(a: u64, b: u64) -> u64 {
 }
 
 /// Narrowing shift right (16→8 bit elements, 4 elements per u64).
-unsafe extern "C" fn helper_shrn8(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_shrn8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let elem = (a >> (i * 16)) & 0xffff;
@@ -4202,7 +4224,8 @@ unsafe extern "C" fn helper_shrn8(a: u64, shift: u64) -> u64 {
 }
 
 /// Byte-wise EXT: concatenate and extract.
-unsafe extern "C" fn helper_ext8(a: u64, b: u64, pos: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ext8(a: u64, b: u64, pos: u64) -> u64 {
     // Concatenate b:a (128-bit), extract 8 bytes starting at byte `pos`
     // For the lo half: pos is 0..7 from the 16-byte concatenation
     let mut r = 0u64;
@@ -4219,7 +4242,8 @@ unsafe extern "C" fn helper_ext8(a: u64, b: u64, pos: u64) -> u64 {
 }
 
 /// Byte-wise population count.
-unsafe extern "C" fn helper_cnt8(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cnt8(a: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let byte = ((a >> (i * 8)) & 0xff) as u8;
@@ -4229,7 +4253,8 @@ unsafe extern "C" fn helper_cnt8(a: u64) -> u64 {
 }
 
 /// Byte-wise add pairwise.
-unsafe extern "C" fn helper_addp8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_addp8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let a0 = (a >> (i * 16)) & 0xff;
@@ -4245,14 +4270,16 @@ unsafe extern "C" fn helper_addp8(a: u64, b: u64) -> u64 {
 }
 
 /// ADDP .4S/.2S: pairwise add 32-bit elements.
-unsafe extern "C" fn helper_addp32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_addp32(a: u64, b: u64) -> u64 {
     let a0 = (a as u32).wrapping_add((a >> 32) as u32) as u64;
     let b0 = (b as u32).wrapping_add((b >> 32) as u32) as u64;
     a0 | (b0 << 32)
 }
 
 /// CMTST .4S/.2S: if (a & b) != 0 then 0xFFFFFFFF else 0 per 32-bit element.
-unsafe extern "C" fn helper_cmtst32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmtst32(a: u64, b: u64) -> u64 {
     let lo_a = a as u32;
     let lo_b = b as u32;
     let hi_a = (a >> 32) as u32;
@@ -4263,7 +4290,8 @@ unsafe extern "C" fn helper_cmtst32(a: u64, b: u64) -> u64 {
 }
 
 /// Byte-wise add.
-unsafe extern "C" fn helper_add8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_add8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
@@ -4274,7 +4302,8 @@ unsafe extern "C" fn helper_add8(a: u64, b: u64) -> u64 {
 }
 
 /// Byte-wise subtract.
-unsafe extern "C" fn helper_sub8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sub8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let ab = (a >> (i * 8)) & 0xff;
@@ -4284,64 +4313,77 @@ unsafe extern "C" fn helper_sub8(a: u64, b: u64) -> u64 {
     r
 }
 
-unsafe extern "C" fn helper_add32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_add32(a: u64, b: u64) -> u64 {
     let lo = (a as u32).wrapping_add(b as u32) as u64;
     let hi = ((a >> 32) as u32).wrapping_add((b >> 32) as u32) as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_sub32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sub32(a: u64, b: u64) -> u64 {
     let lo = (a as u32).wrapping_sub(b as u32) as u64;
     let hi = ((a >> 32) as u32).wrapping_sub((b >> 32) as u32) as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_mul32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_mul32(a: u64, b: u64) -> u64 {
     let lo = (a as u32).wrapping_mul(b as u32) as u64;
     let hi = ((a >> 32) as u32).wrapping_mul((b >> 32) as u32) as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_abs32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_abs32(a: u64) -> u64 {
     let lo = (a as i32).wrapping_abs() as u32 as u64;
     let hi = ((a >> 32) as i32).wrapping_abs() as u32 as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_smax32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smax32(a: u64, b: u64) -> u64 {
     let lo = std::cmp::max(a as i32, b as i32) as u32 as u64;
     let hi = std::cmp::max((a >> 32) as i32, (b >> 32) as i32) as u32 as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_smin32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smin32(a: u64, b: u64) -> u64 {
     let lo = std::cmp::min(a as i32, b as i32) as u32 as u64;
     let hi = std::cmp::min((a >> 32) as i32, (b >> 32) as i32) as u32 as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_umax32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_umax32(a: u64, b: u64) -> u64 {
     let lo = std::cmp::max(a as u32, b as u32) as u64;
     let hi = std::cmp::max((a >> 32) as u32, (b >> 32) as u32) as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_umin32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_umin32(a: u64, b: u64) -> u64 {
     let lo = std::cmp::min(a as u32, b as u32) as u64;
     let hi = std::cmp::min((a >> 32) as u32, (b >> 32) as u32) as u64;
     lo | (hi << 32)
 }
 /// Reduce 2x32-bit to single signed max
-unsafe extern "C" fn helper_smaxv32_reduce(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smaxv32_reduce(a: u64) -> u64 {
     std::cmp::max(a as i32, (a >> 32) as i32) as u32 as u64
 }
 /// Reduce 2x32-bit to single signed min
-unsafe extern "C" fn helper_sminv32_reduce(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sminv32_reduce(a: u64) -> u64 {
     std::cmp::min(a as i32, (a >> 32) as i32) as u32 as u64
 }
 /// Reduce 2x32-bit to single unsigned max
-unsafe extern "C" fn helper_umaxv32_reduce(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_umaxv32_reduce(a: u64) -> u64 {
     std::cmp::max(a as u32, (a >> 32) as u32) as u64
 }
 /// Reduce 2x32-bit to single unsigned min
-unsafe extern "C" fn helper_uminv32_reduce(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uminv32_reduce(a: u64) -> u64 {
     std::cmp::min(a as u32, (a >> 32) as u32) as u64
 }
 /// SMAXV 16-bit: max across 4x16-bit elements in two 64-bit halves
-unsafe extern "C" fn helper_smaxv16_pair(lo: u64, hi: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smaxv16_pair(lo: u64, hi: u64) -> u64 {
     let mut m = i16::MIN;
     for i in 0..4 {
         let e = ((lo >> (i * 16)) & 0xffff) as i16;
@@ -4358,7 +4400,8 @@ unsafe extern "C" fn helper_smaxv16_pair(lo: u64, hi: u64) -> u64 {
     m as u16 as u64
 }
 /// SMINV 16-bit: min across 4x16-bit elements in two 64-bit halves
-unsafe extern "C" fn helper_sminv16_pair(lo: u64, hi: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sminv16_pair(lo: u64, hi: u64) -> u64 {
     let mut m = i16::MAX;
     for i in 0..4 {
         let e = ((lo >> (i * 16)) & 0xffff) as i16;
@@ -4374,7 +4417,8 @@ unsafe extern "C" fn helper_sminv16_pair(lo: u64, hi: u64) -> u64 {
     }
     m as u16 as u64
 }
-unsafe extern "C" fn helper_cmeq32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmeq32(a: u64, b: u64) -> u64 {
     let lo: u32 = if a as u32 == b as u32 { !0 } else { 0 };
     let hi: u32 = if (a >> 32) as u32 == (b >> 32) as u32 {
         !0
@@ -4384,7 +4428,8 @@ unsafe extern "C" fn helper_cmeq32(a: u64, b: u64) -> u64 {
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMHS 32-bit: unsigned higher or same
-unsafe extern "C" fn helper_cmhs32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmhs32(a: u64, b: u64) -> u64 {
     let lo: u32 = if a as u32 >= b as u32 { !0 } else { 0 };
     let hi: u32 = if (a >> 32) as u32 >= (b >> 32) as u32 {
         !0
@@ -4394,7 +4439,8 @@ unsafe extern "C" fn helper_cmhs32(a: u64, b: u64) -> u64 {
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMGT 32-bit: signed greater than
-unsafe extern "C" fn helper_cmgt32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmgt32(a: u64, b: u64) -> u64 {
     let lo: u32 = if (a as i32) > (b as i32) { !0 } else { 0 };
     let hi: u32 = if ((a >> 32) as i32) > ((b >> 32) as i32) {
         !0
@@ -4404,7 +4450,8 @@ unsafe extern "C" fn helper_cmgt32(a: u64, b: u64) -> u64 {
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMGT 64-bit: signed greater than
-unsafe extern "C" fn helper_cmgt64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmgt64(a: u64, b: u64) -> u64 {
     if (a as i64) > (b as i64) {
         !0
     } else {
@@ -4412,7 +4459,8 @@ unsafe extern "C" fn helper_cmgt64(a: u64, b: u64) -> u64 {
     }
 }
 /// CMGE 32-bit: signed greater than or equal
-unsafe extern "C" fn helper_cmge32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmge32(a: u64, b: u64) -> u64 {
     let lo: u32 = if (a as i32) >= (b as i32) { !0 } else { 0 };
     let hi: u32 = if ((a >> 32) as i32) >= ((b >> 32) as i32) {
         !0
@@ -4421,12 +4469,14 @@ unsafe extern "C" fn helper_cmge32(a: u64, b: u64) -> u64 {
     };
     lo as u64 | ((hi as u64) << 32)
 }
-unsafe extern "C" fn helper_ushr32(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushr32(a: u64, shift: u64) -> u64 {
     let lo = ((a as u32) >> shift) as u64;
     let hi = (((a >> 32) as u32) >> shift) as u64;
     lo | (hi << 32)
 }
-unsafe extern "C" fn helper_ushr64(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushr64(a: u64, shift: u64) -> u64 {
     if shift >= 64 {
         0
     } else {
@@ -4434,13 +4484,15 @@ unsafe extern "C" fn helper_ushr64(a: u64, shift: u64) -> u64 {
     }
 }
 /// SSHR 32-bit: signed shift right each 32-bit element
-unsafe extern "C" fn helper_sshr32(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshr32(a: u64, shift: u64) -> u64 {
     let lo = ((a as i32) >> shift) as u32 as u64;
     let hi = (((a >> 32) as i32) >> shift) as u32 as u64;
     lo | (hi << 32)
 }
 /// USHR 8-bit: logical shift right 8x8-bit elements
-unsafe extern "C" fn helper_ushr8(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushr8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let elem = (a >> (i * 8)) & 0xff;
@@ -4449,7 +4501,8 @@ unsafe extern "C" fn helper_ushr8(a: u64, shift: u64) -> u64 {
     r
 }
 /// SSHR 8-bit: arithmetic shift right 8x8-bit elements
-unsafe extern "C" fn helper_sshr8(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshr8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let elem = ((a >> (i * 8)) & 0xff) as i8;
@@ -4459,7 +4512,8 @@ unsafe extern "C" fn helper_sshr8(a: u64, shift: u64) -> u64 {
     r
 }
 /// UZP1 16-bit: take even-indexed 16-bit elements from two sources
-unsafe extern "C" fn helper_uzp1_16(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uzp1_16(a: u64, b: u64) -> u64 {
     // a has elements [a0, a1, a2, a3], b has [b0, b1, b2, b3]
     // result: [a0, a2, b0, b2]
     let a0 = a & 0xffff;
@@ -4468,16 +4522,19 @@ unsafe extern "C" fn helper_uzp1_16(a: u64, b: u64) -> u64 {
     let b2 = (b >> 32) & 0xffff;
     a0 | (a2 << 16) | (b0 << 32) | (b2 << 48)
 }
-unsafe extern "C" fn helper_cmeq32_zero(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmeq32_zero(a: u64) -> u64 {
     let lo: u32 = if a as u32 == 0 { !0 } else { 0 };
     let hi: u32 = if (a >> 32) as u32 == 0 { !0 } else { 0 };
     lo as u64 | ((hi as u64) << 32)
 }
-unsafe extern "C" fn helper_cmeq16_zero(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmeq16_zero(a: u64) -> u64 {
     helper_cmeq16(a, 0)
 }
 /// CMLT #0 8-bit: each 8-bit element -> -1 if negative, else 0
-unsafe extern "C" fn helper_cmlt8_zero(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmlt8_zero(a: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let v = ((a >> (i * 8)) & 0xff) as u8 as i8;
@@ -4488,7 +4545,8 @@ unsafe extern "C" fn helper_cmlt8_zero(a: u64) -> u64 {
     r
 }
 /// CMLT #0 16-bit: each 16-bit element -> -1 if negative, else 0
-unsafe extern "C" fn helper_cmlt16_zero(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmlt16_zero(a: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let v = ((a >> (i * 16)) & 0xffff) as u16 as i16;
@@ -4499,28 +4557,33 @@ unsafe extern "C" fn helper_cmlt16_zero(a: u64) -> u64 {
     r
 }
 /// CMLT #0 32-bit: each 32-bit element → -1 if negative, else 0
-unsafe extern "C" fn helper_cmlt32_zero(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmlt32_zero(a: u64) -> u64 {
     let lo: u32 = if (a as i32) < 0 { !0 } else { 0 };
     let hi: u32 = if ((a >> 32) as i32) < 0 { !0 } else { 0 };
     lo as u64 | ((hi as u64) << 32)
 }
 /// CMLT #0 64-bit: lane -> -1 if negative, else 0
-unsafe extern "C" fn helper_cmlt64_zero(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmlt64_zero(a: u64) -> u64 {
     if (a as i64) < 0 { !0u64 } else { 0 }
 }
 /// UZP2 32-bit: take odd-indexed 32-bit elements (high halves)
-unsafe extern "C" fn helper_uzp2_32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uzp2_32(a: u64, b: u64) -> u64 {
     let a1 = a >> 32;
     let b1 = b >> 32;
     a1 | (b1 << 32)
 }
-unsafe extern "C" fn helper_uzp1_32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uzp1_32(a: u64, b: u64) -> u64 {
     let a0 = a & 0xffff_ffff;
     let b0 = b & 0xffff_ffff;
     a0 | (b0 << 32)
 }
 /// UZP1 8-bit: take even-indexed bytes from two 64-bit sources
-unsafe extern "C" fn helper_uzp1_8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uzp1_8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         r |= ((a >> (i * 16)) & 0xff) << (i * 8);
@@ -4531,7 +4594,8 @@ unsafe extern "C" fn helper_uzp1_8(a: u64, b: u64) -> u64 {
     r
 }
 /// UZP2 .8B/.16B: take odd-indexed bytes
-unsafe extern "C" fn helper_uzp2_8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uzp2_8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         r |= ((a >> (i * 16 + 8)) & 0xff) << (i * 8);
@@ -4542,7 +4606,8 @@ unsafe extern "C" fn helper_uzp2_8(a: u64, b: u64) -> u64 {
     r
 }
 /// ZIP1 .8B/.16B: interleave low bytes of a and b
-unsafe extern "C" fn helper_zip1_8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_zip1_8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         r |= ((a >> (i * 8)) & 0xff) << (i * 16);
@@ -4551,7 +4616,8 @@ unsafe extern "C" fn helper_zip1_8(a: u64, b: u64) -> u64 {
     r
 }
 /// ZIP2 .8B/.16B: interleave high bytes of a and b
-unsafe extern "C" fn helper_zip2_8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_zip2_8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         r |= ((a >> (i * 8 + 32)) & 0xff) << (i * 16);
@@ -4560,7 +4626,8 @@ unsafe extern "C" fn helper_zip2_8(a: u64, b: u64) -> u64 {
     r
 }
 /// UZP2 .4H/.8H: take odd-indexed 16-bit elements
-unsafe extern "C" fn helper_uzp2_16(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uzp2_16(a: u64, b: u64) -> u64 {
     let a1 = (a >> 16) & 0xffff;
     let a3 = (a >> 48) & 0xffff;
     let b1 = (b >> 16) & 0xffff;
@@ -4568,7 +4635,8 @@ unsafe extern "C" fn helper_uzp2_16(a: u64, b: u64) -> u64 {
     a1 | (a3 << 16) | (b1 << 32) | (b3 << 48)
 }
 /// ZIP1 .4H/.8H: interleave low halfwords
-unsafe extern "C" fn helper_zip1_16(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_zip1_16(a: u64, b: u64) -> u64 {
     let a0 = a & 0xffff;
     let a1 = (a >> 16) & 0xffff;
     let b0 = b & 0xffff;
@@ -4576,7 +4644,8 @@ unsafe extern "C" fn helper_zip1_16(a: u64, b: u64) -> u64 {
     a0 | (b0 << 16) | (a1 << 32) | (b1 << 48)
 }
 /// ZIP2 .4H/.8H: interleave high halfwords
-unsafe extern "C" fn helper_zip2_16(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_zip2_16(a: u64, b: u64) -> u64 {
     let a2 = (a >> 32) & 0xffff;
     let a3 = (a >> 48) & 0xffff;
     let b2 = (b >> 32) & 0xffff;
@@ -4585,20 +4654,24 @@ unsafe extern "C" fn helper_zip2_16(a: u64, b: u64) -> u64 {
 }
 /// FCVTL: convert 2x f32 (low 64 bits) to 2x f64
 #[allow(dead_code, improper_ctypes_definitions)]
-unsafe extern "C" fn helper_fcvtl_lo(a: u64) -> (u64, u64) {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtl_lo(a: u64) -> (u64, u64) {
     let f0 = f32::from_bits(a as u32) as f64;
     let f1 = f32::from_bits((a >> 32) as u32) as f64;
     (f0.to_bits(), f1.to_bits())
 }
 /// FCVTL2: convert 2x f32 (high 64 bits) to 2x f64
-unsafe extern "C" fn helper_fcvtl2_lo(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtl2_lo(a: u64) -> u64 {
     (f32::from_bits(a as u32) as f64).to_bits()
 }
-unsafe extern "C" fn helper_fcvtl2_hi(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtl2_hi(a: u64) -> u64 {
     (f32::from_bits((a >> 32) as u32) as f64).to_bits()
 }
 /// USHLL 8→16: zero-extend 4 bytes to 4x16-bit, then shift left
-unsafe extern "C" fn helper_ushll8(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushll8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let byte = ((a >> (i * 8)) & 0xff) as u16;
@@ -4608,7 +4681,8 @@ unsafe extern "C" fn helper_ushll8(a: u64, shift: u64) -> u64 {
     r
 }
 /// SSHLL 8→16: sign-extend 4 bytes from low 32 bits to 4x16-bit, then shift left.
-unsafe extern "C" fn helper_sshll8(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshll8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let byte = ((a >> (i * 8)) & 0xff) as u8 as i8;
@@ -4618,7 +4692,8 @@ unsafe extern "C" fn helper_sshll8(a: u64, shift: u64) -> u64 {
     r
 }
 /// SSHLL 16→32: sign-extend 2 halfwords from low 32 bits to 2x32-bit, then shift left.
-unsafe extern "C" fn helper_sshll16(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshll16(a: u64, shift: u64) -> u64 {
     let e0 = (a & 0xffff) as u16 as i16;
     let e1 = ((a >> 16) & 0xffff) as u16 as i16;
     let w0 = ((e0 as i32) << shift) as u32 as u64;
@@ -4626,19 +4701,22 @@ unsafe extern "C" fn helper_sshll16(a: u64, shift: u64) -> u64 {
     w0 | (w1 << 32)
 }
 /// XTN 64→32: narrow 2x64-bit to 2x32-bit (take low 32 bits of each element)
-unsafe extern "C" fn helper_xtn32(lo: u64, hi: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_xtn32(lo: u64, hi: u64) -> u64 {
     let e0 = lo as u32 as u64;
     let e1 = hi as u32 as u64;
     e0 | (e1 << 32)
 }
 /// XTN 32→16: narrow 2x32-bit (packed in 64-bit) to 2x16-bit (packed in low 32-bit)
-unsafe extern "C" fn helper_xtn16(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_xtn16(a: u64) -> u64 {
     let e0 = (a as u32 & 0xffff) as u64;
     let e1 = (((a >> 32) as u32) & 0xffff) as u64;
     e0 | (e1 << 16)
 }
 /// REV64 for 16-bit elements: reverse 4x16-bit halfwords within a 64-bit value
-unsafe extern "C" fn helper_rev64_16(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rev64_16(a: u64) -> u64 {
     let h0 = a & 0xffff;
     let h1 = (a >> 16) & 0xffff;
     let h2 = (a >> 32) & 0xffff;
@@ -4647,7 +4725,8 @@ unsafe extern "C" fn helper_rev64_16(a: u64) -> u64 {
 }
 /// TBL: byte-level table lookup. table is up to 4 x 128-bit regs (passed as 64-bit halves).
 /// For 2-reg TBL: table has 32 bytes (t0_lo, t0_hi, t1_lo, t1_hi), indices in idx.
-unsafe extern "C" fn helper_tbl2(
+#[no_mangle]
+pub unsafe extern "C" fn helper_tbl2(
     t0_lo: u64,
     t0_hi: u64,
     t1_lo: u64,
@@ -4675,24 +4754,28 @@ unsafe extern "C" fn helper_tbl2(
 /// TBL 1-reg: table has 16 bytes
 /// SMULL 32→64: signed multiply two 32-bit elements to produce two 64-bit results
 #[allow(dead_code, improper_ctypes_definitions)]
-unsafe extern "C" fn helper_smull32(a: u64, b: u64) -> (u64, u64) {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smull32(a: u64, b: u64) -> (u64, u64) {
     let a0 = a as i32 as i64;
     let b0 = b as i32 as i64;
     let a1 = (a >> 32) as i32 as i64;
     let b1 = (b >> 32) as i32 as i64;
     ((a0 * b0) as u64, (a1 * b1) as u64)
 }
-unsafe extern "C" fn helper_smull32_lo(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smull32_lo(a: u64, b: u64) -> u64 {
     let a0 = a as i32 as i64;
     let b0 = b as i32 as i64;
     (a0 * b0) as u64
 }
-unsafe extern "C" fn helper_smull32_hi(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smull32_hi(a: u64, b: u64) -> u64 {
     let a0 = (a >> 32) as i32 as i64;
     let b0 = (b >> 32) as i32 as i64;
     (a0 * b0) as u64
 }
-unsafe extern "C" fn helper_tbl1(t_lo: u64, t_hi: u64, idx: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_tbl1(t_lo: u64, t_hi: u64, idx: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let index = ((idx >> (i * 8)) & 0xff) as usize;
@@ -4708,28 +4791,32 @@ unsafe extern "C" fn helper_tbl1(t_lo: u64, t_hi: u64, idx: u64) -> u64 {
     r
 }
 
-unsafe extern "C" fn helper_cmge_scalar(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmge_scalar(a: u64) -> u64 {
     if (a as i64) >= 0 {
         !0u64
     } else {
         0
     }
 }
-unsafe extern "C" fn helper_cmgt_scalar(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmgt_scalar(a: u64) -> u64 {
     if (a as i64) > 0 {
         !0u64
     } else {
         0
     }
 }
-unsafe extern "C" fn helper_cmle_scalar(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmle_scalar(a: u64) -> u64 {
     if (a as i64) <= 0 {
         !0u64
     } else {
         0
     }
 }
-unsafe extern "C" fn helper_fcmgt_zero_scalar(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcmgt_zero_scalar(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f > 0.0 {
         !0u64
@@ -4738,14 +4825,16 @@ unsafe extern "C" fn helper_fcmgt_zero_scalar(a: u64) -> u64 {
     }
 }
 /// MUL vector × scalar element (32-bit): multiply two 32-bit elements by a single 32-bit scalar
-unsafe extern "C" fn helper_mul32_elem(a: u64, scalar: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_mul32_elem(a: u64, scalar: u64) -> u64 {
     let s = scalar as u32;
     let lo = (a as u32).wrapping_mul(s) as u64;
     let hi = ((a >> 32) as u32).wrapping_mul(s) as u64;
     lo | (hi << 32)
 }
 /// MLA by element 32-bit: Vd += Vn * scalar
-unsafe extern "C" fn helper_mla32_elem(vd: u64, vn: u64, scalar: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_mla32_elem(vd: u64, vn: u64, scalar: u64) -> u64 {
     let s = scalar as u32;
     let lo = (vd as u32).wrapping_add((vn as u32).wrapping_mul(s)) as u64;
     let hi = ((vd >> 32) as u32)
@@ -4753,7 +4842,8 @@ unsafe extern "C" fn helper_mla32_elem(vd: u64, vn: u64, scalar: u64) -> u64 {
     lo | (hi << 32)
 }
 /// MLA 32-bit: Vd += Vn * Vm (element-wise)
-unsafe extern "C" fn helper_mla32(vd: u64, vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_mla32(vd: u64, vn: u64, vm: u64) -> u64 {
     let lo =
         (vd as u32).wrapping_add((vn as u32).wrapping_mul(vm as u32)) as u64;
     let hi = ((vd >> 32) as u32)
@@ -4762,7 +4852,8 @@ unsafe extern "C" fn helper_mla32(vd: u64, vn: u64, vm: u64) -> u64 {
     lo | (hi << 32)
 }
 /// MLS 32-bit: Vd = Vd - Vn * Vm per 32-bit element
-unsafe extern "C" fn helper_mls32(vd: u64, vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_mls32(vd: u64, vn: u64, vm: u64) -> u64 {
     let lo =
         (vd as u32).wrapping_sub((vn as u32).wrapping_mul(vm as u32)) as u64;
     let hi = ((vd >> 32) as u32)
@@ -4771,21 +4862,25 @@ unsafe extern "C" fn helper_mls32(vd: u64, vn: u64, vm: u64) -> u64 {
     lo | (hi << 32)
 }
 /// SCVTF scalar d,d: signed 64-bit int → double
-unsafe extern "C" fn helper_scvtf_d_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_d_d(a: u64) -> u64 {
     ((a as i64) as f64).to_bits()
 }
 /// FCVT single→double
-unsafe extern "C" fn helper_fcvt_s_to_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvt_s_to_d(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     (f as f64).to_bits()
 }
 /// FCVT double→single
-unsafe extern "C" fn helper_fcvt_d_to_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvt_d_to_s(a: u64) -> u64 {
     let f = f64::from_bits(a);
     (f as f32).to_bits() as u64
 }
 /// USHLL 16→32: zero-extend 2 halfwords to 2x32-bit, then shift left
-unsafe extern "C" fn helper_ushll16(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushll16(a: u64, shift: u64) -> u64 {
     let e0 = (a & 0xffff) as u32;
     let e1 = ((a >> 16) & 0xffff) as u32;
     let w0 = (e0 << shift) as u64;
@@ -4794,17 +4889,20 @@ unsafe extern "C" fn helper_ushll16(a: u64, shift: u64) -> u64 {
 }
 
 /// BIF: Vd = (Vd & Vm) | (Vn & ~Vm)
-unsafe extern "C" fn helper_bif(vd: u64, vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_bif(vd: u64, vn: u64, vm: u64) -> u64 {
     (vd & vm) | (vn & !vm)
 }
 
 /// BSL: Vd = (Vn & Vd) | (Vm & ~Vd)
-unsafe extern "C" fn helper_bsl(vd: u64, vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_bsl(vd: u64, vn: u64, vm: u64) -> u64 {
     (vn & vd) | (vm & !vd)
 }
 
 /// ADDV: add across vector (byte elements).
-unsafe extern "C" fn helper_addv8(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_addv8(a: u64) -> u64 {
     let mut sum = 0u64;
     for i in 0..8 {
         sum += (a >> (i * 8)) & 0xff;
@@ -4813,14 +4911,16 @@ unsafe extern "C" fn helper_addv8(a: u64) -> u64 {
 }
 
 /// ADDV .4S: add all four 32-bit elements from lo and hi halves.
-unsafe extern "C" fn helper_addv32(lo: u64, hi: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_addv32(lo: u64, hi: u64) -> u64 {
     let s0 = (lo as u32).wrapping_add((lo >> 32) as u32);
     let s1 = (hi as u32).wrapping_add((hi >> 32) as u32);
     s0.wrapping_add(s1) as u64
 }
 
 /// Byte-wise shift left.
-unsafe extern "C" fn helper_shl8(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_shl8(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let byte = (a >> (i * 8)) & 0xff;
@@ -4829,13 +4929,15 @@ unsafe extern "C" fn helper_shl8(a: u64, shift: u64) -> u64 {
     r
 }
 /// SHL 32-bit: shift left 2x32-bit elements packed in 64 bits
-unsafe extern "C" fn helper_shl32(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_shl32(a: u64, shift: u64) -> u64 {
     let lo = ((a as u32) << shift) as u64;
     let hi = (((a >> 32) as u32) << shift) as u64;
     lo | (hi << 32)
 }
 /// SHL 16-bit: shift left 4x16-bit elements packed in 64 bits
-unsafe extern "C" fn helper_shl16(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_shl16(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let elem = (a >> (i * 16)) & 0xffff;
@@ -4844,7 +4946,8 @@ unsafe extern "C" fn helper_shl16(a: u64, shift: u64) -> u64 {
     r
 }
 /// USHR 16-bit: logical shift right 4x16-bit elements
-unsafe extern "C" fn helper_ushr16(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushr16(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let elem = (a >> (i * 16)) & 0xffff;
@@ -4853,7 +4956,8 @@ unsafe extern "C" fn helper_ushr16(a: u64, shift: u64) -> u64 {
     r
 }
 /// SSHR 16-bit: arithmetic shift right 4x16-bit elements
-unsafe extern "C" fn helper_sshr16(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshr16(a: u64, shift: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let elem = ((a >> (i * 16)) & 0xffff) as i16;
@@ -4863,7 +4967,8 @@ unsafe extern "C" fn helper_sshr16(a: u64, shift: u64) -> u64 {
     r
 }
 /// Vector FP: fadd 2x f32 packed in 64 bits
-unsafe extern "C" fn helper_vfadd32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfadd32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4871,7 +4976,8 @@ unsafe extern "C" fn helper_vfadd32(a: u64, b: u64) -> u64 {
     (a0 + b0).to_bits() as u64 | (((a1 + b1).to_bits() as u64) << 32)
 }
 /// Vector FP: fsub 2x f32 packed in 64 bits
-unsafe extern "C" fn helper_vfsub32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfsub32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4879,7 +4985,8 @@ unsafe extern "C" fn helper_vfsub32(a: u64, b: u64) -> u64 {
     (a0 - b0).to_bits() as u64 | (((a1 - b1).to_bits() as u64) << 32)
 }
 /// Vector FP: fmul 2x f32 packed in 64 bits
-unsafe extern "C" fn helper_vfmul32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfmul32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4887,7 +4994,8 @@ unsafe extern "C" fn helper_vfmul32(a: u64, b: u64) -> u64 {
     (a0 * b0).to_bits() as u64 | (((a1 * b1).to_bits() as u64) << 32)
 }
 /// Vector FP: fdiv 2x f32 packed in 64 bits
-unsafe extern "C" fn helper_vfdiv32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfdiv32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4895,7 +5003,8 @@ unsafe extern "C" fn helper_vfdiv32(a: u64, b: u64) -> u64 {
     (a0 / b0).to_bits() as u64 | (((a1 / b1).to_bits() as u64) << 32)
 }
 /// Vector FP: fabd 2x f32 packed in 64 bits (absolute difference)
-unsafe extern "C" fn helper_vfabd32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfabd32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4904,7 +5013,8 @@ unsafe extern "C" fn helper_vfabd32(a: u64, b: u64) -> u64 {
         | (((a1 - b1).abs().to_bits() as u64) << 32)
 }
 /// Vector FP: fmax 2x f32
-unsafe extern "C" fn helper_vfmax32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfmax32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4912,7 +5022,8 @@ unsafe extern "C" fn helper_vfmax32(a: u64, b: u64) -> u64 {
     a0.max(b0).to_bits() as u64 | ((a1.max(b1).to_bits() as u64) << 32)
 }
 /// Vector FP: fmin 2x f32
-unsafe extern "C" fn helper_vfmin32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfmin32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4920,7 +5031,8 @@ unsafe extern "C" fn helper_vfmin32(a: u64, b: u64) -> u64 {
     a0.min(b0).to_bits() as u64 | ((a1.min(b1).to_bits() as u64) << 32)
 }
 /// Vector FP: fcmeq (==) 2x f32: each lane: all-ones if equal, else 0
-unsafe extern "C" fn helper_vfcmeq32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfcmeq32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4930,7 +5042,8 @@ unsafe extern "C" fn helper_vfcmeq32(a: u64, b: u64) -> u64 {
     r0 as u64 | ((r1 as u64) << 32)
 }
 /// Vector FP: fcmgt (>) 2x f32
-unsafe extern "C" fn helper_vfcmgt32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfcmgt32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4940,7 +5053,8 @@ unsafe extern "C" fn helper_vfcmgt32(a: u64, b: u64) -> u64 {
     r0 as u64 | ((r1 as u64) << 32)
 }
 /// Vector FP: fcmge (>=) 2x f32
-unsafe extern "C" fn helper_vfcmge32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfcmge32(a: u64, b: u64) -> u64 {
     let a0 = f32::from_bits(a as u32);
     let b0 = f32::from_bits(b as u32);
     let a1 = f32::from_bits((a >> 32) as u32);
@@ -4951,29 +5065,34 @@ unsafe extern "C" fn helper_vfcmge32(a: u64, b: u64) -> u64 {
 }
 /// scvtf vector: convert 2x i32 to 2x f32
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vscvtf32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vscvtf32(a: u64) -> u64 {
     let e0 = (a as i32) as f32;
     let e1 = ((a >> 32) as i32) as f32;
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// scvtf vector: convert 2x i64 to 2x f64 (one lane per 64-bit half)
-unsafe extern "C" fn helper_vscvtf64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vscvtf64(a: u64) -> u64 {
     (a as i64 as f64).to_bits()
 }
 /// ucvtf vector: convert 2x u64 to 2x f64 (one lane per 64-bit half)
-unsafe extern "C" fn helper_vucvtf64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vucvtf64(a: u64) -> u64 {
     (a as f64).to_bits()
 }
 /// fcvtzs vector: convert f64 → i64 (one lane per 64-bit half)
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vfcvtzs64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfcvtzs64(a: u64) -> u64 {
     (f64::from_bits(a) as i64) as u64
 }
 /// faddp vector 32-bit: pairwise add adjacent f32 lanes from two halves
 /// Input: n = [n0, n1] (two f32 in u64), m = [m0, m1] (two f32 in u64)
 /// Output: [n0+n1, m0+m1]
 #[allow(dead_code)]
-unsafe extern "C" fn helper_faddp32(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_faddp32(n: u64, m: u64) -> u64 {
     let n0 = f32::from_bits(n as u32);
     let n1 = f32::from_bits((n >> 32) as u32);
     let m0 = f32::from_bits(m as u32);
@@ -4983,7 +5102,8 @@ unsafe extern "C" fn helper_faddp32(n: u64, m: u64) -> u64 {
     r0 | (r1 << 32)
 }
 /// shl vector: shift left each 64-bit lane by shift amount
-unsafe extern "C" fn helper_shl64(a: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_shl64(a: u64, shift: u64) -> u64 {
     if shift >= 64 {
         0
     } else {
@@ -4992,65 +5112,75 @@ unsafe extern "C" fn helper_shl64(a: u64, shift: u64) -> u64 {
 }
 /// ucvtf vector: convert 2x u32 to 2x f32
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vucvtf32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vucvtf32(a: u64) -> u64 {
     let e0 = (a as u32) as f32;
     let e1 = ((a >> 32) as u32) as f32;
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// fcvtzs vector: convert 2x f32 to 2x i32 (truncate toward zero)
-unsafe extern "C" fn helper_vfcvtzs32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfcvtzs32(a: u64) -> u64 {
     let e0 = f32::from_bits(a as u32) as i32 as u32;
     let e1 = f32::from_bits((a >> 32) as u32) as i32 as u32;
     e0 as u64 | ((e1 as u64) << 32)
 }
 /// fcvtzs vector fixed-point: multiply by 2^fbits then truncate to i32
-unsafe extern "C" fn helper_vfcvtzs32_fixedpt(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfcvtzs32_fixedpt(a: u64, fbits: u64) -> u64 {
     let scale = (1u64 << fbits) as f32;
     let e0 = (f32::from_bits(a as u32) * scale) as i32 as u32;
     let e1 = (f32::from_bits((a >> 32) as u32) * scale) as i32 as u32;
     e0 as u64 | ((e1 as u64) << 32)
 }
 /// SMLAL .2D: signed multiply-accumulate long — acc += sext(n) * sext(m), low lanes
-unsafe extern "C" fn helper_smlal32_lo(acc: u64, n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smlal32_lo(acc: u64, n: u64, m: u64) -> u64 {
     let n0 = n as u32 as i32 as i64;
     let m0 = m as u32 as i32 as i64;
     (acc as i64).wrapping_add(n0.wrapping_mul(m0)) as u64
 }
-unsafe extern "C" fn helper_smlal32_hi(acc: u64, n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_smlal32_hi(acc: u64, n: u64, m: u64) -> u64 {
     let n1 = (n >> 32) as u32 as i32 as i64;
     let m1 = (m >> 32) as u32 as i32 as i64;
     (acc as i64).wrapping_add(n1.wrapping_mul(m1)) as u64
 }
 /// fabs vector: abs 2x f32
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vfabs32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfabs32(a: u64) -> u64 {
     let e0 = f32::from_bits(a as u32).abs();
     let e1 = f32::from_bits((a >> 32) as u32).abs();
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// fneg vector: negate 2x f32
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vfneg32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfneg32(a: u64) -> u64 {
     let e0 = -f32::from_bits(a as u32);
     let e1 = -f32::from_bits((a >> 32) as u32);
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// fsqrt vector: sqrt 2x f32
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vfsqrt32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfsqrt32(a: u64) -> u64 {
     let e0 = f32::from_bits(a as u32).sqrt();
     let e1 = f32::from_bits((a >> 32) as u32).sqrt();
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// frecpe vector: reciprocal estimate 2x f32
 #[allow(dead_code)]
-unsafe extern "C" fn helper_vfrecpe32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfrecpe32(a: u64) -> u64 {
     let e0 = 1.0f32 / f32::from_bits(a as u32);
     let e1 = 1.0f32 / f32::from_bits((a >> 32) as u32);
     e0.to_bits() as u64 | ((e1.to_bits() as u64) << 32)
 }
 /// fmla vector: fused multiply-add 2x f32: d = a + b*c
-unsafe extern "C" fn helper_vfmla32(d: u64, a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfmla32(d: u64, a: u64, b: u64) -> u64 {
     let d0 = f32::from_bits(d as u32);
     let d1 = f32::from_bits((d >> 32) as u32);
     let a0 = f32::from_bits(a as u32);
@@ -5060,7 +5190,8 @@ unsafe extern "C" fn helper_vfmla32(d: u64, a: u64, b: u64) -> u64 {
     (d0 + a0 * b0).to_bits() as u64 | (((d1 + a1 * b1).to_bits() as u64) << 32)
 }
 /// fmls vector: fused multiply-subtract 2x f32: d = d - a*b
-unsafe extern "C" fn helper_vfmls32(d: u64, a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfmls32(d: u64, a: u64, b: u64) -> u64 {
     let d0 = f32::from_bits(d as u32);
     let d1 = f32::from_bits((d >> 32) as u32);
     let a0 = f32::from_bits(a as u32);
@@ -5071,7 +5202,8 @@ unsafe extern "C" fn helper_vfmls32(d: u64, a: u64, b: u64) -> u64 {
 }
 
 /// XTN: narrow 16→8 (take low byte of each 16-bit element, 4 elements).
-unsafe extern "C" fn helper_xtn8(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_xtn8(a: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..4 {
         let elem = (a >> (i * 16)) & 0xff;
@@ -5082,7 +5214,8 @@ unsafe extern "C" fn helper_xtn8(a: u64) -> u64 {
 
 // ── FP helper functions ─────────────────────────────────
 
-unsafe extern "C" fn helper_fcmp32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcmp32(a: u64, b: u64) -> u64 {
     let fa = f32::from_bits(a as u32);
     let fb = f32::from_bits(b as u32);
     let nzcv = if fa.is_nan() || fb.is_nan() {
@@ -5096,7 +5229,8 @@ unsafe extern "C" fn helper_fcmp32(a: u64, b: u64) -> u64 {
     };
     nzcv << 28
 }
-unsafe extern "C" fn helper_fcvtms_w_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtms_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a).floor();
     if f.is_nan() {
         0
@@ -5108,7 +5242,8 @@ unsafe extern "C" fn helper_fcvtms_w_d(a: u64) -> u64 {
         f as i32 as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtms_x_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtms_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a).floor();
     if f.is_nan() {
         0
@@ -5120,7 +5255,8 @@ unsafe extern "C" fn helper_fcvtms_x_d(a: u64) -> u64 {
         f as i64 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtms_w_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtms_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).floor();
     if f.is_nan() {
         0
@@ -5132,7 +5268,8 @@ unsafe extern "C" fn helper_fcvtms_w_s(a: u64) -> u64 {
         f as i32 as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtms_x_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtms_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).floor();
     if f.is_nan() {
         0
@@ -5144,7 +5281,8 @@ unsafe extern "C" fn helper_fcvtms_x_s(a: u64) -> u64 {
         f as i64 as u64
     }
 }
-unsafe extern "C" fn helper_neg8(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_neg8(a: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let b = ((a >> (i * 8)) & 0xff) as u8;
@@ -5152,27 +5290,31 @@ unsafe extern "C" fn helper_neg8(a: u64) -> u64 {
     }
     r
 }
-unsafe extern "C" fn helper_neg16(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_neg16(a: u64) -> u64 {
     let lo = (a as u16).wrapping_neg() as u64;
     let hi = ((a >> 16) as u16).wrapping_neg() as u64;
     let hi2 = ((a >> 32) as u16).wrapping_neg() as u64;
     let hi3 = ((a >> 48) as u16).wrapping_neg() as u64;
     lo | (hi << 16) | (hi2 << 32) | (hi3 << 48)
 }
-unsafe extern "C" fn helper_neg32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_neg32(a: u64) -> u64 {
     let lo = (a as u32).wrapping_neg() as u64;
     let hi = ((a >> 32) as u32).wrapping_neg() as u64;
     lo | (hi << 32)
 }
 // REV64 .2S: swap the two 32-bit words within a 64-bit lane
-unsafe extern "C" fn helper_rev64_2s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rev64_2s(a: u64) -> u64 {
     let lo = a as u32;
     let hi = (a >> 32) as u32;
     (lo as u64) << 32 | (hi as u64)
 }
 // REV64 .4H: reverse 4 halfwords within a 64-bit lane
 #[allow(dead_code)]
-unsafe extern "C" fn helper_rev64_4h(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_rev64_4h(a: u64) -> u64 {
     let h0 = (a) as u16 as u64;
     let h1 = (a >> 16) as u16 as u64;
     let h2 = (a >> 32) as u16 as u64;
@@ -5180,7 +5322,8 @@ unsafe extern "C" fn helper_rev64_4h(a: u64) -> u64 {
     h3 | (h2 << 16) | (h1 << 32) | (h0 << 48)
 }
 // USHL .2S: unsigned shift each 32-bit lane by signed amount in corresponding lane of Vm
-unsafe extern "C" fn helper_ushl32(vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushl32(vn: u64, vm: u64) -> u64 {
     let shift0 = (vm as i8) as i32;
     let shift1 = ((vm >> 32) as i8) as i32;
     let n0 = vn as u32;
@@ -5202,7 +5345,8 @@ unsafe extern "C" fn helper_ushl32(vn: u64, vm: u64) -> u64 {
     (r0 as u64) | ((r1 as u64) << 32)
 }
 // SSHL .2S: signed shift each 32-bit lane by signed amount in corresponding lane of Vm
-unsafe extern "C" fn helper_sshl32(vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshl32(vn: u64, vm: u64) -> u64 {
     let shift0 = (vm as i8) as i32;
     let shift1 = ((vm >> 32) as i8) as i32;
     let n0 = vn as u32 as i32;
@@ -5228,7 +5372,8 @@ unsafe extern "C" fn helper_sshl32(vn: u64, vm: u64) -> u64 {
     (r0 as u32 as u64) | ((r1 as u32 as u64) << 32)
 }
 // USHL .1D/.2D: unsigned shift each 64-bit lane by signed amount in corresponding lane of Vm
-unsafe extern "C" fn helper_ushl64(vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ushl64(vn: u64, vm: u64) -> u64 {
     let shift = vm as i64;
     if shift >= 64 || shift <= -64 {
         0
@@ -5239,7 +5384,8 @@ unsafe extern "C" fn helper_ushl64(vn: u64, vm: u64) -> u64 {
     }
 }
 // SSHL .1D/.2D: signed shift each 64-bit lane by signed amount in corresponding lane of Vm
-unsafe extern "C" fn helper_sshl64(vn: u64, vm: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_sshl64(vn: u64, vm: u64) -> u64 {
     let shift = vm as i64;
     let n = vn as i64;
     let r = if shift >= 64 {
@@ -5254,7 +5400,8 @@ unsafe extern "C" fn helper_sshl64(vn: u64, vm: u64) -> u64 {
     r as u64
 }
 // SADDW .4S += sext(.4H): add each of 4 signed 16-bit lanes from src into 4 32-bit lanes of acc
-unsafe extern "C" fn helper_saddw16_lo(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_saddw16_lo(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32) as i32;
     let a1 = ((acc >> 32) as u32) as i32;
     let s0 = (src as i16) as i32;
@@ -5263,7 +5410,8 @@ unsafe extern "C" fn helper_saddw16_lo(acc: u64, src: u64) -> u64 {
     let r1 = a1.wrapping_add(s1) as u32 as u64;
     r0 | (r1 << 32)
 }
-unsafe extern "C" fn helper_saddw16_hi(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_saddw16_hi(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32) as i32;
     let a1 = ((acc >> 32) as u32) as i32;
     let s0 = ((src >> 32) as i16) as i32;
@@ -5272,19 +5420,22 @@ unsafe extern "C" fn helper_saddw16_hi(acc: u64, src: u64) -> u64 {
     let r1 = a1.wrapping_add(s1) as u32 as u64;
     r0 | (r1 << 32)
 }
-unsafe extern "C" fn helper_uaddw16_lo(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uaddw16_lo(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32).wrapping_add((src as u16) as u32) as u64;
     let a1 =
         ((acc >> 32) as u32).wrapping_add(((src >> 16) as u16) as u32) as u64;
     a0 | (a1 << 32)
 }
-unsafe extern "C" fn helper_uaddw16_hi(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_uaddw16_hi(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32).wrapping_add(((src >> 32) as u16) as u32) as u64;
     let a1 =
         ((acc >> 32) as u32).wrapping_add(((src >> 48) as u16) as u32) as u64;
     a0 | (a1 << 32)
 }
-unsafe extern "C" fn helper_ssubw16_lo(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ssubw16_lo(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32) as i32;
     let a1 = ((acc >> 32) as u32) as i32;
     let s0 = (src as i16) as i32;
@@ -5293,7 +5444,8 @@ unsafe extern "C" fn helper_ssubw16_lo(acc: u64, src: u64) -> u64 {
     let r1 = a1.wrapping_sub(s1) as u32 as u64;
     r0 | (r1 << 32)
 }
-unsafe extern "C" fn helper_ssubw16_hi(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ssubw16_hi(acc: u64, src: u64) -> u64 {
     let a0 = (acc as u32) as i32;
     let a1 = ((acc >> 32) as u32) as i32;
     let s0 = ((src >> 32) as i16) as i32;
@@ -5303,14 +5455,17 @@ unsafe extern "C" fn helper_ssubw16_hi(acc: u64, src: u64) -> u64 {
     r0 | (r1 << 32)
 }
 // SADDW .2D += sext(.2S)
-unsafe extern "C" fn helper_saddw32_lo(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_saddw32_lo(acc: u64, src: u64) -> u64 {
     acc.wrapping_add((src as u32 as i32 as i64) as u64)
 }
-unsafe extern "C" fn helper_saddw32_hi(acc: u64, src: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_saddw32_hi(acc: u64, src: u64) -> u64 {
     acc.wrapping_add(((src >> 32) as u32 as i32 as i64) as u64)
 }
 // CMHI .8B: unsigned greater-than per byte, result = 0xFF or 0x00
-unsafe extern "C" fn helper_cmhi8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmhi8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let va = ((a >> (i * 8)) & 0xff) as u8;
@@ -5322,7 +5477,8 @@ unsafe extern "C" fn helper_cmhi8(a: u64, b: u64) -> u64 {
     r
 }
 // CMGT .8B: signed greater-than per byte
-unsafe extern "C" fn helper_cmgt8(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_cmgt8(a: u64, b: u64) -> u64 {
     let mut r = 0u64;
     for i in 0..8 {
         let va = ((a >> (i * 8)) & 0xff) as u8 as i8;
@@ -5334,7 +5490,8 @@ unsafe extern "C" fn helper_cmgt8(a: u64, b: u64) -> u64 {
     r
 }
 // SSRA .2S: signed shift right and accumulate per 32-bit lane
-unsafe extern "C" fn helper_ssra32(acc: u64, src: u64, shift: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ssra32(acc: u64, src: u64, shift: u64) -> u64 {
     let sh = shift as u32;
     let s0 = (src as u32 as i32) >> sh;
     let s1 = ((src >> 32) as u32 as i32) >> sh;
@@ -5343,7 +5500,8 @@ unsafe extern "C" fn helper_ssra32(acc: u64, src: u64, shift: u64) -> u64 {
     (a0 as u64) | ((a1 as u64) << 32)
 }
 // USUBL .4S: Vd.4S = zext(Vn.4H) - zext(Vm.4H), low two lanes
-unsafe extern "C" fn helper_usubl16_lo(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_usubl16_lo(n: u64, m: u64) -> u64 {
     let n0 = (n as u16) as u32;
     let n1 = ((n >> 16) as u16) as u32;
     let m0 = (m as u16) as u32;
@@ -5352,7 +5510,8 @@ unsafe extern "C" fn helper_usubl16_lo(n: u64, m: u64) -> u64 {
     let r1 = n1.wrapping_sub(m1) as u64;
     r0 | (r1 << 32)
 }
-unsafe extern "C" fn helper_usubl16_hi(n: u64, m: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_usubl16_hi(n: u64, m: u64) -> u64 {
     let n0 = ((n >> 32) as u16) as u32;
     let n1 = ((n >> 48) as u16) as u32;
     let m0 = ((m >> 32) as u16) as u32;
@@ -5361,22 +5520,28 @@ unsafe extern "C" fn helper_usubl16_hi(n: u64, m: u64) -> u64 {
     let r1 = n1.wrapping_sub(m1) as u64;
     r0 | (r1 << 32)
 }
-unsafe extern "C" fn helper_fadd64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fadd64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) + f64::from_bits(b)).to_bits()
 }
-unsafe extern "C" fn helper_fsub64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fsub64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) - f64::from_bits(b)).to_bits()
 }
-unsafe extern "C" fn helper_fmul64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmul64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) * f64::from_bits(b)).to_bits()
 }
-unsafe extern "C" fn helper_fnmul64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fnmul64(a: u64, b: u64) -> u64 {
     (-(f64::from_bits(a) * f64::from_bits(b))).to_bits()
 }
-unsafe extern "C" fn helper_fnmul32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fnmul32(a: u64, b: u64) -> u64 {
     (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))).to_bits() as u64
 }
-unsafe extern "C" fn helper_fmax64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmax64(a: u64, b: u64) -> u64 {
     let fa = f64::from_bits(a);
     let fb = f64::from_bits(b);
     // IEEE 754: FMAX returns the larger, treating NaN from sNaN specially
@@ -5388,7 +5553,8 @@ unsafe extern "C" fn helper_fmax64(a: u64, b: u64) -> u64 {
         fa.max(fb).to_bits()
     }
 }
-unsafe extern "C" fn helper_fmin64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmin64(a: u64, b: u64) -> u64 {
     let fa = f64::from_bits(a);
     let fb = f64::from_bits(b);
     if fa.is_nan() {
@@ -5399,7 +5565,8 @@ unsafe extern "C" fn helper_fmin64(a: u64, b: u64) -> u64 {
         fa.min(fb).to_bits()
     }
 }
-unsafe extern "C" fn helper_fmaxnm64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmaxnm64(a: u64, b: u64) -> u64 {
     let fa = f64::from_bits(a);
     let fb = f64::from_bits(b);
     if fa.is_nan() && fb.is_nan() {
@@ -5412,7 +5579,8 @@ unsafe extern "C" fn helper_fmaxnm64(a: u64, b: u64) -> u64 {
         fa.max(fb).to_bits()
     }
 }
-unsafe extern "C" fn helper_fminnm64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fminnm64(a: u64, b: u64) -> u64 {
     let fa = f64::from_bits(a);
     let fb = f64::from_bits(b);
     if fa.is_nan() && fb.is_nan() {
@@ -5425,7 +5593,8 @@ unsafe extern "C" fn helper_fminnm64(a: u64, b: u64) -> u64 {
         fa.min(fb).to_bits()
     }
 }
-unsafe extern "C" fn helper_fmax32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmax32(a: u64, b: u64) -> u64 {
     let fa = f32::from_bits(a as u32);
     let fb = f32::from_bits(b as u32);
     if fa.is_nan() {
@@ -5436,7 +5605,8 @@ unsafe extern "C" fn helper_fmax32(a: u64, b: u64) -> u64 {
         fa.max(fb).to_bits() as u64
     }
 }
-unsafe extern "C" fn helper_fmin32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmin32(a: u64, b: u64) -> u64 {
     let fa = f32::from_bits(a as u32);
     let fb = f32::from_bits(b as u32);
     if fa.is_nan() {
@@ -5447,7 +5617,8 @@ unsafe extern "C" fn helper_fmin32(a: u64, b: u64) -> u64 {
         fa.min(fb).to_bits() as u64
     }
 }
-unsafe extern "C" fn helper_fmaxnm32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmaxnm32(a: u64, b: u64) -> u64 {
     let fa = f32::from_bits(a as u32);
     let fb = f32::from_bits(b as u32);
     if fa.is_nan() && fb.is_nan() {
@@ -5460,7 +5631,8 @@ unsafe extern "C" fn helper_fmaxnm32(a: u64, b: u64) -> u64 {
         fa.max(fb).to_bits() as u64
     }
 }
-unsafe extern "C" fn helper_fminnm32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fminnm32(a: u64, b: u64) -> u64 {
     let fa = f32::from_bits(a as u32);
     let fb = f32::from_bits(b as u32);
     if fa.is_nan() && fb.is_nan() {
@@ -5473,7 +5645,8 @@ unsafe extern "C" fn helper_fminnm32(a: u64, b: u64) -> u64 {
         fa.min(fb).to_bits() as u64
     }
 }
-unsafe extern "C" fn helper_fcvtps_w_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtps_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a).ceil();
     if f.is_nan() {
         0
@@ -5485,7 +5658,8 @@ unsafe extern "C" fn helper_fcvtps_w_d(a: u64) -> u64 {
         f as i32 as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtps_x_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtps_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a).ceil();
     if f.is_nan() {
         0
@@ -5497,7 +5671,8 @@ unsafe extern "C" fn helper_fcvtps_x_d(a: u64) -> u64 {
         f as i64 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtps_w_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtps_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).ceil();
     if f.is_nan() {
         0
@@ -5509,7 +5684,8 @@ unsafe extern "C" fn helper_fcvtps_w_s(a: u64) -> u64 {
         f as i32 as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtps_x_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtps_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32).ceil();
     if f.is_nan() {
         0
@@ -5521,133 +5697,169 @@ unsafe extern "C" fn helper_fcvtps_x_s(a: u64) -> u64 {
         f as i64 as u64
     }
 }
-unsafe extern "C" fn helper_fabd64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fabd64(a: u64, b: u64) -> u64 {
     let r = f64::from_bits(a) - f64::from_bits(b);
     r.abs().to_bits()
 }
-unsafe extern "C" fn helper_fabd32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fabd32(a: u64, b: u64) -> u64 {
     let r = f32::from_bits(a as u32) - f32::from_bits(b as u32);
     r.abs().to_bits() as u64
 }
-unsafe extern "C" fn helper_fdiv64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fdiv64(a: u64, b: u64) -> u64 {
     (f64::from_bits(a) / f64::from_bits(b)).to_bits()
 }
-unsafe extern "C" fn helper_fsqrt64(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fsqrt64(a: u64) -> u64 {
     f64::from_bits(a).sqrt().to_bits()
 }
-unsafe extern "C" fn helper_fsqrt32(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fsqrt32(a: u64) -> u64 {
     f32::from_bits(a as u32).sqrt().to_bits() as u64
 }
-unsafe extern "C" fn helper_fmadd64(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmadd64(a: u64, b: u64, c: u64) -> u64 {
     (f64::from_bits(a) * f64::from_bits(b) + f64::from_bits(c)).to_bits()
 }
-unsafe extern "C" fn helper_fmsub64(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmsub64(a: u64, b: u64, c: u64) -> u64 {
     (-(f64::from_bits(a) * f64::from_bits(b)) + f64::from_bits(c)).to_bits()
 }
-unsafe extern "C" fn helper_fmadd32(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmadd32(a: u64, b: u64, c: u64) -> u64 {
     (f32::from_bits(a as u32) * f32::from_bits(b as u32)
         + f32::from_bits(c as u32))
     .to_bits() as u64
 }
-unsafe extern "C" fn helper_fmsub32(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmsub32(a: u64, b: u64, c: u64) -> u64 {
     (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))
         + f32::from_bits(c as u32))
     .to_bits() as u64
 }
-unsafe extern "C" fn helper_fnmadd64(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fnmadd64(a: u64, b: u64, c: u64) -> u64 {
     (-(f64::from_bits(a) * f64::from_bits(b)) - f64::from_bits(c)).to_bits()
 }
-unsafe extern "C" fn helper_fnmsub64(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fnmsub64(a: u64, b: u64, c: u64) -> u64 {
     (f64::from_bits(a) * f64::from_bits(b) - f64::from_bits(c)).to_bits()
 }
-unsafe extern "C" fn helper_fnmadd32(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fnmadd32(a: u64, b: u64, c: u64) -> u64 {
     (-(f32::from_bits(a as u32) * f32::from_bits(b as u32))
         - f32::from_bits(c as u32))
     .to_bits() as u64
 }
-unsafe extern "C" fn helper_fnmsub32(a: u64, b: u64, c: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fnmsub32(a: u64, b: u64, c: u64) -> u64 {
     (f32::from_bits(a as u32) * f32::from_bits(b as u32)
         - f32::from_bits(c as u32))
     .to_bits() as u64
 }
-unsafe extern "C" fn helper_fadd32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fadd32(a: u64, b: u64) -> u64 {
     (f32::from_bits(a as u32) + f32::from_bits(b as u32)).to_bits() as u64
 }
-unsafe extern "C" fn helper_fsub32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fsub32(a: u64, b: u64) -> u64 {
     (f32::from_bits(a as u32) - f32::from_bits(b as u32)).to_bits() as u64
 }
-unsafe extern "C" fn helper_fmul32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fmul32(a: u64, b: u64) -> u64 {
     (f32::from_bits(a as u32) * f32::from_bits(b as u32)).to_bits() as u64
 }
-unsafe extern "C" fn helper_fdiv32(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fdiv32(a: u64, b: u64) -> u64 {
     (f32::from_bits(a as u32) / f32::from_bits(b as u32)).to_bits() as u64
 }
-unsafe extern "C" fn helper_scvtf_d_x(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_d_x(a: u64) -> u64 {
     ((a as i64) as f64).to_bits()
 }
-unsafe extern "C" fn helper_scvtf_d_w(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_d_w(a: u64) -> u64 {
     ((a as u32 as i32) as f64).to_bits()
 }
-unsafe extern "C" fn helper_ucvtf_d_w(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_d_w(a: u64) -> u64 {
     ((a as u32) as f64).to_bits()
 }
-unsafe extern "C" fn helper_ucvtf_d_x(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_d_x(a: u64) -> u64 {
     (a as f64).to_bits()
 }
 // Single-precision (Sd) conversions from/to GPR
-unsafe extern "C" fn helper_scvtf_s_w(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_s_w(a: u64) -> u64 {
     ((a as u32 as i32) as f32).to_bits() as u64
 }
-unsafe extern "C" fn helper_scvtf_s_x(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_s_x(a: u64) -> u64 {
     ((a as i64) as f32).to_bits() as u64
 }
-unsafe extern "C" fn helper_ucvtf_s_w(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_s_w(a: u64) -> u64 {
     ((a as u32) as f32).to_bits() as u64
 }
-unsafe extern "C" fn helper_ucvtf_s_x(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_s_x(a: u64) -> u64 {
     (a as f32).to_bits() as u64
 }
-unsafe extern "C" fn helper_scvtf_d_w_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_d_w_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f64).powi(fbits as i32);
     (((a as u32 as i32) as f64) / scale).to_bits()
 }
-unsafe extern "C" fn helper_scvtf_d_x_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_d_x_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f64).powi(fbits as i32);
     ((a as i64) as f64 / scale).to_bits()
 }
-unsafe extern "C" fn helper_ucvtf_d_w_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_d_w_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f64).powi(fbits as i32);
     ((a as u32) as f64 / scale).to_bits()
 }
-unsafe extern "C" fn helper_ucvtf_d_x_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_d_x_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f64).powi(fbits as i32);
     (a as f64 / scale).to_bits()
 }
-unsafe extern "C" fn helper_scvtf_s_w_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_s_w_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f32).powi(fbits as i32);
     (((a as u32 as i32) as f32) / scale).to_bits() as u64
 }
-unsafe extern "C" fn helper_scvtf_s_x_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_s_x_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f32).powi(fbits as i32);
     ((a as i64) as f32 / scale).to_bits() as u64
 }
-unsafe extern "C" fn helper_ucvtf_s_w_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_s_w_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f32).powi(fbits as i32);
     ((a as u32) as f32 / scale).to_bits() as u64
 }
-unsafe extern "C" fn helper_ucvtf_s_x_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_s_x_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f32).powi(fbits as i32);
     (a as f32 / scale).to_bits() as u64
 }
 // Single-precision: integer-in-Sn register to float-in-Sd
-unsafe extern "C" fn helper_scvtf_s_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_scvtf_s_s(a: u64) -> u64 {
     ((a as u32 as i32) as f32).to_bits() as u64
 }
-unsafe extern "C" fn helper_ucvtf_s_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_ucvtf_s_s(a: u64) -> u64 {
     ((a as u32) as f32).to_bits() as u64
 }
 // FCVTZx single-precision float to integer
-unsafe extern "C" fn helper_fcvtzu_w_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzu_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() || f <= 0.0 {
         0
@@ -5657,7 +5869,8 @@ unsafe extern "C" fn helper_fcvtzu_w_s(a: u64) -> u64 {
         f as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzu_x_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzu_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() || f <= 0.0 {
         0
@@ -5667,7 +5880,8 @@ unsafe extern "C" fn helper_fcvtzu_x_s(a: u64) -> u64 {
         f as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzs_w_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzs_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() {
         0
@@ -5679,7 +5893,8 @@ unsafe extern "C" fn helper_fcvtzs_w_s(a: u64) -> u64 {
         f as i32 as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzs_x_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzs_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() {
         0
@@ -5691,7 +5906,8 @@ unsafe extern "C" fn helper_fcvtzs_x_s(a: u64) -> u64 {
         f as i64 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzs_w_s_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzs_w_s_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f32).powi(fbits as i32);
     let f = f32::from_bits(a as u32) * scale;
     if f.is_nan() {
@@ -5700,7 +5916,8 @@ unsafe extern "C" fn helper_fcvtzs_w_s_fixed(a: u64, fbits: u64) -> u64 {
         (f as i32) as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzu_w_s_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzu_w_s_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f32).powi(fbits as i32);
     let f = f32::from_bits(a as u32) * scale;
     if f.is_nan() || f <= 0.0 {
@@ -5709,7 +5926,8 @@ unsafe extern "C" fn helper_fcvtzu_w_s_fixed(a: u64, fbits: u64) -> u64 {
         (f as u32) as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzs_x_d_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzs_x_d_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f64).powi(fbits as i32);
     let f = f64::from_bits(a) * scale;
     if f.is_nan() {
@@ -5718,7 +5936,8 @@ unsafe extern "C" fn helper_fcvtzs_x_d_fixed(a: u64, fbits: u64) -> u64 {
         (f as i64) as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzu_x_d_fixed(a: u64, fbits: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzu_x_d_fixed(a: u64, fbits: u64) -> u64 {
     let scale = (2.0f64).powi(fbits as i32);
     let f = f64::from_bits(a) * scale;
     if f.is_nan() || f <= 0.0 {
@@ -5727,7 +5946,8 @@ unsafe extern "C" fn helper_fcvtzu_x_d_fixed(a: u64, fbits: u64) -> u64 {
         f as u64
     }
 }
-unsafe extern "C" fn helper_fcvtas_x_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtas_x_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() {
         0
@@ -5735,7 +5955,8 @@ unsafe extern "C" fn helper_fcvtas_x_s(a: u64) -> u64 {
         f.round() as i64 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtas_w_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtas_w_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     if f.is_nan() {
         0
@@ -5743,7 +5964,8 @@ unsafe extern "C" fn helper_fcvtas_w_s(a: u64) -> u64 {
         f.round() as i32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzu_x_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzu_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() || f < 0.0 {
         0
@@ -5751,7 +5973,8 @@ unsafe extern "C" fn helper_fcvtzu_x_d(a: u64) -> u64 {
         f as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzu_w_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzu_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() || f < 0.0 {
         0
@@ -5759,7 +5982,8 @@ unsafe extern "C" fn helper_fcvtzu_w_d(a: u64) -> u64 {
         (f as u32) as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzs_w_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzs_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() {
         0
@@ -5767,7 +5991,8 @@ unsafe extern "C" fn helper_fcvtzs_w_d(a: u64) -> u64 {
         (f as i32) as u32 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtzs_x_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtzs_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() {
         0
@@ -5775,7 +6000,8 @@ unsafe extern "C" fn helper_fcvtzs_x_d(a: u64) -> u64 {
         (f as i64) as u64
     }
 }
-unsafe extern "C" fn helper_fcvtas_x_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtas_x_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() {
         0
@@ -5783,7 +6009,8 @@ unsafe extern "C" fn helper_fcvtas_x_d(a: u64) -> u64 {
         f.round() as i64 as u64
     }
 }
-unsafe extern "C" fn helper_fcvtas_w_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcvtas_w_d(a: u64) -> u64 {
     let f = f64::from_bits(a);
     if f.is_nan() {
         0
@@ -5791,25 +6018,32 @@ unsafe extern "C" fn helper_fcvtas_w_d(a: u64) -> u64 {
         f.round() as i32 as u64
     }
 }
-unsafe extern "C" fn helper_frinta_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frinta_d(a: u64) -> u64 {
     f64::from_bits(a).round().to_bits()
 }
-unsafe extern "C" fn helper_frinta_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frinta_s(a: u64) -> u64 {
     (f32::from_bits(a as u32).round()).to_bits() as u64
 }
-unsafe extern "C" fn helper_frintm_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintm_d(a: u64) -> u64 {
     f64::from_bits(a).floor().to_bits()
 }
-unsafe extern "C" fn helper_frintm_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintm_s(a: u64) -> u64 {
     (f32::from_bits(a as u32).floor()).to_bits() as u64
 }
-unsafe extern "C" fn helper_frintp_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintp_d(a: u64) -> u64 {
     f64::from_bits(a).ceil().to_bits()
 }
-unsafe extern "C" fn helper_frintp_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintp_s(a: u64) -> u64 {
     (f32::from_bits(a as u32).ceil()).to_bits() as u64
 }
-unsafe extern "C" fn helper_frintn_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintn_d(a: u64) -> u64 {
     // Round to nearest even (banker's rounding)
     let f = f64::from_bits(a);
     let rounded = f.round();
@@ -5825,7 +6059,8 @@ unsafe extern "C" fn helper_frintn_d(a: u64) -> u64 {
         rounded.to_bits()
     }
 }
-unsafe extern "C" fn helper_frintn_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintn_s(a: u64) -> u64 {
     let f = f32::from_bits(a as u32);
     let rounded = f.round();
     let result = if (f - rounded).abs() == 0.5 {
@@ -5839,14 +6074,17 @@ unsafe extern "C" fn helper_frintn_s(a: u64) -> u64 {
     };
     result.to_bits() as u64
 }
-unsafe extern "C" fn helper_frintz_d(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintz_d(a: u64) -> u64 {
     f64::from_bits(a).trunc().to_bits()
 }
-unsafe extern "C" fn helper_frintz_s(a: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_frintz_s(a: u64) -> u64 {
     (f32::from_bits(a as u32).trunc()).to_bits() as u64
 }
 /// Returns NZCV bits (packed in bits 31:28) for fcmp/fcmpe.
-unsafe extern "C" fn helper_fcmp64(a: u64, b: u64) -> u64 {
+#[no_mangle]
+pub unsafe extern "C" fn helper_fcmp64(a: u64, b: u64) -> u64 {
     let fa = f64::from_bits(a);
     let fb = f64::from_bits(b);
     let nzcv = if fa.is_nan() || fb.is_nan() {

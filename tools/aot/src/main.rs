@@ -608,14 +608,10 @@ fn compile_aot(
         )
     };
 
-    // Pre-scan: find TBs that contain helper calls (Opcode::Call).
-    // Helper function addresses are absolute host pointers from
-    // the AOT compilation process; they are not relocatable and
-    // would SIGSEGV at runtime under ASLR.  We must exclude these
-    // from the peer-lookup map so that other TBs that would
-    // goto_tb into them fall back to aot_dispatch instead of
-    // emitting an unresolved musttail-call reference.
-    let mut skipped_offsets: HashSet<u64> = HashSet::new();
+    // Pre-scan: collect all helper function addresses used in TBs.
+    // We'll emit external declarations for these helpers so they
+    // can be resolved from the tcg-rs executable at runtime.
+    let mut helper_addrs: HashSet<u64> = HashSet::new();
     for &(offset, _) in all_entries {
         let mut ir = Context::new();
         arch.init_context(&mut ir);
@@ -624,30 +620,33 @@ fn compile_aot(
         let max_insns = TranslationBlock::max_insns(0);
         arch.translate_tb(&mut ir, guest_pc, base, max_insns);
         optimize(&mut ir);
-        if ir.ops().iter().any(|op| op.opc == Opcode::Call) {
-            skipped_offsets.insert(offset);
+        for op in ir.ops() {
+            if op.opc == Opcode::Call {
+                let cargs = op.cargs();
+                // cargs are encoded as TempIdx(value), not actual temp indices
+                let lo = cargs[0].0 as u64;
+                let hi = cargs[1].0 as u64;
+                let func_addr = (hi << 32) | lo;
+                helper_addrs.insert(func_addr);
+            }
         }
     }
 
-    // Build guest VA → file_offset map for peer lookup,
-    // excluding any TBs that will be skipped.
+    // Build guest VA → file_offset map for peer lookup.
+    // Now we include all TBs since helpers will be resolved externally.
     let all_va_to_offset: HashMap<u64, u64> = all_entries
         .iter()
-        .filter(|&&(off, _)| !skipped_offsets.contains(&off))
         .map(|&(off, _)| (off + load_vaddr, off))
         .collect();
 
+    // Emit external declarations for all helper functions
+    eprintln!("[aot] found {} unique helper functions", helper_addrs.len());
+
     // Translate all TBs with LLVM
     let mut translated = 0u32;
-    let skipped_call = skipped_offsets.len() as u32;
 
     for &(offset, exported) in all_entries {
         let func_name = format!("tb_{offset:x}");
-
-        // Skip TBs with non-relocatable helper calls.
-        if skipped_offsets.contains(&offset) {
-            continue;
-        }
 
         let mut ir = Context::new();
         arch.init_context(&mut ir);
@@ -660,12 +659,13 @@ fn compile_aot(
         optimize(&mut ir);
 
         let tb_translator =
-            TbTranslator::new_with_peers(
+            TbTranslator::new_with_peers_and_helpers(
                 llvm_ctx,
                 &ir,
                 &func_name,
                 &all_va_to_offset,
                 pc_temp,
+                &helper_addrs,
             );
         let tb_module = tb_translator.translate(&ir);
 
@@ -709,8 +709,7 @@ fn compile_aot(
     }
 
     eprintln!(
-        "[aot] translated {translated} TBs \
-         (skipped {skipped_call} with helper calls)",
+        "[aot] translated {translated} TBs",
     );
 
     // Post-link: hide non-exported TBs

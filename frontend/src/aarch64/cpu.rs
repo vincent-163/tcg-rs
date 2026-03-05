@@ -141,6 +141,7 @@ impl Default for Aarch64Cpu {
 
 /// Compute packed NZCV from lazy cc_op state.
 /// Called at runtime when the packed value is needed.
+#[no_mangle]
 pub extern "C" fn helper_lazy_nzcv_to_packed(
     cc_op: u64, cc_a: u64, cc_b: u64, cc_result: u64,
 ) -> u64 {
@@ -161,6 +162,7 @@ pub extern "C" fn helper_lazy_nzcv_to_packed(
 
 /// Evaluate an AArch64 condition code from lazy NZCV state.
 /// Returns 1 if condition is true, 0 if false.
+#[no_mangle]
 pub extern "C" fn helper_lazy_nzcv_eval_cond(
     cc_op: u64, cc_a: u64, cc_b: u64, cc_result: u64,
     cond: u64,
