@@ -11,5 +11,6 @@ members = [
     "tools/irdump",
     "tools/irbackend",
     "tools/aot",
+    "tools/profile-decode",
 ]
 resolver = "2"

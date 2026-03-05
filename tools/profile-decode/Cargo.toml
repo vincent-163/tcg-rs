@@ -1,0 +1,11 @@
+[package]
+name = "tcg-profile-decode"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tcg-profile-decode"
+path = "src/main.rs"
+
+[dependencies]
+tcg-exec = { path = "../../exec" }

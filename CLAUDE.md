@@ -83,6 +83,26 @@ TCG_AOT=/tmp/aot-aa64.so target/release/tcg-aarch64 <elf> [args...]
 #   TCG_STATS=1          print TB lookup / exit / chaining statistics
 #   TCG_PROFILE=1        enable profiling (needed for profile-guided mode)
 #   TCG_PROFILE_OUT=path path for profile output (default: profile.bin)
+
+# ── Profile decoder tool ─────────────────────────────────────────────────────
+# Decode and analyze profile.bin data collected during profiling runs.
+
+cargo build --release -p tcg-profile-decode
+
+# Show all entries sorted by execution count (default)
+target/release/tcg-profile-decode profile.bin
+
+# Show summary statistics only
+target/release/tcg-profile-decode profile.bin --stats
+
+# Filter by minimum execution count
+target/release/tcg-profile-decode profile.bin --min-count 1000000
+
+# Show only indirect jump targets
+target/release/tcg-profile-decode profile.bin --indirect
+
+# Sort by file offset instead of count
+target/release/tcg-profile-decode profile.bin --sort-offset
 ```
 
 ## Git Commit 规范
