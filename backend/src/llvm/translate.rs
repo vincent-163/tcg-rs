@@ -1355,10 +1355,9 @@ impl TbTranslator {
             }
             Opcode::GotoTb => {
                 flush_globals!();
-                // AOT direct linking: musttail call to peer if target PC is known.
-                // Falls back to aot_dispatch (loads PC + load_bias from env,
-                // computes file_offset = pc - load_bias, switches) so static
-                // branches between AOT TBs never return to the exec loop.
+                // AOT direct linking: musttail call to peer if target PC is known
+                // and exists in the AOT file. If target doesn't exist in AOT,
+                // return to exec loop instead of calling aot_dispatch.
                 let peer = self.last_pc_const
                     .and_then(|pc| self.aot_peers.get(&pc).copied());
                 if let Some(peer_fn) = peer {
@@ -1369,16 +1368,8 @@ impl TbTranslator {
                     );
                     LLVMSetTailCallKind(call, 2); // MustTail
                     LLVMBuildRet(b, call);
-                } else if let Some(dispatch_fn) = self.aot_dispatch {
-                    // Target not a declared local peer; aot_dispatch will find it.
-                    let mut args = [self.env, self.guest_base];
-                    let call = LLVMBuildCall2(
-                        b, self.peer_fty, dispatch_fn,
-                        args.as_mut_ptr(), 2, E,
-                    );
-                    LLVMSetTailCallKind(call, 2); // MustTail
-                    LLVMBuildRet(b, call);
                 } else {
+                    // Target not in AOT file; return to exec loop
                     self.do_exit(tcg_core::tb::TB_EXIT_NOCHAIN);
                 }
                 *terminated = true;
