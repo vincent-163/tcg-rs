@@ -119,6 +119,7 @@ extern "C" {
     pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
     pub fn LLVMGetParam(func: LLVMValueRef, idx: u32) -> LLVMValueRef;
     pub fn LLVMSetValueName2(val: LLVMValueRef, name: *const c_char, len: usize);
+    pub fn LLVMTypeOf(val: LLVMValueRef) -> LLVMTypeRef;
 
     // Functions
     pub fn LLVMAddFunction(

@@ -278,6 +278,38 @@ impl TbTranslator {
         unsafe { LLVMConstInt(ty, val, 0) }
     }
 
+    /// Ensure two values have the same type for comparison.
+    /// If types differ, zero-extend the narrower one to match the wider.
+    fn match_cmp_types(
+        &self,
+        b: LLVMBuilderRef,
+        a: LLVMValueRef,
+        b_val: LLVMValueRef,
+    ) -> (LLVMValueRef, LLVMValueRef) {
+        unsafe {
+            let a_ty = LLVMTypeOf(a);
+            let b_ty = LLVMTypeOf(b_val);
+            if a_ty == b_ty {
+                (a, b_val)
+            } else {
+                // Extend narrower operand to match wider one
+                // For simplicity, always extend to i64 if types differ
+                let target_ty = self.i64t;
+                let a_ext = if a_ty != target_ty {
+                    LLVMBuildZExt(b, a, target_ty, E)
+                } else {
+                    a
+                };
+                let b_ext = if b_ty != target_ty {
+                    LLVMBuildZExt(b, b_val, target_ty, E)
+                } else {
+                    b_val
+                };
+                (a_ext, b_ext)
+            }
+        }
+    }
+
     /// Tag a load or store with TBAA metadata.
     fn set_tbaa(&self, inst: LLVMValueRef, tag: LLVMValueRef) {
         unsafe { LLVMSetMetadata(inst, self.tbaa_kind, tag); }
@@ -1022,10 +1054,11 @@ impl TbTranslator {
                 let (a, b_val) = (ival!(0), ival!(1));
                 let cmp = if cond.is_tst() {
                     let anded = LLVMBuildAnd(b, a, b_val, E);
-                    let zero = self.ci(self.llvm_ty(op.op_type), 0);
+                    let zero = LLVMConstInt(LLVMTypeOf(anded), 0, 0);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), anded, zero, E)
                 } else {
-                    LLVMBuildICmp(b, Self::cond_to_pred(cond), a, b_val, E)
+                    let (a_ext, b_ext) = self.match_cmp_types(b, a, b_val);
+                    LLVMBuildICmp(b, Self::cond_to_pred(cond), a_ext, b_ext, E)
                 };
                 let v = LLVMBuildZExt(b, cmp, self.llvm_ty(op.op_type), E);
                 store_out!(0, v);
@@ -1035,10 +1068,11 @@ impl TbTranslator {
                 let (a, b_val) = (ival!(0), ival!(1));
                 let cmp = if cond.is_tst() {
                     let anded = LLVMBuildAnd(b, a, b_val, E);
-                    let zero = self.ci(self.llvm_ty(op.op_type), 0);
+                    let zero = LLVMConstInt(LLVMTypeOf(anded), 0, 0);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), anded, zero, E)
                 } else {
-                    LLVMBuildICmp(b, Self::cond_to_pred(cond), a, b_val, E)
+                    let (a_ext, b_ext) = self.match_cmp_types(b, a, b_val);
+                    LLVMBuildICmp(b, Self::cond_to_pred(cond), a_ext, b_ext, E)
                 };
                 let ext = LLVMBuildZExt(b, cmp, self.llvm_ty(op.op_type), E);
                 let v = LLVMBuildNeg(b, ext, E);
@@ -1050,10 +1084,11 @@ impl TbTranslator {
                 let (v1, v2) = (ival!(2), ival!(3));
                 let cmp = if cond.is_tst() {
                     let anded = LLVMBuildAnd(b, c1, c2, E);
-                    let zero = self.ci(self.llvm_ty(op.op_type), 0);
+                    let zero = LLVMConstInt(LLVMTypeOf(anded), 0, 0);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), anded, zero, E)
                 } else {
-                    LLVMBuildICmp(b, Self::cond_to_pred(cond), c1, c2, E)
+                    let (c1_ext, c2_ext) = self.match_cmp_types(b, c1, c2);
+                    LLVMBuildICmp(b, Self::cond_to_pred(cond), c1_ext, c2_ext, E)
                 };
                 let v = LLVMBuildSelect(b, cmp, v1, v2, E);
                 store_out!(0, v);
@@ -1268,10 +1303,11 @@ impl TbTranslator {
                 let label_id = carg!(1);
                 let cmp = if cond.is_tst() {
                     let anded = LLVMBuildAnd(b, a, bv, E);
-                    let zero = self.ci(self.llvm_ty(op.op_type), 0);
+                    let zero = LLVMConstInt(LLVMTypeOf(anded), 0, 0);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), anded, zero, E)
                 } else {
-                    LLVMBuildICmp(b, Self::cond_to_pred(cond), a, bv, E)
+                    let (a_ext, bv_ext) = self.match_cmp_types(b, a, bv);
+                    LLVMBuildICmp(b, Self::cond_to_pred(cond), a_ext, bv_ext, E)
                 };
                 flush_globals!();
                 let fall_bb = LLVMAppendBasicBlockInContext(
