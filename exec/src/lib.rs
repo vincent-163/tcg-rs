@@ -74,6 +74,8 @@ pub trait GuestCpu {
 pub struct AotTable {
     _handle: *mut libc::c_void,
     pub funcs: HashMap<u64, u64>,
+    pub dispatch_fn: Option<u64>,
+    pub cache_ptr: *mut *mut libc::c_void,
 }
 
 unsafe impl Send for AotTable {}
@@ -114,13 +116,34 @@ impl AotTable {
 
                 i += 1;
             }
+
+            // Look up aot_dispatch function
+            let dispatch_sym = CString::new("aot_dispatch").unwrap();
+            let dispatch_fn = libc::dlsym(handle, dispatch_sym.as_ptr()) as u64;
+            let dispatch_fn = if dispatch_fn != 0 { Some(dispatch_fn) } else { None };
+
+            // Allocate cache pointer in heap (initialized to null)
+            let cache_ptr = Box::into_raw(Box::new(std::ptr::null_mut()));
+
             eprintln!("[aot] loaded {} functions from {}", funcs.len(), path.display());
-            Some(Self { _handle: handle, funcs })
+            if dispatch_fn.is_some() {
+                eprintln!("[aot] aot_dispatch found at {:#x}", dispatch_fn.unwrap());
+            }
+            Some(Self { _handle: handle, funcs, dispatch_fn, cache_ptr })
         }
     }
 
     pub fn lookup(&self, pc: u64) -> Option<u64> {
         self.funcs.get(&pc).copied()
+    }
+}
+
+impl Drop for AotTable {
+    fn drop(&mut self) {
+        unsafe {
+            // Free the cache pointer
+            let _ = Box::from_raw(self.cache_ptr);
+        }
     }
 }
 

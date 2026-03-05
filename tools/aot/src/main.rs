@@ -1126,11 +1126,39 @@ fn emit_aot_dispatch(
         let i64t = LLVMInt64TypeInContext(ctx);
         let ptr = LLVMPointerTypeInContext(ctx, 0);
 
-        let mut params = [ptr, i64t];
+        // Emit TbCacheEntry structure array in BSS
+        // Each entry: { u64 guest_pc, void* host_tb_ptr }
+        let entry_type = LLVMStructTypeInContext(
+            ctx,
+            [i64t, ptr].as_mut_ptr(),
+            2,
+            0,
+        );
+        for &offset in all_offsets {
+            let entry_name = CString::new(
+                format!("tb_entry_{offset:x}"),
+            )
+            .unwrap();
+            let entry_global = LLVMAddGlobal(
+                module,
+                entry_type,
+                entry_name.as_ptr(),
+            );
+            LLVMSetInitializer(
+                entry_global,
+                LLVMConstNull(entry_type),
+            );
+            LLVMSetLinkage(entry_global, 8);
+        }
+
+        // aot_dispatch(env, guest_base, cache_ptr)
+        // cache_ptr points to a pointer (void**) that stores
+        // the last dispatched TbCacheEntry*
+        let mut params = [ptr, i64t, ptr];
         let fty = LLVMFunctionType(
             i64t,
             params.as_mut_ptr(),
-            2,
+            3,
             0,
         );
 
@@ -1158,6 +1186,7 @@ fn emit_aot_dispatch(
 
         let env = LLVMGetParam(func, 0);
         let guest_base = LLVMGetParam(func, 1);
+        let cache_ptr = LLVMGetParam(func, 2);
 
         let pc_off = LLVMConstInt(
             i64t,
@@ -1178,6 +1207,116 @@ fn emit_aot_dispatch(
             pc_ptr,
             c"pc".as_ptr(),
         );
+
+        // Fast path: atomically load cache
+        let entry_type = LLVMStructTypeInContext(
+            ctx,
+            [i64t, ptr].as_mut_ptr(),
+            2,
+            0,
+        );
+        let cached_entry_ptr = LLVMBuildLoad2(
+            builder,
+            ptr,
+            cache_ptr,
+            c"cached_entry".as_ptr(),
+        );
+        LLVMSetOrdering(cached_entry_ptr, 2); // Acquire
+        LLVMSetAlignment(cached_entry_ptr, 8);
+
+        let cache_check_bb = LLVMAppendBasicBlockInContext(
+            ctx,
+            func,
+            c"cache_check".as_ptr(),
+        );
+        let slow_path_bb = LLVMAppendBasicBlockInContext(
+            ctx,
+            func,
+            c"slow_path".as_ptr(),
+        );
+
+        let is_null = LLVMBuildIsNull(
+            builder,
+            cached_entry_ptr,
+            E,
+        );
+        LLVMBuildCondBr(
+            builder,
+            is_null,
+            slow_path_bb,
+            cache_check_bb,
+        );
+
+        // Cache check: compare guest PC
+        LLVMPositionBuilderAtEnd(builder, cache_check_bb);
+        let cached_pc_ptr = LLVMBuildStructGEP2(
+            builder,
+            entry_type,
+            cached_entry_ptr,
+            0,
+            c"pc_ptr".as_ptr(),
+        );
+        let cached_pc = LLVMBuildLoad2(
+            builder,
+            i64t,
+            cached_pc_ptr,
+            c"cached_pc".as_ptr(),
+        );
+        let pc_match = LLVMBuildICmp(
+            builder,
+            LLVMIntPredicate::LLVMIntEQ,
+            cached_pc,
+            pc_val,
+            c"pc_match".as_ptr(),
+        );
+
+        let cache_hit_bb = LLVMAppendBasicBlockInContext(
+            ctx,
+            func,
+            c"cache_hit".as_ptr(),
+        );
+        LLVMBuildCondBr(
+            builder,
+            pc_match,
+            cache_hit_bb,
+            slow_path_bb,
+        );
+
+        // Cache hit: jump to cached TB
+        LLVMPositionBuilderAtEnd(builder, cache_hit_bb);
+        let cached_tb_ptr_ptr = LLVMBuildStructGEP2(
+            builder,
+            entry_type,
+            cached_entry_ptr,
+            1,
+            c"tb_ptr_ptr".as_ptr(),
+        );
+        let cached_tb_ptr = LLVMBuildLoad2(
+            builder,
+            ptr,
+            cached_tb_ptr_ptr,
+            c"cached_tb".as_ptr(),
+        );
+        let cached_tb_func = LLVMBuildBitCast(
+            builder,
+            cached_tb_ptr,
+            LLVMPointerTypeInContext(ctx, 0),
+            E,
+        );
+        let mut hit_args = [env, guest_base];
+        let hit_call = LLVMBuildCall2(
+            builder,
+            fty,
+            cached_tb_func,
+            hit_args.as_mut_ptr(),
+            2,
+            E,
+        );
+        LLVMSetTailCallKind(hit_call, 2);
+        LLVMBuildRet(builder, hit_call);
+
+        // Slow path: compute file offset and switch
+        LLVMPositionBuilderAtEnd(builder, slow_path_bb);
 
         let lb_off = LLVMConstInt(
             i64t,
@@ -1211,6 +1350,15 @@ fn emit_aot_dispatch(
             func,
             c"miss".as_ptr(),
         );
+
+        let sw = LLVMBuildSwitch(
+            builder,
+            file_offset_val,
+            miss_bb,
+            all_offsets.len() as u32,
+        );
+
+        // miss block: return TB_EXIT_NOCHAIN
         LLVMPositionBuilderAtEnd(builder, miss_bb);
         let nochain = LLVMConstInt(
             i64t,
@@ -1218,14 +1366,6 @@ fn emit_aot_dispatch(
             0,
         );
         LLVMBuildRet(builder, nochain);
-
-        LLVMPositionBuilderAtEnd(builder, entry);
-        let sw = LLVMBuildSwitch(
-            builder,
-            file_offset_val,
-            miss_bb,
-            all_offsets.len() as u32,
-        );
 
         for &offset in all_offsets {
             let name = CString::new(
@@ -1256,6 +1396,43 @@ fn emit_aot_dispatch(
             );
 
             LLVMPositionBuilderAtEnd(builder, bb);
+
+            // Get TbCacheEntry for this TB
+            let entry_name = CString::new(
+                format!("tb_entry_{offset:x}"),
+            )
+            .unwrap();
+            let entry_global = LLVMGetNamedGlobal(
+                module,
+                entry_name.as_ptr(),
+            );
+
+            // 1. Store current guest PC to target TB entry
+            let entry_pc_ptr = LLVMBuildStructGEP2(
+                builder,
+                entry_type,
+                entry_global,
+                0,
+                E,
+            );
+            let pc_store = LLVMBuildStore(
+                builder,
+                pc_val,
+                entry_pc_ptr,
+            );
+            LLVMSetOrdering(pc_store, 3); // Release
+            LLVMSetAlignment(pc_store, 8);
+
+            // 2. Atomically store target TB entry ptr to cache
+            let cache_store = LLVMBuildStore(
+                builder,
+                entry_global,
+                cache_ptr,
+            );
+            LLVMSetOrdering(cache_store, 3); // Release
+            LLVMSetAlignment(cache_store, 8);
+
+            // Call TB function
             let mut args = [env, guest_base];
             let call = LLVMBuildCall2(
                 builder,

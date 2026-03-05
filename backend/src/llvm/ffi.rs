@@ -18,6 +18,7 @@ pub enum LLVMOpaqueTargetData {}
 pub enum LLVMOpaquePassBuilderOptions {}
 pub enum LLVMOpaqueMetadata {}
 pub enum LLVMOpaqueMemoryBuffer {}
+pub enum LLVMOpaqueAttribute {}
 
 // OrcV2 opaque types
 pub enum LLVMOrcOpaqueThreadSafeContext {}
@@ -40,6 +41,7 @@ pub type LLVMTargetDataRef = *mut LLVMOpaqueTargetData;
 pub type LLVMPassBuilderOptionsRef = *mut LLVMOpaquePassBuilderOptions;
 pub type LLVMMetadataRef = *mut LLVMOpaqueMetadata;
 pub type LLVMMemoryBufferRef = *mut LLVMOpaqueMemoryBuffer;
+pub type LLVMAttributeRef = *mut LLVMOpaqueAttribute;
 
 pub type LLVMOrcThreadSafeContextRef = *mut LLVMOrcOpaqueThreadSafeContext;
 pub type LLVMOrcThreadSafeModuleRef = *mut LLVMOrcOpaqueThreadSafeModule;
@@ -409,5 +411,48 @@ extern "C" {
     );
     pub fn LLVMGetMDKindIDInContext(
         c: LLVMContextRef, name: *const c_char, len: u32,
+    ) -> u32;
+
+    // Struct types and GEP
+    pub fn LLVMStructTypeInContext(
+        c: LLVMContextRef,
+        elem_types: *mut LLVMTypeRef,
+        elem_count: u32,
+        packed: i32,
+    ) -> LLVMTypeRef;
+    pub fn LLVMBuildStructGEP2(
+        b: LLVMBuilderRef,
+        ty: LLVMTypeRef,
+        pointer: LLVMValueRef,
+        idx: u32,
+        name: *const c_char,
+    ) -> LLVMValueRef;
+    pub fn LLVMGetNamedGlobal(
+        m: LLVMModuleRef,
+        name: *const c_char,
+    ) -> LLVMValueRef;
+    pub fn LLVMBuildIsNull(
+        b: LLVMBuilderRef,
+        val: LLVMValueRef,
+        name: *const c_char,
+    ) -> LLVMValueRef;
+    pub fn LLVMSetOrdering(
+        memory_access_inst: LLVMValueRef,
+        ordering: u32,
+    );
+    // Function attributes
+    pub fn LLVMAddAttributeAtIndex(
+        f: LLVMValueRef,
+        idx: u32,
+        a: LLVMAttributeRef,
+    );
+    pub fn LLVMCreateEnumAttribute(
+        c: LLVMContextRef,
+        kind_id: u32,
+        val: u64,
+    ) -> LLVMAttributeRef;
+    pub fn LLVMGetEnumAttributeKindForName(
+        name: *const c_char,
+        s_len: usize,
     ) -> u32;
 }

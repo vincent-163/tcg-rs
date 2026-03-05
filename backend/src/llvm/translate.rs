@@ -43,6 +43,7 @@ pub struct TbTranslator {
     peer_fty: LLVMTypeRef,                  // fn(ptr, i64) -> i64
     // AOT dispatch super-function for indirect jumps
     aot_dispatch: Option<LLVMValueRef>,     // @aot_dispatch declaration
+    aot_dispatch_cache: Option<LLVMValueRef>, // per-TB cache for aot_dispatch
     // AOT helper functions: addr → (declared function, function type)
     aot_helpers: HashMap<u64, (LLVMValueRef, LLVMTypeRef)>,
     // Intrinsic IDs cached
@@ -219,6 +220,7 @@ impl TbTranslator {
                 last_pc_const: None,
                 peer_fty: fty,
                 aot_dispatch: None,
+                aot_dispatch_cache: None,
                 aot_helpers: HashMap::new(),
                 ctlz_i32, ctlz_i64, cttz_i32, cttz_i64,
                 ctpop_i32, ctpop_i64,
@@ -262,9 +264,33 @@ impl TbTranslator {
             }
         }
         // Declare aot_dispatch super-function for indirect jump resolution
+        // Signature: i64 @aot_dispatch(ptr %env, i64 %guest_base, ptr %cache)
         unsafe {
-            let f = LLVMAddFunction(s.module, c"aot_dispatch".as_ptr(), s.peer_fty);
+            let ptr = s.ptr;
+            let i64t = s.i64t;
+            let mut params = [ptr, i64t, ptr];
+            let dispatch_fty = LLVMFunctionType(
+                i64t,
+                params.as_mut_ptr(),
+                3,
+                0,
+            );
+            let f = LLVMAddFunction(s.module, c"aot_dispatch".as_ptr(), dispatch_fty);
             s.aot_dispatch = Some(f);
+
+            // Allocate per-TB cache in BSS (initialized to null)
+            let cache_name = CString::new(
+                format!("{}_cache", func_name),
+            )
+            .unwrap();
+            let cache_global = LLVMAddGlobal(
+                s.module,
+                ptr,
+                cache_name.as_ptr(),
+            );
+            LLVMSetInitializer(cache_global, LLVMConstNull(ptr));
+            LLVMSetLinkage(cache_global, 8); // Internal linkage
+            s.aot_dispatch_cache = Some(cache_global);
         }
         s
     }
@@ -1428,10 +1454,20 @@ impl TbTranslator {
                 // to stay within the AOT .so instead of returning to exec loop.
                 if val == tcg_core::tb::TB_EXIT_NOCHAIN {
                     if let Some(dispatch_fn) = self.aot_dispatch {
-                        let mut args = [self.env, self.guest_base];
+                        let cache = self.aot_dispatch_cache.unwrap();
+                        let ptr = self.ptr;
+                        let i64t = self.i64t;
+                        let mut params = [ptr, i64t, ptr];
+                        let dispatch_fty = LLVMFunctionType(
+                            i64t,
+                            params.as_mut_ptr(),
+                            3,
+                            0,
+                        );
+                        let mut args = [self.env, self.guest_base, cache];
                         let call = LLVMBuildCall2(
-                            b, self.peer_fty, dispatch_fn,
-                            args.as_mut_ptr(), 2, E,
+                            b, dispatch_fty, dispatch_fn,
+                            args.as_mut_ptr(), 3, E,
                         );
                         LLVMSetTailCallKind(call, 2); // MustTail
                         LLVMBuildRet(b, call);
@@ -1468,10 +1504,20 @@ impl TbTranslator {
                 flush_globals!();
                 if let Some(dispatch_fn) = self.aot_dispatch {
                     // musttail call aot_dispatch — it will switch on PC
-                    let mut args = [self.env, self.guest_base];
+                    let cache = self.aot_dispatch_cache.unwrap();
+                    let ptr = self.ptr;
+                    let i64t = self.i64t;
+                    let mut params = [ptr, i64t, ptr];
+                    let dispatch_fty = LLVMFunctionType(
+                        i64t,
+                        params.as_mut_ptr(),
+                        3,
+                        0,
+                    );
+                    let mut args = [self.env, self.guest_base, cache];
                     let call = LLVMBuildCall2(
-                        b, self.peer_fty, dispatch_fn,
-                        args.as_mut_ptr(), 2, E,
+                        b, dispatch_fty, dispatch_fn,
+                        args.as_mut_ptr(), 3, E,
                     );
                     LLVMSetTailCallKind(call, 2); // MustTail
                     LLVMBuildRet(b, call);
