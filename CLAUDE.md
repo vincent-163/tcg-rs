@@ -6,7 +6,7 @@
 
 tcg-rs 是 QEMU TCG（Tiny Code Generator）的 Rust 重新实现——一个动态二进制翻译引擎，在运行时将客户架构指令转换为宿主机器码。参考实现位于 `~/qemu/tcg/`、`~/qemu/accel/tcg/` 和 `~/qemu/include/tcg/`。
 
-**当前状态快照（2026-02-28）**：
+**当前状态快照（2026-03-05）**:
 
 - 已有可用 MTTCG 执行路径：`cpu_exec_loop_mt`、共享 `SharedState`、
   每 vCPU `PerCpuState`。
@@ -20,6 +20,9 @@ tcg-rs 是 QEMU TCG（Tiny Code Generator）的 Rust 重新实现——一个动
   `--features llvm` 启用，运行时 `TCG_LLVM=1` 激活。
   TCG IR → LLVM IR → OrcV2/LLJIT 编译，riscv64 hello world
   与 coremark 均通过。
+- **AOT 编译器支持 helper 函数**：所有 helper 函数已通过 `#[no_mangle]`
+  导出，AOT 编译器可将包含 helper 调用的 TB 编译为外部函数引用，
+  运行时通过 dlsym 从 tcg-rs 可执行文件解析。无需再跳过含 helper 的 TB。
 
 ## 构建与开发命令
 
