@@ -22,7 +22,9 @@ tcg-rs 是 QEMU TCG（Tiny Code Generator）的 Rust 重新实现——一个动
   与 coremark 均通过。
 - **AOT 编译器支持 helper 函数**：所有 helper 函数已通过 `#[no_mangle]`
   导出，AOT 编译器可将包含 helper 调用的 TB 编译为外部函数引用，
-  运行时通过 dlsym 从 tcg-rs 可执行文件解析。无需再跳过含 helper 的 TB。
+  运行时通过 dlsym 从 tcg-rs 可执行文件解析。纯函数 helper（除法、
+  位操作等）已转换为 C 代码并编译为 LLVM bitcode，在 AOT 编译时
+  链接并内联，实现跨函数优化。无需再跳过含 helper 的 TB。
 
 ## 构建与开发命令
 
