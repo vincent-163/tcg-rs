@@ -17,6 +17,7 @@ pub enum LLVMOpaqueTarget {}
 pub enum LLVMOpaqueTargetData {}
 pub enum LLVMOpaquePassBuilderOptions {}
 pub enum LLVMOpaqueMetadata {}
+pub enum LLVMOpaqueMemoryBuffer {}
 
 // OrcV2 opaque types
 pub enum LLVMOrcOpaqueThreadSafeContext {}
@@ -38,6 +39,7 @@ pub type LLVMTargetMachineRef = *mut LLVMOpaqueTargetMachine;
 pub type LLVMTargetDataRef = *mut LLVMOpaqueTargetData;
 pub type LLVMPassBuilderOptionsRef = *mut LLVMOpaquePassBuilderOptions;
 pub type LLVMMetadataRef = *mut LLVMOpaqueMetadata;
+pub type LLVMMemoryBufferRef = *mut LLVMOpaqueMemoryBuffer;
 
 pub type LLVMOrcThreadSafeContextRef = *mut LLVMOrcOpaqueThreadSafeContext;
 pub type LLVMOrcThreadSafeModuleRef = *mut LLVMOrcOpaqueThreadSafeModule;
@@ -362,6 +364,19 @@ extern "C" {
     // Module linking & lookup
     pub fn LLVMGetNamedFunction(m: LLVMModuleRef, name: *const c_char) -> LLVMValueRef;
     pub fn LLVMLinkModules2(dest: LLVMModuleRef, src: LLVMModuleRef) -> i32;
+
+    // Bitcode parsing
+    pub fn LLVMParseBitcodeInContext2(
+        ctx: LLVMContextRef,
+        mem_buf: LLVMMemoryBufferRef,
+        out_module: *mut LLVMModuleRef,
+    ) -> i32;
+    pub fn LLVMCreateMemoryBufferWithContentsOfFile(
+        path: *const c_char,
+        out_mem_buf: *mut LLVMMemoryBufferRef,
+        out_message: *mut *mut c_char,
+    ) -> i32;
+    pub fn LLVMDisposeMemoryBuffer(mem_buf: LLVMMemoryBufferRef);
 
     // Module flags (for PIC level etc.)
     // behavior: 0=Error, 1=Warning, 2=Require, 3=Override, 4=Append, 5=AppendUnique, 7=Max
