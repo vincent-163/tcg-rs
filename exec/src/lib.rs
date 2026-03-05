@@ -86,23 +86,13 @@ impl AotTable {
         use std::ffi::CString;
         let cpath = CString::new(path.to_str()?).ok()?;
         unsafe {
-            // First, open the main executable with RTLD_GLOBAL to make its symbols available
-            // This is necessary for the AOT library to resolve helper functions
-            let main_exe = std::env::current_exe().ok()?;
-            let main_exe_cstr = CString::new(main_exe.to_str()?).ok()?;
-            let main_handle = libc::dlopen(main_exe_cstr.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL);
-            if main_handle.is_null() {
-                let err = libc::dlerror();
-                if !err.is_null() {
-                    let err_str = std::ffi::CStr::from_ptr(err).to_string_lossy();
-                    eprintln!("[aot] failed to dlopen main executable: {}", err_str);
-                }
-            } else {
-                eprintln!("[aot] main executable loaded with RTLD_GLOBAL");
-            }
-
-            // Use RTLD_NOW to force immediate symbol resolution (for debugging)
-            let handle = libc::dlopen(cpath.as_ptr(), libc::RTLD_NOW);
+            // Open the AOT library with RTLD_LAZY to defer symbol resolution.
+            // Helper symbols will be resolved from the main executable's global
+            // symbol table at first call. We don't use RTLD_NOW because PIE
+            // executables can't be dlopen'd with RTLD_GLOBAL, so we rely on
+            // the dynamic linker's default search order (main executable is
+            // already in the global scope).
+            let handle = libc::dlopen(cpath.as_ptr(), libc::RTLD_LAZY);
             if handle.is_null() {
                 let err = libc::dlerror();
                 if !err.is_null() {

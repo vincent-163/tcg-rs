@@ -744,13 +744,12 @@ fn compile_aot(
         optimize(&mut ir);
 
         let tb_translator =
-            TbTranslator::new_with_peers_and_helpers(
+            TbTranslator::new_with_peers(
                 llvm_ctx,
                 &ir,
                 &func_name,
                 &all_va_to_offset,
                 pc_temp,
-                &helper_info,
             );
         let tb_module = tb_translator.translate(&ir);
 

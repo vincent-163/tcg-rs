@@ -44,8 +44,8 @@ pub struct TbTranslator {
     // AOT dispatch super-function for indirect jumps
     aot_dispatch: Option<LLVMValueRef>,     // @aot_dispatch declaration
     aot_dispatch_cache: Option<LLVMValueRef>, // per-TB cache for aot_dispatch
-    // AOT helper functions: addr → (declared function, function type)
-    aot_helpers: HashMap<u64, (LLVMValueRef, LLVMTypeRef)>,
+    // AOT mode flag: if true, declare helpers as external instead of inttoptr
+    is_aot: bool,
     // Intrinsic IDs cached
     ctlz_i32: LLVMValueRef,
     ctlz_i64: LLVMValueRef,
@@ -222,7 +222,7 @@ impl TbTranslator {
                 peer_fty: fty,
                 aot_dispatch: None,
                 aot_dispatch_cache: None,
-                aot_helpers: HashMap::new(),
+                is_aot: false,
                 ctlz_i32, ctlz_i64, cttz_i32, cttz_i64,
                 ctpop_i32, ctpop_i64,
                 bswap_i16, bswap_i32, bswap_i64,
@@ -246,6 +246,7 @@ impl TbTranslator {
     ) -> Self {
         let mut s = Self::new(llvm_ctx, ir, func_name, None);
         s.pc_temp = Some(pc_temp);
+        s.is_aot = true; // Enable AOT mode
 
         // Declare all peer TB functions in this module.
         // Key aot_peers by guest VA so GotoTb lookup (which uses last_pc_const,
@@ -293,57 +294,6 @@ impl TbTranslator {
             LLVMSetLinkage(cache_global, 8); // Internal linkage
             s.aot_dispatch_cache = Some(cache_global);
         }
-        s
-    }
-
-    /// Create a translator with AOT peer functions and helper functions.
-    /// This version also declares external helper functions that will be
-    /// resolved from the tcg-rs executable at runtime.
-    pub fn new_with_peers_and_helpers(
-        llvm_ctx: LLVMContextRef,
-        ir: &Context,
-        func_name: &str,
-        peer_va_to_offset: &std::collections::HashMap<u64, u64>,
-        pc_temp: TempIdx,
-        helper_info: &std::collections::HashMap<u64, (String, usize)>,
-    ) -> Self {
-        let mut s = Self::new_with_peers(
-            llvm_ctx, ir, func_name, peer_va_to_offset, pc_temp
-        );
-
-        // Declare all helper functions as external using their actual names
-        unsafe {
-            for (&addr, (name, num_params)) in helper_info {
-                let helper_name_c = CString::new(name.as_str()).unwrap();
-
-                // Check if already declared
-                let existing = LLVMGetNamedFunction(s.module, helper_name_c.as_ptr());
-                if !existing.is_null() {
-                    // Get the function type (not the pointer type)
-                    let fty = LLVMGlobalGetValueType(existing);
-                    s.aot_helpers.insert(addr, (existing, fty));
-                } else {
-                    // Create function type with actual parameter count
-                    let mut param_tys = vec![s.i64t; *num_params];
-                    let fty = LLVMFunctionType(
-                        s.i64t,
-                        param_tys.as_mut_ptr(),
-                        *num_params as u32,
-                        0,
-                    );
-
-                    let func = LLVMAddFunction(
-                        s.module,
-                        helper_name_c.as_ptr(),
-                        fty,
-                    );
-                    // Mark as external linkage
-                    LLVMSetLinkage(func, 0); // LLVMExternalLinkage
-                    s.aot_helpers.insert(addr, (func, fty));
-                }
-            }
-        }
-
         s
     }
 
@@ -1610,16 +1560,6 @@ impl TbTranslator {
                 let helper_name = tcg_core::ir_builder::get_helper_name(name_id)
                     .expect("helper name not found in global registry");
 
-                // Use dlsym to resolve the function address
-                use std::ffi::CString;
-                let c_name = CString::new(helper_name.as_str())
-                    .expect("helper name contains null byte");
-                let func_ptr = libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr());
-                if func_ptr.is_null() {
-                    panic!("Failed to resolve helper function: {}", helper_name);
-                }
-                let func_addr = func_ptr as u64;
-
                 // Build args: first input is always env ptr
                 let nb_call_iargs = nb_i;
                 let mut args = Vec::with_capacity(nb_call_iargs);
@@ -1627,22 +1567,54 @@ impl TbTranslator {
                     args.push(ival!(i));
                 }
 
-                // Check if this is an AOT helper call
-                let ret = if let Some(&(helper_func, helper_fty)) = self.aot_helpers.get(&func_addr) {
-                    // Get the actual parameter count from the function type
-                    let param_count = LLVMCountParamTypes(helper_fty) as usize;
-                    // Only pass the required number of arguments
-                    let call_args = &args[..param_count];
+                // In AOT mode, declare helpers as external functions
+                // In JIT mode, use inttoptr with dlsym-resolved addresses
+                let ret = if self.is_aot {
+                    // AOT mode: declare helper as external function on-the-fly
+                    use std::ffi::CString;
+                    let c_name = CString::new(helper_name.as_str())
+                        .expect("helper name contains null byte");
+
+                    // Check if already declared
+                    let helper_func = LLVMGetNamedFunction(self.module, c_name.as_ptr());
+                    let (helper_func, helper_fty) = if helper_func.is_null() {
+                        // Declare external function with all args as i64
+                        let mut param_tys: Vec<LLVMTypeRef> =
+                            args.iter().map(|_| self.i64t).collect();
+                        let fty = LLVMFunctionType(
+                            self.i64t,
+                            param_tys.as_mut_ptr(),
+                            param_tys.len() as u32,
+                            0,
+                        );
+                        let func = LLVMAddFunction(
+                            self.module,
+                            c_name.as_ptr(),
+                            fty,
+                        );
+                        LLVMSetLinkage(func, 0); // LLVMExternalLinkage
+                        (func, fty)
+                    } else {
+                        let fty = LLVMGlobalGetValueType(helper_func);
+                        (helper_func, fty)
+                    };
+
                     LLVMBuildCall2(
-                        b,
-                        helper_fty,
-                        helper_func,
-                        call_args.as_ptr(),
-                        call_args.len() as u32,
-                        E,
+                        b, helper_fty, helper_func,
+                        args.as_ptr(), args.len() as u32, E,
                     )
                 } else {
-                    // Fall back to inttoptr for non-AOT mode
+                    // JIT mode: use inttoptr with dlsym-resolved address
+                    // JIT compilation happens at runtime, so addresses are valid
+                    use std::ffi::CString;
+                    let c_name = CString::new(helper_name.as_str())
+                        .expect("helper name contains null byte");
+                    let func_ptr = libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr());
+                    if func_ptr.is_null() {
+                        panic!("Failed to resolve helper function: {}", helper_name);
+                    }
+                    let func_addr = func_ptr as u64;
+
                     let mut param_tys: Vec<LLVMTypeRef> =
                         args.iter().map(|_| self.i64t).collect();
                     let fty = LLVMFunctionType(
