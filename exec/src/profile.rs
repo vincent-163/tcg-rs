@@ -26,12 +26,13 @@ impl Default for TbProfile {
 pub const DEFAULT_HOT_THRESHOLD: u64 = 10;
 
 const MAGIC: &[u8; 8] = b"TCGPROF\0";
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProfileEntry {
     pub file_offset: u64,
     pub exec_count: u64,
+    pub indirect_target: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,7 @@ impl ProfileData {
         for e in &self.entries {
             f.write_all(&e.file_offset.to_le_bytes())?;
             f.write_all(&e.exec_count.to_le_bytes())?;
+            f.write_all(&[e.indirect_target as u8])?;
         }
         Ok(())
     }
@@ -62,7 +64,8 @@ impl ProfileData {
         let mut b4 = [0u8; 4];
         let mut b8 = [0u8; 8];
         f.read_exact(&mut b4)?;
-        if u32::from_le_bytes(b4) != VERSION {
+        let version = u32::from_le_bytes(b4);
+        if version < 2 || version > VERSION {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "bad version"));
         }
         f.read_exact(&mut b4)?;
@@ -75,7 +78,14 @@ impl ProfileData {
             let file_offset = u64::from_le_bytes(b8);
             f.read_exact(&mut b8)?;
             let exec_count = u64::from_le_bytes(b8);
-            entries.push(ProfileEntry { file_offset, exec_count });
+            let indirect_target = if version >= 3 {
+                let mut b1 = [0u8; 1];
+                f.read_exact(&mut b1)?;
+                b1[0] != 0
+            } else {
+                false
+            };
+            entries.push(ProfileEntry { file_offset, exec_count, indirect_target });
         }
         Ok(Self { threshold, entries })
     }
@@ -84,7 +94,7 @@ impl ProfileData {
         self.entries.iter().map(|e| e.file_offset).collect()
     }
 
-    pub fn should_export(_e: &ProfileEntry) -> bool {
-        true
+    pub fn should_export(e: &ProfileEntry) -> bool {
+        e.indirect_target
     }
 }

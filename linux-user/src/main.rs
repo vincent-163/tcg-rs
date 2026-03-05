@@ -133,6 +133,7 @@ fn save_profile<B: tcg_backend::HostCodeGen>(
         let tb = unsafe { &*tb_ptr };
         let exec = tb.exec_count.load(Ordering::Relaxed);
         let file_offset = tb.pc - load_vaddr;
+        let indirect = tb.indirect_target.load(Ordering::Relaxed);
 
         // Add to profile if this TB met the mode threshold in this run.
         // Don't sum counts across runs - each run must independently satisfy it.
@@ -140,10 +141,15 @@ fn save_profile<B: tcg_backend::HostCodeGen>(
             let entry = accumulated.entry(file_offset).or_insert(ProfileEntry {
                 file_offset,
                 exec_count: exec,  // Use this run's count, don't sum
+                indirect_target: indirect,
             });
             // Keep the max exec count seen in any single run
             if exec > entry.exec_count {
                 entry.exec_count = exec;
+            }
+            // Accumulate indirect_target flag (OR operation)
+            if indirect {
+                entry.indirect_target = true;
             }
         }
     }

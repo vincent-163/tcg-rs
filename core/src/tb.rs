@@ -68,6 +68,10 @@ pub struct TranslationBlock {
     // -- Profiling (atomic, embedded in TB for stable pointer) --
     /// Execution count, incremented by JIT-generated code.
     pub exec_count: AtomicU64,
+    /// Set to true when this TB is reached via an indirect jump
+    /// (TB_EXIT_NOCHAIN). Used to determine which TBs should be
+    /// exported in AOT compilation.
+    pub indirect_target: AtomicBool,
 }
 
 impl std::fmt::Debug for TranslationBlock {
@@ -114,6 +118,7 @@ impl TranslationBlock {
             invalid: AtomicBool::new(false),
             exit_target: AtomicUsize::new(0),
             exec_count: AtomicU64::new(0),
+            indirect_target: AtomicBool::new(false),
         }
     }
 

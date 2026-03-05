@@ -107,6 +107,11 @@ where B: HostCodeGen, C: GuestCpu,
                         && cached_tb.host_size > 0
                     {
                         per_cpu.stats.exit_target_hit += 1;
+                        // Mark as indirect target
+                        cached_tb.indirect_target.store(
+                            true,
+                            Ordering::Relaxed,
+                        );
                         next_tb_hint = Some(cached);
                         continue;
                     }
@@ -117,6 +122,11 @@ where B: HostCodeGen, C: GuestCpu,
                     Some(ptr) => ptr,
                     None => return ExitReason::BufferFull,
                 };
+                // Mark as indirect target
+                (&*dst).indirect_target.store(
+                    true,
+                    Ordering::Relaxed,
+                );
                 stb.exit_target.store(dst as usize, Ordering::Relaxed);
                 next_tb_hint = Some(dst);
             }

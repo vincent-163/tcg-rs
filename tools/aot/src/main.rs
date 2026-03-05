@@ -990,7 +990,6 @@ fn setup_aarch64_temps(
     }
     d.pc = TempIdx(1 + NUM_XREGS as u32);
     d.sp = TempIdx(1 + NUM_XREGS as u32 + 1);
-    d.nzcv = TempIdx(1 + NUM_XREGS as u32 + 2);
 }
 
 /// Scan TCG IR for goto_tb targets: find

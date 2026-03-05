@@ -552,6 +552,8 @@ fn save_profile<B: tcg_backend::HostCodeGen>(
         let exec =
             tb.exec_count.load(Ordering::Relaxed);
         let file_offset = tb.pc - load_vaddr;
+        let indirect =
+            tb.indirect_target.load(Ordering::Relaxed);
 
         if exec >= min_exec_count {
             let entry = accumulated
@@ -559,9 +561,14 @@ fn save_profile<B: tcg_backend::HostCodeGen>(
                 .or_insert(ProfileEntry {
                     file_offset,
                     exec_count: exec,
+                    indirect_target: indirect,
                 });
             if exec > entry.exec_count {
                 entry.exec_count = exec;
+            }
+            // Accumulate indirect_target flag (OR operation)
+            if indirect {
+                entry.indirect_target = true;
             }
         }
     }
