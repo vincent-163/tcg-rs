@@ -608,10 +608,10 @@ fn compile_aot(
         )
     };
 
-    // Pre-scan: collect all helper function addresses used in TBs.
+    // Pre-scan: collect all helper function addresses and names used in TBs.
     // We'll emit external declarations for these helpers so they
     // can be resolved from the tcg-rs executable at runtime.
-    let mut helper_addrs: HashSet<u64> = HashSet::new();
+    let mut helper_info: HashMap<u64, String> = HashMap::new();
     for &(offset, _) in all_entries {
         let mut ir = Context::new();
         arch.init_context(&mut ir);
@@ -627,7 +627,9 @@ fn compile_aot(
                 let lo = cargs[0].0 as u64;
                 let hi = cargs[1].0 as u64;
                 let func_addr = (hi << 32) | lo;
-                helper_addrs.insert(func_addr);
+                if let Some(name) = ir.helper_names.get(&func_addr) {
+                    helper_info.insert(func_addr, name.clone());
+                }
             }
         }
     }
@@ -640,7 +642,7 @@ fn compile_aot(
         .collect();
 
     // Emit external declarations for all helper functions
-    eprintln!("[aot] found {} unique helper functions", helper_addrs.len());
+    eprintln!("[aot] found {} unique helper functions", helper_info.len());
 
     // Load helper bitcode module and link it
     if arch == Arch::Aarch64 {
@@ -694,7 +696,7 @@ fn compile_aot(
                 &func_name,
                 &all_va_to_offset,
                 pc_temp,
-                &helper_addrs,
+                &helper_info,
             );
         let tb_module = tb_translator.translate(&ir);
 

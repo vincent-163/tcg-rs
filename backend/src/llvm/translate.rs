@@ -278,17 +278,16 @@ impl TbTranslator {
         func_name: &str,
         peer_va_to_offset: &std::collections::HashMap<u64, u64>,
         pc_temp: TempIdx,
-        helper_addrs: &std::collections::HashSet<u64>,
+        helper_info: &std::collections::HashMap<u64, String>,
     ) -> Self {
         let mut s = Self::new_with_peers(
             llvm_ctx, ir, func_name, peer_va_to_offset, pc_temp
         );
 
-        // Declare all helper functions as external
+        // Declare all helper functions as external using their actual names
         unsafe {
-            for &addr in helper_addrs {
-                let helper_name = format!("helper_{addr:x}");
-                let helper_name_c = CString::new(helper_name.as_str()).unwrap();
+            for (&addr, name) in helper_info {
+                let helper_name_c = CString::new(name.as_str()).unwrap();
 
                 // Check if already declared
                 let existing = LLVMGetNamedFunction(s.module, helper_name_c.as_ptr());

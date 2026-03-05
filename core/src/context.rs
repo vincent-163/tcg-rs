@@ -52,6 +52,11 @@ pub struct Context {
     /// backend to encode the source TB in exit_tb return values for direct
     /// chaining (low 3 bits carry exit slot, upper bits are the pointer).
     pub tb_ptr: usize,
+
+    // -- Helper function names --
+    /// Maps helper function addresses to their symbol names.
+    /// Used by AOT compiler to generate correct external declarations.
+    pub helper_names: HashMap<u64, String>,
 }
 
 impl Context {
@@ -69,6 +74,7 @@ impl Context {
             const_table: Default::default(),
             gen_insn_end_off: Vec::with_capacity(MAX_INSNS),
             tb_ptr: 0,
+            helper_names: HashMap::new(),
         }
     }
 
@@ -98,6 +104,7 @@ impl Context {
             table.clear();
         }
         self.gen_insn_end_off.clear();
+        self.helper_names.clear();
         self.frame_alloc_end = self.frame_start;
     }
 
@@ -295,6 +302,7 @@ impl Context {
             const_table: Default::default(),
             gen_insn_end_off: Vec::new(),
             tb_ptr: 0,
+            helper_names: HashMap::new(),
         }
     }
 }

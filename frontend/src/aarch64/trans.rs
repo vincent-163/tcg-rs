@@ -7,6 +7,8 @@
 // gen_call() stores helper addresses as u64 IR constants.
 #![allow(clippy::fn_to_numeric_cast)]
 
+use tcg_core::gen_helper_call;
+
 use super::cpu::{
     helper_lazy_nzcv_eval_cond, helper_lazy_nzcv_to_packed, vreg_hi_offset,
     vreg_lo_offset, CC_OP_ADD32, CC_OP_ADD64, CC_OP_EAGER, CC_OP_LOGIC32,
@@ -273,10 +275,11 @@ impl Aarch64DisasContext {
             // We know cc_op at compile time; call the helper
             // to compute packed NZCV and store it in cc_a.
             let packed = ir.new_temp(Type::I64);
-            ir.gen_call(
+            gen_helper_call!(
+                ir,
                 packed,
-                helper_lazy_nzcv_to_packed as u64,
-                &[self.cc_op, self.cc_a, self.cc_b, self.cc_result],
+                helper_lazy_nzcv_to_packed,
+                [self.cc_op, self.cc_a, self.cc_b, self.cc_result]
             );
             // Mark cc_op as EAGER and store packed NZCV in cc_a.
             let eager = ir.new_const(Type::I64, CC_OP_EAGER);
@@ -291,10 +294,11 @@ impl Aarch64DisasContext {
             let skip = ir.new_label();
             ir.gen_brcond(Type::I64, self.cc_op, eager_c, Cond::Eq, skip);
             let packed = ir.new_temp(Type::I64);
-            ir.gen_call(
+            gen_helper_call!(
+                ir,
                 packed,
-                helper_lazy_nzcv_to_packed as u64,
-                &[self.cc_op, self.cc_a, self.cc_b, self.cc_result],
+                helper_lazy_nzcv_to_packed,
+                [self.cc_op, self.cc_a, self.cc_b, self.cc_result]
             );
             ir.gen_mov(Type::I64, self.cc_op, eager_c);
             ir.gen_mov(Type::I64, self.cc_a, packed);

@@ -4,6 +4,20 @@ use crate::opcode::Opcode;
 use crate::temp::TempIdx;
 use crate::types::{Cond, Type};
 
+/// Helper macro to call a helper function with automatic name recording.
+/// Usage: gen_helper_call!(ir, dst, helper_function_name, [args...])
+#[macro_export]
+macro_rules! gen_helper_call {
+    ($ir:expr, $dst:expr, $helper:expr, [$($arg:expr),*]) => {{
+        $ir.gen_call_named(
+            $dst,
+            $helper as u64,
+            Some(stringify!($helper)),
+            &[$($arg),*]
+        )
+    }};
+}
+
 // Constant args are encoded as TempIdx(raw_value as u32).
 fn carg(val: u32) -> TempIdx {
     TempIdx(val)
@@ -954,6 +968,19 @@ impl Context {
         helper: u64,
         args: &[TempIdx],
     ) -> TempIdx {
+        self.gen_call_named(dst, helper, None, args)
+    }
+
+    pub fn gen_call_named(
+        &mut self,
+        dst: TempIdx,
+        helper: u64,
+        name: Option<&str>,
+        args: &[TempIdx],
+    ) -> TempIdx {
+        if let Some(n) = name {
+            self.helper_names.insert(helper, n.to_string());
+        }
         let mut full_args = Vec::with_capacity(1 + 6 + 2);
         full_args.push(dst);
         let zero = self.new_const(Type::I64, 0);
