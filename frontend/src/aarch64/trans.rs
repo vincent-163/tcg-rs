@@ -6111,18 +6111,18 @@ impl Aarch64DisasContext {
         rd: usize,
         rn: usize,
         rm: usize,
-        helper: unsafe extern "C" fn(u64, u64) -> u64,
+        helper_name: &str,
     ) {
         let an = self.read_vreg_lo(ir, rn);
         let am = self.read_vreg_lo(ir, rm);
         let dst_lo = ir.new_temp(Type::I64);
-        gen_helper_call!(ir, dst_lo, helper, [an, am]);
+        ir.gen_call_named(dst_lo, helper_name, &[an, am]);
         self.write_vreg_lo(ir, rd, dst_lo);
         if q != 0 {
             let bn = self.read_vreg_hi(ir, rn);
             let bm = self.read_vreg_hi(ir, rm);
             let dst_hi = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, dst_hi, helper, [bn, bm]);
+            ir.gen_call_named(dst_hi, helper_name, &[bn, bm]);
             self.write_vreg_hi(ir, rd, dst_hi);
         } else {
             self.clear_vreg_hi(ir, rd);
@@ -6135,18 +6135,48 @@ impl Aarch64DisasContext {
         q: u32,
         rd: usize,
         rn: usize,
-        helper: unsafe extern "C" fn(u64) -> u64,
+        helper_name: &str,
     ) {
         let an = self.read_vreg_lo(ir, rn);
         let dst_lo = ir.new_temp(Type::I64);
-        gen_helper_call!(ir, dst_lo, helper, [an]);
+        ir.gen_call_named(dst_lo, helper_name, &[an]);
         self.write_vreg_lo(ir, rd, dst_lo);
         if q != 0 {
             let bn = self.read_vreg_hi(ir, rn);
             let dst_hi = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, dst_hi, helper, [bn]);
+            ir.gen_call_named(dst_hi, helper_name, &[bn]);
             self.write_vreg_hi(ir, rd, dst_hi);
         } else {
+            self.clear_vreg_hi(ir, rd);
+        }
+    }
+
+    fn neon_pairwise(
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        rm: usize,
+        helper_name: &str,
+    ) {
+        if q != 0 {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let n_hi = self.read_vreg_hi(ir, rn);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call_named(d_lo, helper_name, &[n_lo, n_hi]);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let m_hi = self.read_vreg_hi(ir, rm);
+            let d_hi = ir.new_temp(Type::I64);
+            ir.gen_call_named(d_hi, helper_name, &[m_lo, m_hi]);
+            self.write_vreg_lo(ir, rd, d_lo);
+            self.write_vreg_hi(ir, rd, d_hi);
+        } else {
+            let n_lo = self.read_vreg_lo(ir, rn);
+            let m_lo = self.read_vreg_lo(ir, rm);
+            let d_lo = ir.new_temp(Type::I64);
+            ir.gen_call_named(d_lo, helper_name, &[n_lo, m_lo]);
+            self.write_vreg_lo(ir, rd, d_lo);
             self.clear_vreg_hi(ir, rd);
         }
     }
@@ -6274,25 +6304,20 @@ impl Aarch64DisasContext {
 
         if sz == 0 {
             // f32 — use vf*32 helpers that process 2x f32 per 64-bit half
-            let helper: Option<u64> = match (u, opcode) {
-                (0, 0b11010) => Some(helper_vfadd32 as u64), // FADD
-                (0, 0b11101) => Some(helper_vfsub32 as u64), // FSUB
-                (0, 0b11011) | (1, 0b11011) => Some(helper_vfmul32 as u64), // FMUL/FMULX
-                (1, 0b11111) => Some(helper_vfdiv32 as u64), // FDIV
-                (0, 0b11110) | (1, 0b11110) => Some(helper_vfmax32 as u64), // FMAX/FMAXNM
-                (0, 0b11000) | (1, 0b11000) => Some(helper_vfmin32 as u64), // FMIN/FMINNM
-                (0, 0b11100) => Some(helper_vfcmeq32 as u64), // FCMEQ
-                (1, 0b11100) => Some(helper_vfcmge32 as u64), // FCMGE
-                (1, 0b11101) => Some(helper_vfcmgt32 as u64), // FCMGT
+            let helper_name: Option<&str> = match (u, opcode) {
+                (0, 0b11010) => Some("helper_vfadd32"), // FADD
+                (0, 0b11101) => Some("helper_vfsub32"), // FSUB
+                (0, 0b11011) | (1, 0b11011) => Some("helper_vfmul32"), // FMUL/FMULX
+                (1, 0b11111) => Some("helper_vfdiv32"), // FDIV
+                (0, 0b11110) | (1, 0b11110) => Some("helper_vfmax32"), // FMAX/FMAXNM
+                (0, 0b11000) | (1, 0b11000) => Some("helper_vfmin32"), // FMIN/FMINNM
+                (0, 0b11100) => Some("helper_vfcmeq32"), // FCMEQ
+                (1, 0b11100) => Some("helper_vfcmge32"), // FCMGE
+                (1, 0b11101) => Some("helper_vfcmgt32"), // FCMGT
                 _ => None,
             };
-            if let Some(h) = helper {
-                self.neon_call2_halves(ir, q, rd, rn, rm, unsafe {
-                    std::mem::transmute::<
-                        u64,
-                        unsafe extern "C" fn(u64, u64) -> u64,
-                    >(h)
-                });
+            if let Some(h) = helper_name {
+                self.neon_call2_halves(ir, q, rd, rn, rm, h);
                 return true;
             }
             // FMLA: d = d + n*m
@@ -6357,7 +6382,7 @@ impl Aarch64DisasContext {
             }
             // FABD .2S/.4S: U=1, size[1]=1, opcode=11010 — absolute difference
             if (u, opcode) == (1, 0b11010) && (insn >> 23) & 1 == 1 {
-                self.neon_call2_halves(ir, q, rd, rn, rm, helper_vfabd32);
+                self.neon_call2_halves(ir, q, rd, rn, rm, "helper_vfabd32");
                 return true;
             }
         } else {
@@ -6538,43 +6563,43 @@ impl Aarch64DisasContext {
         if size == 0b00 {
             return match (u, opcode) {
                 (0, 0b10000) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_add8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_add8");
                     true
                 }
                 (1, 0b10000) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_sub8");
                     true
                 }
                 (1, 0b10001) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmeq8");
                     true
                 }
                 (0, 0b10001) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmtst8");
                     true
                 } // CMTST
                 (1, 0b00111) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmhs8");
                     true
                 }
                 (1, 0b00110) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhi8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmhi8");
                     true
                 } // CMHI .8B/.16B
                 (0, 0b00110) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt8);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmgt8");
                     true
                 } // CMGT .8B/.16B
                 (1, 0b10100) => {
-                    self.neon_pairwise(ir, q, rd, rn, rm, helper_umaxp8);
+                    self.neon_pairwise(ir, q, rd, rn, rm, "helper_umaxp8");
                     true
                 }
                 (1, 0b10101) => {
-                    self.neon_pairwise(ir, q, rd, rn, rm, helper_uminp8);
+                    self.neon_pairwise(ir, q, rd, rn, rm, "helper_uminp8");
                     true
                 }
                 (0, 0b10111) => {
-                    self.neon_pairwise(ir, q, rd, rn, rm, helper_addp8);
+                    self.neon_pairwise(ir, q, rd, rn, rm, "helper_addp8");
                     true
                 }
                 _ => false,
@@ -6584,11 +6609,11 @@ impl Aarch64DisasContext {
         if size == 0b01 {
             return match (u, opcode) {
                 (1, 0b10001) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq16);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmeq16");
                     true
                 } // CMEQ .8H/.4H
                 (0, 0b10001) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst16);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmtst16");
                     true
                 } // CMTST .8H/.4H
                 _ => false,
@@ -6598,47 +6623,47 @@ impl Aarch64DisasContext {
         if size == 0b10 {
             return match (u, opcode) {
                 (0, 0b10000) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_add32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_add32");
                     true
                 }
                 (1, 0b10000) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_sub32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_sub32");
                     true
                 }
                 (0, 0b10011) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_mul32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_mul32");
                     true
                 }
                 (0, 0b01100) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_smax32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_smax32");
                     true
                 } // SMAX
                 (0, 0b01101) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_smin32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_smin32");
                     true
                 } // SMIN
                 (1, 0b01100) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_umax32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_umax32");
                     true
                 } // UMAX
                 (1, 0b01101) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_umin32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_umin32");
                     true
                 } // UMIN
                 (1, 0b10001) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmeq32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmeq32");
                     true
                 } // CMEQ
                 (1, 0b00111) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmhs32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmhs32");
                     true
                 } // CMHS
                 (0, 0b00110) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmgt32");
                     true
                 } // CMGT
                 (0, 0b00111) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmge32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmge32");
                     true
                 } // CMGE
                 (0, 0b10010) => {
@@ -6678,19 +6703,19 @@ impl Aarch64DisasContext {
                     true
                 }
                 (0, 0b10111) => {
-                    self.neon_pairwise(ir, q, rd, rn, rm, helper_addp32);
+                    self.neon_pairwise(ir, q, rd, rn, rm, "helper_addp32");
                     true
                 } // ADDP .4S/.2S
                 (0, 0b10001) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmtst32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmtst32");
                     true
                 } // CMTST .4S/.2S
                 (1, 0b01000) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_ushl32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_ushl32");
                     true
                 } // USHL .2S/.4S
                 (0, 0b01000) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_sshl32);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_sshl32");
                     true
                 } // SSHL .2S/.4S
                 _ => false,
@@ -6746,7 +6771,7 @@ impl Aarch64DisasContext {
                     true
                 }
                 (0, 0b00110) => {
-                    self.neon_call2_halves(ir, q, rd, rn, rm, helper_cmgt64);
+                    self.neon_call2_halves(ir, q, rd, rn, rm, "helper_cmgt64");
                     true
                 } // CMGT .1D/.2D
                 (0, 0b10001) => {
@@ -6909,36 +6934,6 @@ impl Aarch64DisasContext {
         }
     }
 
-    fn neon_pairwise(
-        &mut self,
-        ir: &mut Context,
-        q: u32,
-        rd: usize,
-        rn: usize,
-        rm: usize,
-        helper: unsafe extern "C" fn(u64, u64) -> u64,
-    ) {
-        if q != 0 {
-            let n_lo = self.read_vreg_lo(ir, rn);
-            let n_hi = self.read_vreg_hi(ir, rn);
-            let d_lo = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, d_lo, helper, [n_lo, n_hi]);
-            let m_lo = self.read_vreg_lo(ir, rm);
-            let m_hi = self.read_vreg_hi(ir, rm);
-            let d_hi = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, d_hi, helper, [m_lo, m_hi]);
-            self.write_vreg_lo(ir, rd, d_lo);
-            self.write_vreg_hi(ir, rd, d_hi);
-        } else {
-            let n_lo = self.read_vreg_lo(ir, rn);
-            let m_lo = self.read_vreg_lo(ir, rm);
-            let d_lo = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, d_lo, helper, [n_lo, m_lo]);
-            self.write_vreg_lo(ir, rd, d_lo);
-            self.clear_vreg_hi(ir, rd);
-        }
-    }
-
     /// AdvSIMD two-reg misc: 0 Q U 01110 size 10000 opcode 10 Rn Rd
     fn neon_2reg_misc(&mut self, ir: &mut Context, insn: u32) -> bool {
         let q = (insn >> 30) & 1;
@@ -7063,17 +7058,17 @@ impl Aarch64DisasContext {
             }
             // ABS .4S/.2S: U=0 size=10 opcode=01011
             (0, 0b10, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_abs32);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_abs32");
                 true
             }
             // CMEQ #0 .4S/.2S: U=0 size=10 opcode=01001
             (0, 0b10, 0b01001) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_cmeq32_zero);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_cmeq32_zero");
                 true
             }
             // CMEQ #0 .8H/.4H: U=0 size=01 opcode=01001
             (0, 0b01, 0b01001) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_cmeq16_zero);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_cmeq16_zero");
                 true
             }
             // XTN .2S (64→32): U=0 size=10 opcode=10010
@@ -7088,22 +7083,22 @@ impl Aarch64DisasContext {
             }
             // REV64 .4H/.8H: U=0 size=01 opcode=00000
             (0, 0b01, 0b00000) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_rev64_16);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_rev64_16");
                 true
             }
             // CMLT #0 .4S/.2S: U=0 size=10 opcode=01010
             (0, 0b10, 0b01010) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_cmlt32_zero);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_cmlt32_zero");
                 true
             }
             // CMLT #0 .8B/.16B: U=0 size=00 opcode=01010
             (0, 0b00, 0b01010) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_cmlt8_zero);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_cmlt8_zero");
                 true
             }
             // CMLT #0 .4H/.8H: U=0 size=01 opcode=01010
             (0, 0b01, 0b01010) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_cmlt16_zero);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_cmlt16_zero");
                 true
             }
             // CMLT #0 .1D/.2D: U=0 size=11 opcode=01010
@@ -7220,7 +7215,7 @@ impl Aarch64DisasContext {
             }
             // NEG .2S/.4S: U=1 size=10 opcode=01011
             (1, 0b10, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_neg32);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_neg32");
                 true
             }
             // MVN/NOT .8B/.16B: U=1 size=00 opcode=00101
@@ -7234,12 +7229,12 @@ impl Aarch64DisasContext {
             }
             // NEG .8B/.16B: U=1 size=00 opcode=01011
             (1, 0b00, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_neg8);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_neg8");
                 true
             }
             // NEG .4H/.8H: U=1 size=01 opcode=01011
             (1, 0b01, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_neg16);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_neg16");
                 true
             }
             // NEG .2D: U=1 size=11 opcode=01011
@@ -7260,17 +7255,17 @@ impl Aarch64DisasContext {
             }
             // FCVTZS .2S/.4S: U=0 size=10 opcode=11011 — vector float-to-signed-int (round toward zero)
             (0, 0b10, 0b11011) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_vfcvtzs32);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_vfcvtzs32");
                 true
             }
             // SCVTF .2S/.4S: U=0 size=00 opcode=11101 — vector signed-int-to-float (32-bit)
             (0, 0b00, 0b11101) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_vscvtf32);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_vscvtf32");
                 true
             }
             // UCVTF .2S/.4S: U=1 size=00 opcode=11101 — vector unsigned-int-to-float (32-bit)
             (1, 0b00, 0b11101) => {
-                self.neon_call1_halves(ir, q, rd, rn, helper_vucvtf32);
+                self.neon_call1_halves(ir, q, rd, rn, "helper_vucvtf32");
                 true
             }
             // SCVTF .2D/.4D: U=0 size=01 opcode=11101 — vector signed-int-to-float (64-bit)

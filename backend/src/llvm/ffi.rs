@@ -125,6 +125,7 @@ extern "C" {
     pub fn LLVMGetParam(func: LLVMValueRef, idx: u32) -> LLVMValueRef;
     pub fn LLVMSetValueName2(val: LLVMValueRef, name: *const c_char, len: usize);
     pub fn LLVMTypeOf(val: LLVMValueRef) -> LLVMTypeRef;
+    pub fn LLVMGlobalGetValueType(global: LLVMValueRef) -> LLVMTypeRef;
 
     // Functions
     pub fn LLVMAddFunction(
@@ -367,7 +368,6 @@ extern "C" {
     // Module linking & lookup
     pub fn LLVMGetNamedFunction(m: LLVMModuleRef, name: *const c_char) -> LLVMValueRef;
     pub fn LLVMLinkModules2(dest: LLVMModuleRef, src: LLVMModuleRef) -> i32;
-    pub fn LLVMGlobalGetValueType(global: LLVMValueRef) -> LLVMTypeRef;
 
     // Bitcode parsing
     pub fn LLVMParseBitcodeInContext2(

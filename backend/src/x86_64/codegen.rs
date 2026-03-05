@@ -649,7 +649,22 @@ impl HostCodeGen for X86_64CodeGen {
                 }
             }
             Opcode::Call => {
-                let func = (cargs[1] as u64) << 32 | (cargs[0] as u64);
+                let name_id = cargs[0] as u64;
+                let helper_name = tcg_core::ir_builder::get_helper_name(name_id)
+                    .expect("helper name not found in global registry");
+
+                // Use dlsym to resolve the function address at runtime
+                use std::ffi::CString;
+                let c_name = CString::new(helper_name.as_str())
+                    .expect("helper name contains null byte");
+                let func_ptr = unsafe {
+                    libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr())
+                };
+                if func_ptr.is_null() {
+                    panic!("Failed to resolve helper function: {}", helper_name);
+                }
+                let func = func_ptr as u64;
+
                 emit_mov_ri(buf, true, Reg::R11, func);
                 emit_call_reg(buf, Reg::R11);
             }

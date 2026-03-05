@@ -3,16 +3,65 @@ use crate::op::Op;
 use crate::opcode::Opcode;
 use crate::temp::TempIdx;
 use crate::types::{Cond, Type};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
-/// Helper macro to call a helper function with automatic name recording.
+// Global helper name registry for stable IDs across translation contexts
+static HELPER_REGISTRY: Mutex<Option<HelperRegistry>> = Mutex::new(None);
+
+struct HelperRegistry {
+    name_to_id: HashMap<String, u64>,
+    id_to_name: HashMap<u64, String>,
+    next_id: u64,
+}
+
+impl HelperRegistry {
+    fn new() -> Self {
+        Self {
+            name_to_id: HashMap::new(),
+            id_to_name: HashMap::new(),
+            next_id: 0,
+        }
+    }
+
+    fn get_or_insert(&mut self, name: &str) -> u64 {
+        if let Some(&id) = self.name_to_id.get(name) {
+            id
+        } else {
+            let id = self.next_id;
+            self.next_id += 1;
+            self.name_to_id.insert(name.to_string(), id);
+            self.id_to_name.insert(id, name.to_string());
+            id
+        }
+    }
+
+    fn get_name(&self, id: u64) -> Option<String> {
+        self.id_to_name.get(&id).cloned()
+    }
+}
+
+fn with_registry<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HelperRegistry) -> R,
+{
+    let mut guard = HELPER_REGISTRY.lock().unwrap();
+    let registry = guard.get_or_insert_with(HelperRegistry::new);
+    f(registry)
+}
+
+pub fn get_helper_name(id: u64) -> Option<String> {
+    with_registry(|reg| reg.get_name(id))
+}
+
+/// Helper macro to call a helper function by name.
 /// Usage: gen_helper_call!(ir, dst, helper_function_name, [args...])
 #[macro_export]
 macro_rules! gen_helper_call {
     ($ir:expr, $dst:expr, $helper:expr, [$($arg:expr),*]) => {{
         $ir.gen_call_named(
             $dst,
-            $helper as u64,
-            Some(stringify!($helper)),
+            stringify!($helper),
             &[$($arg),*]
         )
     }};
@@ -960,36 +1009,27 @@ impl Context {
         self.emit_op(op);
     }
 
-    /// Call helper: dst = helper(args[0..6])
-    /// Call: 1 oarg, 6 iargs, 2 cargs (func_lo, func_hi)
-    pub fn gen_call(
-        &mut self,
-        dst: TempIdx,
-        helper: u64,
-        args: &[TempIdx],
-    ) -> TempIdx {
-        self.gen_call_named(dst, helper, None, args)
-    }
-
+    /// Call helper by name: dst = helper(args[0..6])
+    /// Call: 1 oarg, 6 iargs, 1 carg (name_id)
+    /// The function address will be resolved via dlsym at codegen time.
     pub fn gen_call_named(
         &mut self,
         dst: TempIdx,
-        helper: u64,
-        name: Option<&str>,
+        name: &str,
         args: &[TempIdx],
     ) -> TempIdx {
-        if let Some(n) = name {
-            self.helper_names.insert(helper, n.to_string());
-        }
-        let mut full_args = Vec::with_capacity(1 + 6 + 2);
+        // Get or create a stable ID for this helper name
+        let name_id = with_registry(|reg| reg.get_or_insert(name));
+
+        let mut full_args = Vec::with_capacity(1 + 6 + 1);
         full_args.push(dst);
         let zero = self.new_const(Type::I64, 0);
         for i in 0..6 {
             let arg = args.get(i).copied().unwrap_or(zero);
             full_args.push(arg);
         }
-        full_args.push(carg(helper as u32));
-        full_args.push(carg((helper >> 32) as u32));
+        // Store name_id as a constant arg
+        full_args.push(carg(name_id as u32));
         let idx = self.next_op_idx();
         let op = Op::with_args(idx, Opcode::Call, Type::I64, &full_args);
         self.emit_op(op);

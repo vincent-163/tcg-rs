@@ -629,11 +629,22 @@ fn compile_aot(
                 let def = &OPCODE_DEFS[op.opc as usize];
                 let nb_i = def.nb_iargs as usize;
                 let cargs = op.cargs();
-                // cargs are encoded as TempIdx(value), not actual temp indices
-                let lo = cargs[0].0 as u64;
-                let hi = cargs[1].0 as u64;
-                let func_addr = (hi << 32) | lo;
-                if let Some(name) = ir.helper_names.get(&func_addr) {
+                // cargs[0] contains the name_id
+                let name_id = cargs[0].0 as u64;
+                if let Some(name) = tcg_core::ir_builder::get_helper_name(name_id) {
+                    // Resolve function address via dlsym
+                    use std::ffi::CString;
+                    let c_name = CString::new(name.as_str()).unwrap();
+                    let func_ptr = unsafe {
+                        libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr())
+                    };
+                    if func_ptr.is_null() {
+                        eprintln!("[aot] warning: failed to resolve helper: {}", name);
+                        has_unnamed_helper = true;
+                        continue;
+                    }
+                    let func_addr = func_ptr as u64;
+
                     // Count non-zero arguments
                     // Call opcode has 6 input args, but they're padded with const zeros
                     let mut num_params = 0;

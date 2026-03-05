@@ -137,11 +137,11 @@ impl RiscvDisasContext {
     fn gen_helper_call(
         &self,
         ir: &mut Context,
-        helper: usize,
+        helper_name: &str,
         args: &[TempIdx],
     ) -> TempIdx {
         let dst = ir.new_temp(Type::I64);
-        ir.gen_call(dst, helper as u64, args);
+        ir.gen_call_named(dst, helper_name, args);
         dst
     }
 
@@ -1371,7 +1371,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmadd_s as usize,
+            "helper_fmadd_s",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1387,7 +1387,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmsub_s as usize,
+            "helper_fmsub_s",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1403,7 +1403,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fnmsub_s as usize,
+            "helper_fnmsub_s",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1419,7 +1419,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fnmadd_s as usize,
+            "helper_fnmadd_s",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1437,7 +1437,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fadd_s as usize,
+            "helper_fadd_s",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1452,7 +1452,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsub_s as usize,
+            "helper_fsub_s",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1467,7 +1467,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmul_s as usize,
+            "helper_fmul_s",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1482,7 +1482,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fdiv_s as usize,
+            "helper_fdiv_s",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1496,7 +1496,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsqrt_s as usize,
+            "helper_fsqrt_s",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1511,7 +1511,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsgnj_s as usize,
+            "helper_fsgnj_s",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1525,7 +1525,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsgnjn_s as usize,
+            "helper_fsgnjn_s",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1539,7 +1539,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsgnjx_s as usize,
+            "helper_fsgnjx_s",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1553,7 +1553,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmin_s as usize,
+            "helper_fmin_s",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1567,7 +1567,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmax_s as usize,
+            "helper_fmax_s",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1581,7 +1581,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_feq_s as usize,
+            "helper_feq_s",
             &[self.env, rs1, rs2],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1594,7 +1594,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_flt_s as usize,
+            "helper_flt_s",
             &[self.env, rs1, rs2],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1607,7 +1607,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fle_s as usize,
+            "helper_fle_s",
             &[self.env, rs1, rs2],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1620,7 +1620,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs1 = self.fpr_load(ir, a.rs1);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fclass_s as usize,
+            "helper_fclass_s",
             &[self.env, rs1],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1636,7 +1636,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_w_s as usize,
+            "helper_fcvt_w_s",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1649,7 +1649,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_wu_s as usize,
+            "helper_fcvt_wu_s",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1663,7 +1663,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_s_w as usize,
+            "helper_fcvt_s_w",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1677,7 +1677,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_s_wu as usize,
+            "helper_fcvt_s_wu",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1718,7 +1718,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_l_s as usize,
+            "helper_fcvt_l_s",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1731,7 +1731,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_lu_s as usize,
+            "helper_fcvt_lu_s",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -1745,7 +1745,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_s_l as usize,
+            "helper_fcvt_s_l",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1759,7 +1759,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_s_lu as usize,
+            "helper_fcvt_s_lu",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1778,7 +1778,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmadd_d as usize,
+            "helper_fmadd_d",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1794,7 +1794,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmsub_d as usize,
+            "helper_fmsub_d",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1810,7 +1810,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fnmsub_d as usize,
+            "helper_fnmsub_d",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1826,7 +1826,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fnmadd_d as usize,
+            "helper_fnmadd_d",
             &[self.env, rs1, rs2, rs3, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1844,7 +1844,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fadd_d as usize,
+            "helper_fadd_d",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1859,7 +1859,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsub_d as usize,
+            "helper_fsub_d",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1874,7 +1874,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmul_d as usize,
+            "helper_fmul_d",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1889,7 +1889,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fdiv_d as usize,
+            "helper_fdiv_d",
             &[self.env, rs1, rs2, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1903,7 +1903,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsqrt_d as usize,
+            "helper_fsqrt_d",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1918,7 +1918,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsgnj_d as usize,
+            "helper_fsgnj_d",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1932,7 +1932,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsgnjn_d as usize,
+            "helper_fsgnjn_d",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1946,7 +1946,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fsgnjx_d as usize,
+            "helper_fsgnjx_d",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1960,7 +1960,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmin_d as usize,
+            "helper_fmin_d",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1974,7 +1974,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fmax_d as usize,
+            "helper_fmax_d",
             &[self.env, rs1, rs2],
         );
         self.fpr_store(ir, a.rd, res);
@@ -1988,7 +1988,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_feq_d as usize,
+            "helper_feq_d",
             &[self.env, rs1, rs2],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2001,7 +2001,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_flt_d as usize,
+            "helper_flt_d",
             &[self.env, rs1, rs2],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2014,7 +2014,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs2 = self.fpr_load(ir, a.rs2);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fle_d as usize,
+            "helper_fle_d",
             &[self.env, rs1, rs2],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2027,7 +2027,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rs1 = self.fpr_load(ir, a.rs1);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fclass_d as usize,
+            "helper_fclass_d",
             &[self.env, rs1],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2044,7 +2044,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_s_d as usize,
+            "helper_fcvt_s_d",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -2058,7 +2058,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_d_s as usize,
+            "helper_fcvt_d_s",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -2071,7 +2071,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_w_d as usize,
+            "helper_fcvt_w_d",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2084,7 +2084,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_wu_d as usize,
+            "helper_fcvt_wu_d",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2098,7 +2098,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_d_w as usize,
+            "helper_fcvt_d_w",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -2112,7 +2112,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_d_wu as usize,
+            "helper_fcvt_d_wu",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -2128,7 +2128,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_l_d as usize,
+            "helper_fcvt_l_d",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2141,7 +2141,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_lu_d as usize,
+            "helper_fcvt_lu_d",
             &[self.env, rs1, rm],
         );
         self.gen_set_gpr(ir, a.rd, res);
@@ -2155,7 +2155,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_d_l as usize,
+            "helper_fcvt_d_l",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);
@@ -2169,7 +2169,7 @@ impl Decode<Context> for RiscvDisasContext {
         let rm = ir.new_const(Type::I64, a.rm as u64);
         let res = self.gen_helper_call(
             ir,
-            fpu::helper_fcvt_d_lu as usize,
+            "helper_fcvt_d_lu",
             &[self.env, rs1, rm],
         );
         self.fpr_store(ir, a.rd, res);

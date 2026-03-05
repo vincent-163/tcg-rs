@@ -319,7 +319,7 @@ impl TbTranslator {
                 // Check if already declared
                 let existing = LLVMGetNamedFunction(s.module, helper_name_c.as_ptr());
                 if !existing.is_null() {
-                    // Get the function type from the function value
+                    // Get the function type (not the pointer type)
                     let fty = LLVMGlobalGetValueType(existing);
                     s.aot_helpers.insert(addr, (existing, fty));
                 } else {
@@ -1604,10 +1604,21 @@ impl TbTranslator {
                         );
                     }
                 }
-                // func_addr = cargs[1] << 32 | cargs[0]
-                let lo = carg!(0) as u64;
-                let hi = carg!(1) as u64;
-                let func_addr = (hi << 32) | lo;
+
+                // Get helper name from name_id using global registry
+                let name_id = carg!(0) as u64;
+                let helper_name = tcg_core::ir_builder::get_helper_name(name_id)
+                    .expect("helper name not found in global registry");
+
+                // Use dlsym to resolve the function address
+                use std::ffi::CString;
+                let c_name = CString::new(helper_name.as_str())
+                    .expect("helper name contains null byte");
+                let func_ptr = libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr());
+                if func_ptr.is_null() {
+                    panic!("Failed to resolve helper function: {}", helper_name);
+                }
+                let func_addr = func_ptr as u64;
 
                 // Build args: first input is always env ptr
                 let nb_call_iargs = nb_i;
