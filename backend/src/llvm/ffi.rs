@@ -367,6 +367,7 @@ extern "C" {
     // Module linking & lookup
     pub fn LLVMGetNamedFunction(m: LLVMModuleRef, name: *const c_char) -> LLVMValueRef;
     pub fn LLVMLinkModules2(dest: LLVMModuleRef, src: LLVMModuleRef) -> i32;
+    pub fn LLVMGlobalGetValueType(global: LLVMValueRef) -> LLVMTypeRef;
 
     // Bitcode parsing
     pub fn LLVMParseBitcodeInContext2(

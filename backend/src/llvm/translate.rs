@@ -40,7 +40,7 @@ pub struct TbTranslator {
     aot_peers: HashMap<u64, LLVMValueRef>, // target_pc → declared function
     pc_temp: Option<TempIdx>,               // which temp is the PC register
     last_pc_const: Option<u64>,             // last constant written to PC
-    peer_fty: LLVMTypeRef,                  // fn(ptr, i64) -> i64
+    peer_fty: LLVMTypeRef,                  // fn(ptr, i64, ptr) -> i64
     // AOT dispatch super-function for indirect jumps
     aot_dispatch: Option<LLVMValueRef>,     // @aot_dispatch declaration
     aot_dispatch_cache: Option<LLVMValueRef>, // per-TB cache for aot_dispatch
@@ -135,9 +135,10 @@ impl TbTranslator {
             let i128t = LLVMInt128TypeInContext(llvm_ctx);
             let ptr = LLVMPointerTypeInContext(llvm_ctx, 0);
 
-            // fn(ptr %env, i64 %guest_base) -> i64
-            let mut params = [ptr, i64t];
-            let fty = LLVMFunctionType(i64t, params.as_mut_ptr(), 2, 0);
+            // fn(ptr %env, i64 %guest_base, ptr %cache) -> i64
+            // Third parameter is unused but needed for musttail compatibility
+            let mut params = [ptr, i64t, ptr];
+            let fty = LLVMFunctionType(i64t, params.as_mut_ptr(), 3, 0);
             let func = LLVMAddFunction(module, cname.as_ptr(), fty);
 
             let builder = LLVMCreateBuilderInContext(llvm_ctx);
@@ -318,8 +319,8 @@ impl TbTranslator {
                 // Check if already declared
                 let existing = LLVMGetNamedFunction(s.module, helper_name_c.as_ptr());
                 if !existing.is_null() {
-                    // Get the function type
-                    let fty = LLVMTypeOf(existing);
+                    // Get the function type from the function value
+                    let fty = LLVMGlobalGetValueType(existing);
                     s.aot_helpers.insert(addr, (existing, fty));
                 } else {
                     // Create function type with actual parameter count
@@ -1487,10 +1488,12 @@ impl TbTranslator {
                 let peer = self.last_pc_const
                     .and_then(|pc| self.aot_peers.get(&pc).copied());
                 if let Some(peer_fn) = peer {
-                    let mut args = [self.env, self.guest_base];
+                    // Pass null as third parameter (unused but needed for signature)
+                    let null_ptr = LLVMConstNull(self.ptr);
+                    let mut args = [self.env, self.guest_base, null_ptr];
                     let call = LLVMBuildCall2(
                         b, self.peer_fty, peer_fn,
-                        args.as_mut_ptr(), 2, E,
+                        args.as_mut_ptr(), 3, E,
                     );
                     LLVMSetTailCallKind(call, 2); // MustTail
                     LLVMBuildRet(b, call);

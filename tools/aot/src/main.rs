@@ -1321,16 +1321,16 @@ fn emit_aot_dispatch(
             LLVMPointerTypeInContext(ctx, 0),
             E,
         );
-        let mut hit_args = [env, guest_base];
+        let mut hit_args = [env, guest_base, cache_ptr];
         let hit_call = LLVMBuildCall2(
             builder,
             fty,
             cached_tb_func,
             hit_args.as_mut_ptr(),
-            2,
+            3,
             E,
         );
-        LLVMSetTailCallKind(hit_call, 2);
+        LLVMSetTailCallKind(hit_call, 2); // MustTail
         LLVMBuildRet(builder, hit_call);
 
         // Slow path: compute file offset and switch
@@ -1450,17 +1450,17 @@ fn emit_aot_dispatch(
             LLVMSetOrdering(cache_store, 3); // Release
             LLVMSetAlignment(cache_store, 8);
 
-            // Call TB function
-            let mut args = [env, guest_base];
+            // Call TB function with 3 parameters (third is cache_ptr)
+            let mut args = [env, guest_base, cache_ptr];
             let call = LLVMBuildCall2(
                 builder,
                 fty,
                 tb_func,
                 args.as_mut_ptr(),
-                2,
+                3,
                 E,
             );
-            LLVMSetTailCallKind(call, 2);
+            LLVMSetTailCallKind(call, 2); // MustTail
             LLVMBuildRet(builder, call);
         }
 
