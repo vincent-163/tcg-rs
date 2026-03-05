@@ -643,14 +643,15 @@ fn compile_aot(
     eprintln!("[aot] found {} unique helper functions", helper_addrs.len());
 
     // Load helper bitcode module and link it
+    // Use path from build script if available
     let helpers_bc_path = if arch == Arch::Aarch64 {
-        "target/helpers/aarch64_helpers.bc"
+        env!("HELPERS_BC_PATH")
     } else {
         // For RISC-V, we'll create a separate helpers file later
-        "target/helpers/riscv64_helpers.bc"
+        ""
     };
 
-    if std::path::Path::new(helpers_bc_path).exists() {
+    if !helpers_bc_path.is_empty() && std::path::Path::new(helpers_bc_path).exists() {
         eprintln!("[aot] linking helper bitcode from {}", helpers_bc_path);
         unsafe {
             let path_c = CString::new(helpers_bc_path).unwrap();
