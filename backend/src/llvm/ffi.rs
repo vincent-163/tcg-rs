@@ -117,6 +117,7 @@ extern "C" {
         param_count: u32,
         is_var_arg: i32,
     ) -> LLVMTypeRef;
+    pub fn LLVMCountParamTypes(ty: LLVMTypeRef) -> u32;
 
     // Values
     pub fn LLVMConstInt(ty: LLVMTypeRef, n: u64, sign_extend: i32) -> LLVMValueRef;

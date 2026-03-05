@@ -304,7 +304,7 @@ impl TbTranslator {
         func_name: &str,
         peer_va_to_offset: &std::collections::HashMap<u64, u64>,
         pc_temp: TempIdx,
-        helper_info: &std::collections::HashMap<u64, String>,
+        helper_info: &std::collections::HashMap<u64, (String, usize)>,
     ) -> Self {
         let mut s = Self::new_with_peers(
             llvm_ctx, ir, func_name, peer_va_to_offset, pc_temp
@@ -312,7 +312,7 @@ impl TbTranslator {
 
         // Declare all helper functions as external using their actual names
         unsafe {
-            for (&addr, name) in helper_info {
+            for (&addr, (name, num_params)) in helper_info {
                 let helper_name_c = CString::new(name.as_str()).unwrap();
 
                 // Check if already declared
@@ -322,12 +322,12 @@ impl TbTranslator {
                     let fty = LLVMTypeOf(existing);
                     s.aot_helpers.insert(addr, (existing, fty));
                 } else {
-                    // Create function type: i64 (i64, i64, i64, i64, i64, i64)
-                    let mut param_tys = vec![s.i64t; 6];
+                    // Create function type with actual parameter count
+                    let mut param_tys = vec![s.i64t; *num_params];
                     let fty = LLVMFunctionType(
                         s.i64t,
                         param_tys.as_mut_ptr(),
-                        6,
+                        *num_params as u32,
                         0,
                     );
 
@@ -1615,13 +1615,16 @@ impl TbTranslator {
 
                 // Check if this is an AOT helper call
                 let ret = if let Some(&(helper_func, helper_fty)) = self.aot_helpers.get(&func_addr) {
-                    // Call external helper function
+                    // Get the actual parameter count from the function type
+                    let param_count = LLVMCountParamTypes(helper_fty) as usize;
+                    // Only pass the required number of arguments
+                    let call_args = &args[..param_count];
                     LLVMBuildCall2(
                         b,
                         helper_fty,
                         helper_func,
-                        args.as_ptr(),
-                        args.len() as u32,
+                        call_args.as_ptr(),
+                        call_args.len() as u32,
                         E,
                     )
                 } else {

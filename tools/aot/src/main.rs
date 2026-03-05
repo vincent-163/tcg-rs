@@ -612,7 +612,8 @@ fn compile_aot(
     // We'll emit external declarations for these helpers so they
     // can be resolved from the tcg-rs executable at runtime.
     // Also identify TBs with unnamed helpers (these will be skipped).
-    let mut helper_info: HashMap<u64, String> = HashMap::new();
+    // Store (name, num_params) for each helper
+    let mut helper_info: HashMap<u64, (String, usize)> = HashMap::new();
     let mut tbs_with_unnamed_helpers: HashSet<u64> = HashSet::new();
     for &(offset, _) in all_entries {
         let mut ir = Context::new();
@@ -625,13 +626,30 @@ fn compile_aot(
         let mut has_unnamed_helper = false;
         for op in ir.ops() {
             if op.opc == Opcode::Call {
+                let def = &OPCODE_DEFS[op.opc as usize];
+                let nb_i = def.nb_iargs as usize;
                 let cargs = op.cargs();
                 // cargs are encoded as TempIdx(value), not actual temp indices
                 let lo = cargs[0].0 as u64;
                 let hi = cargs[1].0 as u64;
                 let func_addr = (hi << 32) | lo;
                 if let Some(name) = ir.helper_names.get(&func_addr) {
-                    helper_info.insert(func_addr, name.clone());
+                    // Count non-zero arguments
+                    // Call opcode has 6 input args, but they're padded with const zeros
+                    let mut num_params = 0;
+                    for i in 0..nb_i {
+                        let arg_idx = op.args[i];
+                        let temp = ir.temp(arg_idx);
+                        if temp.kind != TempKind::Const || temp.val != 0 {
+                            num_params = i + 1; // Track highest non-zero index + 1
+                        }
+                    }
+                    // Update or insert with max param count seen
+                    helper_info.entry(func_addr)
+                        .and_modify(|(_, count)| {
+                            *count = (*count).max(num_params);
+                        })
+                        .or_insert((name.clone(), num_params));
                 } else {
                     has_unnamed_helper = true;
                 }

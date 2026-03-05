@@ -86,8 +86,31 @@ impl AotTable {
         use std::ffi::CString;
         let cpath = CString::new(path.to_str()?).ok()?;
         unsafe {
+            // First, open the main executable with RTLD_GLOBAL to make its symbols available
+            // This is necessary for the AOT library to resolve helper functions
+            let main_exe = std::env::current_exe().ok()?;
+            let main_exe_cstr = CString::new(main_exe.to_str()?).ok()?;
+            let main_handle = libc::dlopen(main_exe_cstr.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL);
+            if main_handle.is_null() {
+                let err = libc::dlerror();
+                if !err.is_null() {
+                    let err_str = std::ffi::CStr::from_ptr(err).to_string_lossy();
+                    eprintln!("[aot] failed to dlopen main executable: {}", err_str);
+                }
+            } else {
+                eprintln!("[aot] main executable loaded with RTLD_GLOBAL");
+            }
+
+            // Use RTLD_NOW to force immediate symbol resolution (for debugging)
             let handle = libc::dlopen(cpath.as_ptr(), libc::RTLD_NOW);
-            if handle.is_null() { return None; }
+            if handle.is_null() {
+                let err = libc::dlerror();
+                if !err.is_null() {
+                    let err_str = std::ffi::CStr::from_ptr(err).to_string_lossy();
+                    eprintln!("[aot] dlopen failed: {}", err_str);
+                }
+                return None;
+            }
             let idx_sym = CString::new("tb_index").unwrap();
             let idx_ptr = libc::dlsym(handle, idx_sym.as_ptr()) as *const u64;
             if idx_ptr.is_null() { libc::dlclose(handle); return None; }
