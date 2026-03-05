@@ -125,11 +125,10 @@ impl GuestCpu for LinuxCpu {
             }
             d.pc = TempIdx(1 + NUM_XREGS as u32);
             d.sp = TempIdx(2 + NUM_XREGS as u32);
-            d.nzcv = TempIdx(3 + NUM_XREGS as u32);
-            d.cc_op = TempIdx(4 + NUM_XREGS as u32);
-            d.cc_a = TempIdx(5 + NUM_XREGS as u32);
-            d.cc_b = TempIdx(6 + NUM_XREGS as u32);
-            d.cc_result = TempIdx(7 + NUM_XREGS as u32);
+            d.cc_op = TempIdx(3 + NUM_XREGS as u32);
+            d.cc_a = TempIdx(4 + NUM_XREGS as u32);
+            d.cc_b = TempIdx(5 + NUM_XREGS as u32);
+            d.cc_result = TempIdx(6 + NUM_XREGS as u32);
             Aarch64Translator::tb_start(&mut d, ir);
             loop {
                 Aarch64Translator::insn_start(
@@ -674,13 +673,14 @@ fn main() {
                 let sp = *rbp.add(32);
                 let gb = *rbp.add(33);
                 let lb = *rbp.add(34);
-                let nzcv = *rbp.add(35);
-                let fpcr = *rbp.add(36);
-                let fpsr = *rbp.add(37);
-                let tpidr = *rbp.add(38);
+                let cc_op = *rbp.add(35);
+                let cc_a = *rbp.add(36);
+                let fpcr = *rbp.add(37);
+                let fpsr = *rbp.add(38);
+                let tpidr = *rbp.add(39);
                 eprintln!(
-                    "pc={:#018x} sp={:#018x} gb={:#018x} lb={:#018x} nzcv={:#018x}",
-                    pc, sp, gb, lb, nzcv,
+                    "pc={:#018x} sp={:#018x} gb={:#018x} lb={:#018x} cc_op={:#x} cc_a={:#018x}",
+                    pc, sp, gb, lb, cc_op, cc_a,
                 );
                 eprintln!(
                     "fpcr={:#018x} fpsr={:#018x} tpidr_el0={:#018x}",

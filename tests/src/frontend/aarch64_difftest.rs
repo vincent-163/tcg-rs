@@ -495,7 +495,7 @@ fn run_tcgrs(init: &[(usize, u64)], insns: &[u32]) -> Aarch64Cpu {
         helper_lazy_nzcv_to_packed, CC_OP_EAGER,
     };
     if cpu.cc_op != CC_OP_EAGER {
-        cpu.nzcv = helper_lazy_nzcv_to_packed(
+        cpu.cc_a = helper_lazy_nzcv_to_packed(
             cpu.cc_op, cpu.cc_a, cpu.cc_b, cpu.cc_result,
         );
         cpu.cc_op = CC_OP_EAGER;
@@ -553,7 +553,7 @@ fn run_tcgrs_with_state(
         helper_lazy_nzcv_to_packed, CC_OP_EAGER,
     };
     if cpu.cc_op != CC_OP_EAGER {
-        cpu.nzcv = helper_lazy_nzcv_to_packed(
+        cpu.cc_a = helper_lazy_nzcv_to_packed(
             cpu.cc_op, cpu.cc_a, cpu.cc_b, cpu.cc_result,
         );
         cpu.cc_op = CC_OP_EAGER;
@@ -609,7 +609,7 @@ fn run_tcgrs_with_guest_mem(
         helper_lazy_nzcv_to_packed, CC_OP_EAGER,
     };
     if cpu.cc_op != CC_OP_EAGER {
-        cpu.nzcv = helper_lazy_nzcv_to_packed(
+        cpu.cc_a = helper_lazy_nzcv_to_packed(
             cpu.cc_op, cpu.cc_a, cpu.cc_b, cpu.cc_result,
         );
         cpu.cc_op = CC_OP_EAGER;
@@ -633,9 +633,9 @@ fn difftest_alu(test: &AluTest) {
         // QEMU stores NZCV in x4 via mrs
         let qemu_nzcv = qemu_regs[4];
         assert_eq!(
-            cpu.nzcv, qemu_nzcv,
+            cpu.cc_a, qemu_nzcv,
             "DIFFTEST FAIL [{}]: nzcv tcg-rs={:#x} qemu={:#x}",
-            test.name, cpu.nzcv, qemu_nzcv
+            test.name, cpu.cc_a, qemu_nzcv
         );
     }
 }
@@ -737,9 +737,9 @@ fn difftest_sequence(
     if check_nzcv {
         let qemu_nzcv = qemu_regs[4];
         assert_eq!(
-            cpu.nzcv, qemu_nzcv,
+            cpu.cc_a, qemu_nzcv,
             "DIFFTEST FAIL [{name}]: nzcv tcg-rs={:#x} qemu={:#x}",
-            cpu.nzcv, qemu_nzcv
+            cpu.cc_a, qemu_nzcv
         );
     }
 }
@@ -2391,7 +2391,7 @@ fn a64_difftest_fcmp_s_uses_single_precision_bits() {
     );
 
     // -1.0f < 0.5f => N=1, Z=0, C=0, V=0
-    assert_eq!(cpu.nzcv, 0x8000_0000);
+    assert_eq!(cpu.cc_a, 0x8000_0000);
     assert_eq!(cpu.pc, 4);
 }
 
@@ -2409,7 +2409,7 @@ fn a64_difftest_fcmpe_s_uses_single_precision_bits() {
     );
 
     // equal => N=0, Z=1, C=1, V=0
-    assert_eq!(cpu.nzcv, 0x6000_0000);
+    assert_eq!(cpu.cc_a, 0x6000_0000);
     assert_eq!(cpu.pc, 4);
 }
 

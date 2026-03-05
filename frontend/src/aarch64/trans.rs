@@ -266,20 +266,19 @@ impl Aarch64DisasContext {
     }
 
     // -- Materialize packed NZCV from lazy state --
-    // Call this before any operation that needs the packed nzcv
-    // global (MRS NZCV, ADC, SBC, etc.)
+    // Call this before any operation that needs the packed NZCV
+    // value (MRS NZCV, ADC, SBC, etc.)
     fn materialize_nzcv(&mut self, ir: &mut Context) {
         if self.lazy_nzcv.is_some() {
             // We know cc_op at compile time; call the helper
-            // to compute packed NZCV and store it.
+            // to compute packed NZCV and store it in cc_a.
             let packed = ir.new_temp(Type::I64);
             ir.gen_call(
                 packed,
                 helper_lazy_nzcv_to_packed as u64,
                 &[self.cc_op, self.cc_a, self.cc_b, self.cc_result],
             );
-            ir.gen_mov(Type::I64, self.nzcv, packed);
-            // Mark cc_op as EAGER and store packed in cc_a.
+            // Mark cc_op as EAGER and store packed NZCV in cc_a.
             let eager = ir.new_const(Type::I64, CC_OP_EAGER);
             ir.gen_mov(Type::I64, self.cc_op, eager);
             ir.gen_mov(Type::I64, self.cc_a, packed);
@@ -287,7 +286,7 @@ impl Aarch64DisasContext {
         } else {
             // cc_op unknown at compile time — might be lazy from
             // previous TB. We need to check at runtime.
-            // Generate: if cc_op != EAGER { nzcv = helper(...); cc_op = EAGER; cc_a = nzcv; }
+            // Generate: if cc_op != EAGER { cc_a = helper(...); cc_op = EAGER; }
             let eager_c = ir.new_const(Type::I64, CC_OP_EAGER);
             let skip = ir.new_label();
             ir.gen_brcond(Type::I64, self.cc_op, eager_c, Cond::Eq, skip);
@@ -297,7 +296,6 @@ impl Aarch64DisasContext {
                 helper_lazy_nzcv_to_packed as u64,
                 &[self.cc_op, self.cc_a, self.cc_b, self.cc_result],
             );
-            ir.gen_mov(Type::I64, self.nzcv, packed);
             ir.gen_mov(Type::I64, self.cc_op, eager_c);
             ir.gen_mov(Type::I64, self.cc_a, packed);
             ir.gen_set_label(skip);
@@ -307,11 +305,9 @@ impl Aarch64DisasContext {
     // -- Set NZCV to a specific packed value (EAGER) --
     // For FCMP, MSR NZCV, CCMP fallthrough, etc.
     fn set_nzcv_eager(&mut self, ir: &mut Context, val: TempIdx) {
-        ir.gen_mov(Type::I64, self.nzcv, val);
         let eager = ir.new_const(Type::I64, CC_OP_EAGER);
         ir.gen_mov(Type::I64, self.cc_op, eager);
-        // Store packed nzcv in cc_a so the runtime helper
-        // can access it when cc_op == EAGER.
+        // Store packed NZCV in cc_a (canonical location for eager mode).
         ir.gen_mov(Type::I64, self.cc_a, val);
         self.lazy_nzcv = None;
     }
@@ -8776,12 +8772,12 @@ impl Decode<Context> for Aarch64DisasContext {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
-        // Materialize NZCV so we can read packed C flag.
+        // Materialize NZCV so we can read packed C flag from cc_a.
         self.materialize_nzcv(ir);
         let c29 = ir.new_const(Type::I64, 29);
         let one = ir.new_const(Type::I64, 1);
         let c = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, c, self.nzcv, c29);
+        ir.gen_shr(Type::I64, c, self.cc_a, c29);
         ir.gen_and(Type::I64, c, c, one);
         let d = ir.new_temp(Type::I64);
         if sf {
@@ -8797,13 +8793,13 @@ impl Decode<Context> for Aarch64DisasContext {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
         let m = self.read_xreg(ir, a.rm);
-        // Materialize NZCV so we can read packed C flag.
+        // Materialize NZCV so we can read packed C flag from cc_a.
         self.materialize_nzcv(ir);
-        // Extract C flag (bit 29 of nzcv)
+        // Extract C flag (bit 29 of packed NZCV in cc_a)
         let c29 = ir.new_const(Type::I64, 29);
         let one = ir.new_const(Type::I64, 1);
         let c = ir.new_temp(Type::I64);
-        ir.gen_shr(Type::I64, c, self.nzcv, c29);
+        ir.gen_shr(Type::I64, c, self.cc_a, c29);
         ir.gen_and(Type::I64, c, c, one);
         // SBC: Rd = Rn - Rm - (1 - C)
         let d = ir.new_temp(Type::I64);
@@ -9609,9 +9605,9 @@ impl Decode<Context> for Aarch64DisasContext {
         }
         // NZCV
         if op0 == 3 && op1 == 3 && crn == 4 && crm == 2 && op2 == 0 {
-            // Materialize NZCV before reading it.
+            // Materialize NZCV before reading it from cc_a.
             self.materialize_nzcv(ir);
-            let v = self.nzcv;
+            let v = self.cc_a;
             self.write_xreg(ir, a.rd, v);
             return true;
         }

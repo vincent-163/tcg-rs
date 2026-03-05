@@ -8,7 +8,7 @@ mod trans;
 
 use crate::{DisasContextBase, DisasJumpType, TranslatorOps};
 use cpu::{
-    xreg_offset, NZCV_OFFSET, NUM_XREGS,
+    xreg_offset, NUM_XREGS,
     PC_OFFSET, SP_OFFSET,
     CC_OP_OFFSET, CC_A_OFFSET, CC_B_OFFSET, CC_RESULT_OFFSET,
 };
@@ -52,9 +52,8 @@ pub struct Aarch64DisasContext {
     pub pc: TempIdx,
     /// IR temp for the stack pointer (global).
     pub sp: TempIdx,
-    /// IR temp for NZCV condition flags (global, packed).
-    pub nzcv: TempIdx,
     /// IR globals for lazy NZCV state (carried across TBs).
+    /// When cc_op == CC_OP_EAGER, cc_a holds the packed NZCV value.
     pub cc_op: TempIdx,
     pub cc_a: TempIdx,
     pub cc_b: TempIdx,
@@ -84,7 +83,6 @@ impl Aarch64DisasContext {
             xregs: [TempIdx(0); NUM_XREGS],
             pc: TempIdx(0),
             sp: TempIdx(0),
-            nzcv: TempIdx(0),
             cc_op: TempIdx(0),
             cc_a: TempIdx(0),
             cc_b: TempIdx(0),
@@ -142,14 +140,6 @@ impl TranslatorOps for Aarch64Translator {
         // Register SP as a global.
         ctx.sp =
             ir.new_global(Type::I64, ctx.env, SP_OFFSET, "sp");
-
-        // Register NZCV as a global.
-        ctx.nzcv = ir.new_global(
-            Type::I64,
-            ctx.env,
-            NZCV_OFFSET,
-            "nzcv",
-        );
 
         // Register lazy NZCV globals.
         ctx.cc_op = ir.new_global(

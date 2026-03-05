@@ -9,7 +9,7 @@ pub const NUM_VREGS: usize = 32;
 
 /// Lazy NZCV condition code operation types.
 ///
-/// When `cc_op == CC_OP_EAGER`, the packed `nzcv` field is up-to-date.
+/// When `cc_op == CC_OP_EAGER`, the packed NZCV is stored in `cc_a`.
 /// Otherwise, flags must be computed from `cc_a`, `cc_b`, `cc_result`.
 pub const CC_OP_EAGER: u64 = 0;
 pub const CC_OP_ADD32: u64 = 1;
@@ -38,12 +38,10 @@ pub struct Aarch64Cpu {
     /// file_offset = pc - load_bias without changing the AOT
     /// function signature fn(ptr, i64) -> i64.
     pub load_bias: u64,
-    /// Condition flags (N, Z, C, V) — packed format.
-    /// Only valid when `cc_op == CC_OP_EAGER`.
-    pub nzcv: u64,
     /// Lazy NZCV: operation type (CC_OP_*).
     pub cc_op: u64,
     /// Lazy NZCV: first operand.
+    /// When cc_op == CC_OP_EAGER, this holds the packed NZCV value.
     pub cc_a: u64,
     /// Lazy NZCV: second operand.
     pub cc_b: u64,
@@ -79,32 +77,29 @@ pub const GUEST_BASE_OFFSET: i64 = SP_OFFSET + 8; // 264
 /// Byte offset of the `load_bias` field.
 pub const LOAD_BIAS_OFFSET: i64 = GUEST_BASE_OFFSET + 8; // 272
 
-/// Byte offset of the `nzcv` field.
-pub const NZCV_OFFSET: i64 = LOAD_BIAS_OFFSET + 8; // 280
-
 /// Byte offset of the `cc_op` field.
-pub const CC_OP_OFFSET: i64 = NZCV_OFFSET + 8; // 288
+pub const CC_OP_OFFSET: i64 = LOAD_BIAS_OFFSET + 8; // 280
 
 /// Byte offset of the `cc_a` field.
-pub const CC_A_OFFSET: i64 = CC_OP_OFFSET + 8; // 296
+pub const CC_A_OFFSET: i64 = CC_OP_OFFSET + 8; // 288
 
 /// Byte offset of the `cc_b` field.
-pub const CC_B_OFFSET: i64 = CC_A_OFFSET + 8; // 304
+pub const CC_B_OFFSET: i64 = CC_A_OFFSET + 8; // 296
 
 /// Byte offset of the `cc_result` field.
-pub const CC_RESULT_OFFSET: i64 = CC_B_OFFSET + 8; // 312
+pub const CC_RESULT_OFFSET: i64 = CC_B_OFFSET + 8; // 304
 
 /// Byte offset of the `fpcr` field.
-pub const FPCR_OFFSET: i64 = CC_RESULT_OFFSET + 8; // 320
+pub const FPCR_OFFSET: i64 = CC_RESULT_OFFSET + 8; // 312
 
 /// Byte offset of the `fpsr` field.
-pub const FPSR_OFFSET: i64 = FPCR_OFFSET + 8; // 328
+pub const FPSR_OFFSET: i64 = FPCR_OFFSET + 8; // 320
 
 /// Byte offset of the `tpidr_el0` field.
-pub const TPIDR_EL0_OFFSET: i64 = FPSR_OFFSET + 8; // 336
+pub const TPIDR_EL0_OFFSET: i64 = FPSR_OFFSET + 8; // 328
 
-/// Byte offset of `vregs[i]` low half: 344 + i*16.
-pub const VREGS_OFFSET: i64 = TPIDR_EL0_OFFSET + 8; // 344
+/// Byte offset of `vregs[i]` low half: 336 + i*16.
+pub const VREGS_OFFSET: i64 = TPIDR_EL0_OFFSET + 8; // 336
 
 /// Byte offset of vreg i low half.
 pub const fn vreg_lo_offset(i: usize) -> i64 {
@@ -124,7 +119,6 @@ impl Aarch64Cpu {
             sp: 0,
             guest_base: 0,
             load_bias: 0,
-            nzcv: 0,
             cc_op: CC_OP_EAGER,
             cc_a: 0,
             cc_b: 0,
@@ -152,8 +146,7 @@ pub extern "C" fn helper_lazy_nzcv_to_packed(
 ) -> u64 {
     match cc_op {
         CC_OP_EAGER => {
-            // nzcv already in cc_a for this special case
-            // (shouldn't normally be called for EAGER)
+            // Packed NZCV already in cc_a for eager mode.
             cc_a
         }
         CC_OP_ADD32 => compute_nzcv_add(cc_a, cc_b, cc_result, false),
@@ -173,7 +166,7 @@ pub extern "C" fn helper_lazy_nzcv_eval_cond(
     cond: u64,
 ) -> u64 {
     let nzcv = match cc_op {
-        CC_OP_EAGER => cc_a, // special: packed nzcv passed in cc_a
+        CC_OP_EAGER => cc_a, // Packed NZCV stored in cc_a
         _ => helper_lazy_nzcv_to_packed(cc_op, cc_a, cc_b, cc_result),
     };
     eval_cond_from_packed(nzcv, cond as u32)
