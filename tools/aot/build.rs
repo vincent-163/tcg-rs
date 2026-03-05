@@ -56,7 +56,9 @@ fn compile_helpers() {
         panic!("Failed to compile helper bitcode");
     }
 
-    println!("cargo:rustc-env=HELPERS_BC_PATH={}", helpers_bc.display());
+    // Write the bitcode path for include_bytes! macro
+    let include_path = helpers_bc.to_str().unwrap().replace('\\', "/");
+    println!("cargo:rustc-env=HELPERS_BC_PATH={}", include_path);
     eprintln!("Helper bitcode compiled to: {}", helpers_bc.display());
 }
 

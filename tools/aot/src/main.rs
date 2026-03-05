@@ -643,51 +643,32 @@ fn compile_aot(
     eprintln!("[aot] found {} unique helper functions", helper_addrs.len());
 
     // Load helper bitcode module and link it
-    // Use path from build script if available
-    let helpers_bc_path = if arch == Arch::Aarch64 {
-        env!("HELPERS_BC_PATH")
-    } else {
-        // For RISC-V, we'll create a separate helpers file later
-        ""
-    };
-
-    if !helpers_bc_path.is_empty() && std::path::Path::new(helpers_bc_path).exists() {
-        eprintln!("[aot] linking helper bitcode from {}", helpers_bc_path);
+    if arch == Arch::Aarch64 {
+        const HELPERS_BC: &[u8] = include_bytes!(env!("HELPERS_BC_PATH"));
+        eprintln!("[aot] linking embedded helper bitcode ({} bytes)", HELPERS_BC.len());
         unsafe {
-            let path_c = CString::new(helpers_bc_path).unwrap();
-            let mut mem_buf = ptr::null_mut();
-            let mut err_msg = ptr::null_mut();
-
-            if LLVMCreateMemoryBufferWithContentsOfFile(
-                path_c.as_ptr(),
-                &mut mem_buf,
-                &mut err_msg,
+            let mem_buf = LLVMCreateMemoryBufferWithMemoryRange(
+                HELPERS_BC.as_ptr() as *const i8,
+                HELPERS_BC.len(),
+                c"helpers".as_ptr(),
+                0,
+            );
+            let mut helpers_module = ptr::null_mut();
+            if LLVMParseBitcodeInContext2(
+                llvm_ctx,
+                mem_buf,
+                &mut helpers_module,
             ) != 0 {
-                if !err_msg.is_null() {
-                    let msg = CString::from_raw(err_msg);
-                    eprintln!("[aot] warning: failed to load helper bitcode: {:?}", msg);
-                }
+                eprintln!("[aot] warning: failed to parse helper bitcode");
             } else {
-                let mut helpers_module = ptr::null_mut();
-                if LLVMParseBitcodeInContext2(
-                    llvm_ctx,
-                    mem_buf,
-                    &mut helpers_module,
-                ) != 0 {
-                    eprintln!("[aot] warning: failed to parse helper bitcode");
+                if LLVMLinkModules2(module, helpers_module) != 0 {
+                    eprintln!("[aot] warning: failed to link helper bitcode");
                 } else {
-                    // Link the helpers module into our main module
-                    if LLVMLinkModules2(module, helpers_module) != 0 {
-                        eprintln!("[aot] warning: failed to link helper bitcode");
-                    } else {
-                        eprintln!("[aot] successfully linked helper bitcode");
-                    }
+                    eprintln!("[aot] successfully linked helper bitcode");
                 }
-                LLVMDisposeMemoryBuffer(mem_buf);
             }
+            LLVMDisposeMemoryBuffer(mem_buf);
         }
-    } else {
-        eprintln!("[aot] warning: helper bitcode not found at {}, helpers will be external", helpers_bc_path);
     }
 
     // Translate all TBs with LLVM

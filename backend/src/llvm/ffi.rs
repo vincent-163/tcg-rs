@@ -376,6 +376,12 @@ extern "C" {
         out_mem_buf: *mut LLVMMemoryBufferRef,
         out_message: *mut *mut c_char,
     ) -> i32;
+    pub fn LLVMCreateMemoryBufferWithMemoryRange(
+        input_data: *const c_char,
+        input_data_length: usize,
+        buffer_name: *const c_char,
+        requires_null_terminator: i32,
+    ) -> LLVMMemoryBufferRef;
     pub fn LLVMDisposeMemoryBuffer(mem_buf: LLVMMemoryBufferRef);
 
     // Module flags (for PIC level etc.)
