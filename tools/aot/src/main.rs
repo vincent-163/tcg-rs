@@ -160,6 +160,11 @@ impl Arch {
     }
 }
 
+fn is_embedded_aarch64_helper(arch: Arch, name: &str) -> bool {
+    matches!(arch, Arch::Aarch64)
+        && matches!(name, "helper_lazy_nzcv_eval_cond")
+}
+
 // ── Mode detection ───────────────────────────────────────
 
 enum Mode {
@@ -612,8 +617,8 @@ fn compile_aot(
     // We'll emit external declarations for these helpers so they
     // can be resolved from the tcg-rs executable at runtime.
     // Also identify TBs with unnamed helpers (these will be skipped).
-    // Store (name, num_params) for each helper
-    let mut helper_info: HashMap<u64, (String, usize)> = HashMap::new();
+    // Store max observed param count for each helper name.
+    let mut helper_info: HashMap<String, usize> = HashMap::new();
     let mut tbs_with_unnamed_helpers: HashSet<u64> = HashSet::new();
     for &(offset, _) in all_entries {
         let mut ir = Context::new();
@@ -632,18 +637,20 @@ fn compile_aot(
                 // cargs[0] contains the name_id
                 let name_id = cargs[0].0 as u64;
                 if let Some(name) = tcg_core::ir_builder::get_helper_name(name_id) {
-                    // Resolve function address via dlsym
-                    use std::ffi::CString;
-                    let c_name = CString::new(name.as_str()).unwrap();
-                    let func_ptr = unsafe {
-                        libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr())
-                    };
-                    if func_ptr.is_null() {
-                        eprintln!("[aot] warning: failed to resolve helper: {}", name);
-                        has_unnamed_helper = true;
-                        continue;
+                    if !is_embedded_aarch64_helper(arch, name.as_str()) {
+                        // Resolve helper by symbol when it is not
+                        // provided by embedded AArch64 helper bitcode.
+                        use std::ffi::CString;
+                        let c_name = CString::new(name.as_str()).unwrap();
+                        let func_ptr = unsafe {
+                            libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr())
+                        };
+                        if func_ptr.is_null() {
+                            eprintln!("[aot] warning: failed to resolve helper: {}", name);
+                            has_unnamed_helper = true;
+                            continue;
+                        }
                     }
-                    let func_addr = func_ptr as u64;
 
                     // Count non-zero arguments
                     // Call opcode has 6 input args, but they're padded with const zeros
@@ -656,11 +663,11 @@ fn compile_aot(
                         }
                     }
                     // Update or insert with max param count seen
-                    helper_info.entry(func_addr)
-                        .and_modify(|(_, count)| {
+                    helper_info.entry(name.clone())
+                        .and_modify(|count| {
                             *count = (*count).max(num_params);
                         })
-                        .or_insert((name.clone(), num_params));
+                        .or_insert(num_params);
                 } else {
                     has_unnamed_helper = true;
                 }
