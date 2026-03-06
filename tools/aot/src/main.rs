@@ -1451,7 +1451,30 @@ fn emit_aot_dispatch(
             LLVMSetOrdering(pc_store, 3); // Release
             LLVMSetAlignment(pc_store, 8);
 
-            // 2. Atomically store target TB entry ptr to cache
+            // 2. Store TB function pointer in entry (field 1)
+            let entry_tb_ptr = LLVMBuildStructGEP2(
+                builder,
+                entry_type,
+                entry_global,
+                1,
+                E,
+            );
+            // Cast function to pointer type before storing
+            let tb_func_ptr = LLVMBuildBitCast(
+                builder,
+                tb_func,
+                ptr,
+                E,
+            );
+            let tb_store = LLVMBuildStore(
+                builder,
+                tb_func_ptr,
+                entry_tb_ptr,
+            );
+            LLVMSetOrdering(tb_store, 3); // Release
+            LLVMSetAlignment(tb_store, 8);
+
+            // 3. Atomically store target TB entry ptr to cache
             let cache_store = LLVMBuildStore(
                 builder,
                 entry_global,
