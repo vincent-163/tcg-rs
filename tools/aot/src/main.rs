@@ -823,21 +823,17 @@ fn compile_aot(
     }
 
     // Emit tb_index (exported TBs only)
-    let exported_offsets: Vec<u64> = all_entries
-        .iter()
-        .filter(|&&(_, exp)| exp)
-        .map(|&(offset, _)| offset)
-        .collect();
+    let exported_offsets = collect_exported_offsets(
+        &all_entries,
+    );
     emit_tb_index_pcs(module, llvm_ctx, &exported_offsets);
 
-    // Emit aot_dispatch over all TBs
-    let all_offset_list: Vec<u64> =
-        all_entries.iter().map(|&(o, _)| o).collect();
+    // Emit aot_dispatch over exported TBs only.
     emit_aot_dispatch(
         arch,
         module,
         llvm_ctx,
-        &all_offset_list,
+        &exported_offsets,
     );
 
     // Verify module
@@ -1147,6 +1143,16 @@ fn emit_tb_index_pcs(
         LLVMSetGlobalConstant(global, 1);
         LLVMSetLinkage(global, 0);
     }
+}
+
+fn collect_exported_offsets(
+    all_entries: &[(u64, bool)],
+) -> Vec<u64> {
+    all_entries
+        .iter()
+        .filter(|&&(_, exp)| exp)
+        .map(|&(offset, _)| offset)
+        .collect()
 }
 
 fn emit_aot_dispatch(
@@ -1510,4 +1516,19 @@ fn emit_aot_dispatch(
         "[aot] emitted aot_dispatch with {} cases",
         all_offsets.len()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_exported_offsets;
+
+    #[test]
+    fn collect_exported_offsets_only_exports() {
+        let all_entries =
+            vec![(0x10, true), (0x20, false), (0x30, true)];
+        assert_eq!(
+            collect_exported_offsets(&all_entries),
+            vec![0x10, 0x30]
+        );
+    }
 }
