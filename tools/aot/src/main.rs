@@ -803,7 +803,7 @@ fn compile_aot(
         "[aot] translated {translated} TBs",
     );
 
-    // Post-link: hide non-exported TBs
+    // Post-link: set linkage for non-exported TBs
     unsafe {
         for &(offset, exported) in &all_entries {
             if !exported {
@@ -816,7 +816,7 @@ fn compile_aot(
                     name.as_ptr(),
                 );
                 if !func.is_null() {
-                    LLVMSetVisibility(func, 1);
+                    LLVMSetLinkage(func, 8); // Internal linkage
                 }
             }
         }
