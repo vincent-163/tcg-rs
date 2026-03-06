@@ -108,7 +108,8 @@ uint64_t helper_rev32_64(uint64_t a) {
 #define CC_OP_LOGIC32 5
 #define CC_OP_LOGIC64 6
 
-static uint64_t compute_nzcv_add_local(
+__attribute__((always_inline))
+static inline uint64_t compute_nzcv_add_local(
     uint64_t a, uint64_t b, uint64_t result, int sf
 ) {
     if (sf) {
@@ -133,7 +134,8 @@ static uint64_t compute_nzcv_add_local(
     }
 }
 
-static uint64_t compute_nzcv_sub_local(
+__attribute__((always_inline))
+static inline uint64_t compute_nzcv_sub_local(
     uint64_t a, uint64_t b, uint64_t result, int sf
 ) {
     if (sf) {
@@ -158,7 +160,8 @@ static uint64_t compute_nzcv_sub_local(
     }
 }
 
-static uint64_t compute_nzcv_logic_local(
+__attribute__((always_inline))
+static inline uint64_t compute_nzcv_logic_local(
     uint64_t result, int sf
 ) {
     if (sf) {
@@ -173,7 +176,8 @@ static uint64_t compute_nzcv_logic_local(
     }
 }
 
-static uint64_t lazy_nzcv_to_packed_local(
+__attribute__((always_inline))
+static inline uint64_t lazy_nzcv_to_packed_local(
     uint64_t cc_op, uint64_t cc_a, uint64_t cc_b, uint64_t cc_result
 ) {
     switch (cc_op) {
@@ -196,7 +200,8 @@ static uint64_t lazy_nzcv_to_packed_local(
     }
 }
 
-static uint64_t eval_cond_from_packed_local(
+__attribute__((always_inline))
+static inline uint64_t eval_cond_from_packed_local(
     uint64_t nzcv, uint32_t cond
 ) {
     uint64_t n = (nzcv >> 31) & 1;
@@ -224,6 +229,7 @@ static uint64_t eval_cond_from_packed_local(
 }
 
 __attribute__((visibility("hidden")))
+__attribute__((always_inline))
 uint64_t helper_lazy_nzcv_eval_cond(
     uint64_t cc_op, uint64_t cc_a, uint64_t cc_b, uint64_t cc_result,
     uint64_t cond
