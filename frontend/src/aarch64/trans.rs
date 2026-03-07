@@ -9003,7 +9003,9 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_ADC(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
+        let m = Self::trunc32(ir, m, sf);
         // Materialize NZCV so we can read packed C flag from cc_a.
         self.materialize_nzcv(ir);
         let c29 = ir.new_const(Type::I64, 29);
@@ -9024,7 +9026,9 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_SBC(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
+        let m = Self::trunc32(ir, m, sf);
         // Materialize NZCV so we can read packed C flag from cc_a.
         self.materialize_nzcv(ir);
         // Extract C flag (bit 29 of packed NZCV in cc_a)
@@ -9047,7 +9051,9 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_UDIV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
+        let m = Self::trunc32(ir, m, sf);
         let d = ir.new_temp(Type::I64);
         if sf {
             gen_helper_call!(ir, d, helper_udiv64, [n, m]);
@@ -9061,7 +9067,9 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_SDIV(&mut self, ir: &mut Context, a: &ArgsRrrS) -> bool {
         let sf = a.sf != 0;
         let n = self.read_xreg(ir, a.rn);
+        let n = Self::trunc32(ir, n, sf);
         let m = self.read_xreg(ir, a.rm);
+        let m = Self::trunc32(ir, m, sf);
         let d = ir.new_temp(Type::I64);
         if sf {
             gen_helper_call!(ir, d, helper_sdiv64, [n, m]);
@@ -9144,6 +9152,7 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_RBIT(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
         let sf = a.sf != 0;
         let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
         let d = ir.new_temp(Type::I64);
         if sf {
             gen_helper_call!(ir, d, helper_rbit64, [src]);
@@ -9176,6 +9185,7 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_REV16(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
         let sf = a.sf != 0;
         let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
         let d = ir.new_temp(Type::I64);
         if sf {
             gen_helper_call!(ir, d, helper_rev16_64, [src]);
@@ -9190,6 +9200,7 @@ impl Decode<Context> for Aarch64DisasContext {
     fn trans_REV32(&mut self, ir: &mut Context, a: &ArgsRrS) -> bool {
         let sf = a.sf != 0;
         let src = self.read_xreg(ir, a.rn);
+        let src = Self::trunc32(ir, src, sf);
         let d = ir.new_temp(Type::I64);
         if sf {
             gen_helper_call!(ir, d, helper_rev32_64, [src]);
@@ -9705,8 +9716,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(Type::I64, addr2, addr, off2);
         let d2 = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d2, addr2, memop.bits() as u32);
-        self.write_xreg(ir, a.rd, d1);
-        self.write_xreg(ir, a.ra, d2);
+        self.write_xreg_sz(ir, a.rd, d1, sf);
+        self.write_xreg_sz(ir, a.ra, d2, sf);
         true
     }
 
@@ -9718,11 +9729,13 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let v1 = self.read_xreg(ir, a.rd);
+        let v1 = Self::trunc32(ir, v1, sf);
         ir.gen_qemu_st(Type::I64, v1, addr, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, addr, off2);
         let v2 = self.read_xreg(ir, a.ra);
+        let v2 = Self::trunc32(ir, v2, sf);
         ir.gen_qemu_st(Type::I64, v2, addr2, memop.bits() as u32);
         true
     }
@@ -9741,8 +9754,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(Type::I64, addr2, addr, off2);
         let d2 = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d2, addr2, memop.bits() as u32);
-        self.write_xreg(ir, a.rd, d1);
-        self.write_xreg(ir, a.ra, d2);
+        self.write_xreg_sz(ir, a.rd, d1, sf);
+        self.write_xreg_sz(ir, a.ra, d2, sf);
         self.write_xreg_sp(ir, a.rn, addr);
         true
     }
@@ -9755,11 +9768,13 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let addr = self.compute_addr_imm(ir, a.rn, offset);
         let v1 = self.read_xreg(ir, a.rd);
+        let v1 = Self::trunc32(ir, v1, sf);
         ir.gen_qemu_st(Type::I64, v1, addr, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, addr, off2);
         let v2 = self.read_xreg(ir, a.ra);
+        let v2 = Self::trunc32(ir, v2, sf);
         ir.gen_qemu_st(Type::I64, v2, addr2, memop.bits() as u32);
         self.write_xreg_sp(ir, a.rn, addr);
         true
@@ -9779,8 +9794,8 @@ impl Decode<Context> for Aarch64DisasContext {
         ir.gen_add(Type::I64, addr2, base, off2);
         let d2 = ir.new_temp(Type::I64);
         ir.gen_qemu_ld(Type::I64, d2, addr2, memop.bits() as u32);
-        self.write_xreg(ir, a.rd, d1);
-        self.write_xreg(ir, a.ra, d2);
+        self.write_xreg_sz(ir, a.rd, d1, sf);
+        self.write_xreg_sz(ir, a.ra, d2, sf);
         let new_base = if offset == 0 { base } else { let c = ir.new_const(Type::I64, offset as u64); let t = ir.new_temp(Type::I64); ir.gen_add(Type::I64, t, base, c); t };
         self.write_xreg_sp(ir, a.rn, new_base);
         true
@@ -9794,11 +9809,13 @@ impl Decode<Context> for Aarch64DisasContext {
         let size = if sf { 8i64 } else { 4 };
         let base = self.read_xreg_sp(ir, a.rn);
         let v1 = self.read_xreg(ir, a.rd);
+        let v1 = Self::trunc32(ir, v1, sf);
         ir.gen_qemu_st(Type::I64, v1, base, memop.bits() as u32);
         let off2 = ir.new_const(Type::I64, size as u64);
         let addr2 = ir.new_temp(Type::I64);
         ir.gen_add(Type::I64, addr2, base, off2);
         let v2 = self.read_xreg(ir, a.ra);
+        let v2 = Self::trunc32(ir, v2, sf);
         ir.gen_qemu_st(Type::I64, v2, addr2, memop.bits() as u32);
         let new_base = self.compute_addr_imm(ir, a.rn, offset);
         self.write_xreg_sp(ir, a.rn, new_base);
