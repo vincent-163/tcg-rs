@@ -331,8 +331,9 @@ impl HostCodeGen for X86_64CodeGen {
                 self.emit_exit_tb(buf, encoded as u64);
             }
             Opcode::GotoTb => {
+                let slot = cargs[0];
                 let (jmp, reset) = self.emit_goto_tb(buf);
-                self.goto_tb_info.lock().unwrap().push((jmp, reset));
+                self.goto_tb_info.lock().unwrap().push((slot, jmp, reset));
             }
             // -- Rotates: same pattern as shifts --
             Opcode::RotL | Opcode::RotR => {
@@ -674,7 +675,7 @@ impl HostCodeGen for X86_64CodeGen {
         }
     }
 
-    fn goto_tb_offsets(&self) -> Vec<(usize, usize)> {
+    fn goto_tb_offsets(&self) -> Vec<(u32, usize, usize)> {
         self.goto_tb_info.lock().unwrap().clone()
     }
 
@@ -705,5 +706,31 @@ fn cond_from_u32(val: u32) -> Cond {
         18 => Cond::TstEq,
         19 => Cond::TstNe,
         _ => panic!("invalid Cond value: {val}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::X86_64CodeGen;
+    use crate::code_buffer::CodeBuffer;
+    use crate::translate::translate;
+    use crate::HostCodeGen;
+    use tcg_core::Context;
+
+    #[test]
+    fn test_x86_64_goto_tb_offsets_keep_slot_ids() {
+        let backend = X86_64CodeGen::new();
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        ctx.gen_goto_tb(1);
+        ctx.gen_goto_tb(0);
+
+        let mut buf = CodeBuffer::new(4096).expect("code buffer");
+        translate(&mut ctx, &backend, &mut buf, None);
+
+        let offsets = backend.goto_tb_offsets();
+        assert_eq!(offsets.len(), 2);
+        assert_eq!(offsets[0].0, 1);
+        assert_eq!(offsets[1].0, 0);
     }
 }

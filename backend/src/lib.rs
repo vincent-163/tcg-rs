@@ -103,9 +103,9 @@ pub trait HostCodeGen {
         cargs: &[u32],
     );
 
-    /// Return goto_tb (jmp_offset, reset_offset) pairs recorded
+    /// Return goto_tb (slot, jmp_offset, reset_offset) triples recorded
     /// during the last codegen pass.
-    fn goto_tb_offsets(&self) -> Vec<(usize, usize)>;
+    fn goto_tb_offsets(&self) -> Vec<(u32, usize, usize)>;
 
     /// Clear recorded goto_tb offsets before a new codegen pass.
     fn clear_goto_tb_offsets(&self);

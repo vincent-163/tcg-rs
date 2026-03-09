@@ -1177,8 +1177,8 @@ pub struct X86_64CodeGen {
     pub code_gen_start: usize,
     /// Byte offset of `guest_base` within the CPU struct.
     pub guest_base_offset: i32,
-    /// Recorded (jmp_offset, reset_offset) for each goto_tb.
-    pub(crate) goto_tb_info: Mutex<Vec<(usize, usize)>>,
+    /// Recorded (slot, jmp_offset, reset_offset) for each goto_tb.
+    pub(crate) goto_tb_info: Mutex<Vec<(u32, usize, usize)>>,
 }
 
 impl X86_64CodeGen {

@@ -267,9 +267,12 @@ where B: HostCodeGen, C: GuestCpu,
         let offsets = shared.backend.goto_tb_offsets();
         unsafe {
             let tb = shared.tb_store.get_mut(tb_ptr);
-            for (i, &(jmp, reset)) in offsets.iter().enumerate().take(2) {
-                tb.set_jmp_insn_offset(i, jmp as u32);
-                tb.set_jmp_reset_offset(i, reset as u32);
+            for &(slot, jmp, reset) in offsets.iter() {
+                let slot = slot as usize;
+                if slot < 2 {
+                    tb.set_jmp_insn_offset(slot, jmp as u32);
+                    tb.set_jmp_reset_offset(slot, reset as u32);
+                }
             }
         }
     }
