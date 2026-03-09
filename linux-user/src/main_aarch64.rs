@@ -605,9 +605,10 @@ fn main() {
     let guest_argv: Vec<&str> =
         args[1..].iter().map(|s| s.as_str()).collect();
 
-    // Collect host environment variables (limit to first 10 for debugging)
+    // Pass host environment through to the guest, but keep tcg-rs-only
+    // controls out of the guest process environment.
     let guest_envp: Vec<String> = env::vars()
-        .take(10)
+        .filter(|(k, _)| !k.starts_with("TCG_"))
         .map(|(k, v)| format!("{}={}", k, v))
         .collect();
     let guest_envp_refs: Vec<&str> =
@@ -641,7 +642,9 @@ fn main() {
     lcpu.cpu.guest_base = space.guest_base() as u64;
     // Store load bias for AOT dispatch (file_offset = pc - load_bias)
     lcpu.cpu.load_bias = info.load_vaddr;
-    eprintln!("[tcg] guest_base={:#x}", lcpu.cpu.guest_base);
+    if tcg_info_logs() {
+        eprintln!("[tcg] guest_base={:#x}", lcpu.cpu.guest_base);
+    }
 
     // mmap_next starts after brk
     let mut mmap_next =
@@ -721,7 +724,9 @@ fn main() {
             info.load_vaddr,
         );
         if t.is_some() {
-            eprintln!("[tcg] AOT loaded from {p}");
+            if tcg_info_logs() {
+                eprintln!("[tcg] AOT loaded from {p}");
+            }
         } else {
             eprintln!(
                 "[tcg] warning: failed to load AOT \
@@ -738,10 +743,12 @@ fn main() {
         ExecEnv::new_with_opts(codegen, profiling, aot);
     #[cfg(feature = "llvm")]
     if std::env::var("TCG_LLVM").is_ok() {
-        eprintln!("[tcg] LLVM JIT backend enabled");
+        if tcg_info_logs() {
+            eprintln!("[tcg] LLVM JIT backend enabled");
+        }
         env.enable_llvm();
     }
-    if profiling {
+    if profiling && tcg_info_logs() {
         eprintln!(
             "[tcg] profiling enabled (mode={}, min_exec_count={})",
             profile_mode.as_str(),

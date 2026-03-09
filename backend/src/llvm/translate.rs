@@ -1091,7 +1091,8 @@ impl TbTranslator {
                     let (a_ext, b_ext) = self.match_cmp_types(b, a, b_val);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), a_ext, b_ext, E)
                 };
-                let v = LLVMBuildZExt(b, cmp, self.llvm_ty(op.op_type), E);
+                let dst_ty = self.llvm_ty(ir.temp(oarg!(0)).ty);
+                let v = LLVMBuildZExt(b, cmp, dst_ty, E);
                 store_out!(0, v);
             }
             Opcode::NegSetCond => {
@@ -1105,14 +1106,15 @@ impl TbTranslator {
                     let (a_ext, b_ext) = self.match_cmp_types(b, a, b_val);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), a_ext, b_ext, E)
                 };
-                let ext = LLVMBuildZExt(b, cmp, self.llvm_ty(op.op_type), E);
+                let dst_ty = self.llvm_ty(ir.temp(oarg!(0)).ty);
+                let ext = LLVMBuildZExt(b, cmp, dst_ty, E);
                 let v = LLVMBuildNeg(b, ext, E);
                 store_out!(0, v);
             }
             Opcode::MovCond => {
                 let cond = Cond::from_u8(carg!(0) as u8);
                 let (c1, c2) = (ival!(0), ival!(1));
-                let (v1, v2) = (ival!(2), ival!(3));
+                let (mut v1, mut v2) = (ival!(2), ival!(3));
                 let cmp = if cond.is_tst() {
                     let anded = LLVMBuildAnd(b, c1, c2, E);
                     let zero = LLVMConstInt(LLVMTypeOf(anded), 0, 0);
@@ -1121,6 +1123,20 @@ impl TbTranslator {
                     let (c1_ext, c2_ext) = self.match_cmp_types(b, c1, c2);
                     LLVMBuildICmp(b, Self::cond_to_pred(cond), c1_ext, c2_ext, E)
                 };
+                let dst_ty = ir.temp(oarg!(0)).ty;
+                let dst_llvm_ty = self.llvm_ty(dst_ty);
+                let src1_ty = ir.temp(iarg!(2)).ty;
+                if src1_ty.size_bits() < dst_ty.size_bits() {
+                    v1 = LLVMBuildZExt(b, v1, dst_llvm_ty, E);
+                } else if src1_ty.size_bits() > dst_ty.size_bits() {
+                    v1 = LLVMBuildTrunc(b, v1, dst_llvm_ty, E);
+                }
+                let src2_ty = ir.temp(iarg!(3)).ty;
+                if src2_ty.size_bits() < dst_ty.size_bits() {
+                    v2 = LLVMBuildZExt(b, v2, dst_llvm_ty, E);
+                } else if src2_ty.size_bits() > dst_ty.size_bits() {
+                    v2 = LLVMBuildTrunc(b, v2, dst_llvm_ty, E);
+                }
                 let v = LLVMBuildSelect(b, cmp, v1, v2, E);
                 store_out!(0, v);
             }
