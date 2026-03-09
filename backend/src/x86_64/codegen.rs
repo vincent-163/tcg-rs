@@ -414,7 +414,7 @@ impl HostCodeGen for X86_64CodeGen {
                 let len = cargs[1];
                 assert!(ofs == 0, "Extract: only ofs=0 supported");
                 match len {
-                    8 => emit_movzx(buf, OPC_MOVZBL, d, s),
+                    8 => emit_movzx(buf, OPC_MOVZBL | P_REXB_RM, d, s),
                     16 => emit_movzx(buf, OPC_MOVZWL, d, s),
                     32 => {
                         emit_mov_rr(buf, false, d, s);
@@ -432,9 +432,9 @@ impl HostCodeGen for X86_64CodeGen {
                 match len {
                     8 => {
                         let opc = if rexw {
-                            OPC_MOVSBL | P_REXW
+                            OPC_MOVSBL | P_REXW | P_REXB_RM
                         } else {
-                            OPC_MOVSBL
+                            OPC_MOVSBL | P_REXB_RM
                         };
                         emit_movsx(buf, opc, d, s);
                     }
