@@ -441,6 +441,24 @@ fn host_gettid() -> i64 {
     unsafe { libc::syscall(libc::SYS_gettid) as i64 }
 }
 
+fn alloc_mmap_top_down(
+    space: &GuestSpace,
+    mmap_next: &mut u64,
+    aligned_len: usize,
+) -> Option<u64> {
+    let floor = crate::guest_space::page_align_up(space.brk());
+    let top = crate::guest_space::page_align_down(*mmap_next);
+    if top < floor.saturating_add(aligned_len as u64) {
+        return None;
+    }
+    let guest_addr = top - aligned_len as u64;
+    if guest_addr < floor {
+        return None;
+    }
+    *mmap_next = guest_addr;
+    Some(guest_addr)
+}
+
 fn do_brk(
     space: &mut GuestSpace,
     addr: u64,
@@ -507,12 +525,12 @@ fn do_mmap(
     let aligned_len = crate::guest_space::page_align_up(len) as usize;
     let guest_addr = if addr != 0 {
         addr
+    } else if let Some(guest_addr) =
+        alloc_mmap_top_down(space, mmap_next, aligned_len)
+    {
+        guest_addr
     } else {
-        let a = crate::guest_space::page_align_up((*mmap_next).max(
-            crate::guest_space::page_align_up(space.brk()),
-        ));
-        *mmap_next = a + aligned_len as u64;
-        a
+        return SyscallResult::Continue((-(libc::ENOMEM as i64)) as u64);
     };
 
     let map_res = if (flags & libc::MAP_ANONYMOUS) != 0 {
@@ -561,9 +579,11 @@ fn do_mremap(
                 space.g2h(guest_result_addr) as *mut libc::c_void,
             )
         } else if (flags & GUEST_MREMAP_MAYMOVE) != 0 {
-            guest_result_addr = crate::guest_space::page_align_up((*mmap_next).max(
-                crate::guest_space::page_align_up(space.brk()),
-            ));
+            let Some(new_addr) = alloc_mmap_top_down(space, mmap_next, new_len)
+            else {
+                return SyscallResult::Continue((-(libc::ENOMEM as i64)) as u64);
+            };
+            guest_result_addr = new_addr;
             libc::mremap(
                 host_old,
                 old_len,
@@ -581,7 +601,7 @@ fn do_mremap(
     }
 
     if (flags & GUEST_MREMAP_FIXED) == 0 && (flags & GUEST_MREMAP_MAYMOVE) != 0 {
-        *mmap_next = guest_result_addr + new_len as u64;
+        *mmap_next = guest_result_addr;
     }
 
     if (flags & GUEST_MREMAP_FIXED) == 0 && (flags & GUEST_MREMAP_MAYMOVE) == 0 {
@@ -1412,7 +1432,7 @@ mod tests {
     fn test_mmap_anon_uses_current_brk_floor() {
         let mut space = GuestSpace::new().expect("guest space");
         space.set_brk(0x4800);
-        let mut mmap_next = 0x3000u64;
+        let mut mmap_next = 0x9000u64;
 
         let res = do_mmap(
             &mut space,
@@ -1428,8 +1448,47 @@ mod tests {
             SyscallResult::Continue(v) => v,
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
-        assert_eq!(returned, 0x5000);
-        assert_eq!(mmap_next, 0x6000);
+        assert_eq!(returned, 0x8000);
+        assert_eq!(mmap_next, 0x8000);
+    }
+
+    #[test]
+    fn test_mmap_anonymous_auto_allocates_top_down() {
+        let mut space = GuestSpace::new().expect("guest space");
+        space.set_brk(0x4800);
+        let mut mmap_next = 0x12000u64;
+
+        let first = match do_mmap(
+            &mut space,
+            0,
+            0x2000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        let second = match do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        assert_eq!(first, 0x10000);
+        assert_eq!(second, 0xf000);
+        assert_eq!(mmap_next, 0xf000);
+        assert_eq!(second + 0x1000, first);
     }
 
     #[test]
@@ -1438,8 +1497,8 @@ mod tests {
         let old_addr = 0x4000u64;
         let old_len = 0x1000u64;
         let new_len = 0x2000u64;
-        let mut mmap_next = 0x5000u64;
-        space.set_brk(0x7800);
+        let mut mmap_next = 0xb000u64;
+        space.set_brk(0x4800);
 
         space
             .mmap_fixed(old_addr, old_len as usize, libc::PROT_READ | libc::PROT_WRITE)
@@ -1462,8 +1521,8 @@ mod tests {
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
 
-        assert_eq!(new_addr, 0x8000);
-        assert_eq!(mmap_next, 0xa000);
+        assert_eq!(new_addr, 0x9000);
+        assert_eq!(mmap_next, 0x9000);
         assert_eq!(unsafe { space.read_u64(new_addr) }, 0x1122_3344_5566_7788);
     }
 
@@ -1521,8 +1580,8 @@ mod tests {
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
 
-        assert_eq!(new_addr, 0x70000);
-        assert_eq!(mmap_next, 0x74000);
+        assert_eq!(new_addr, 0x6c000);
+        assert_eq!(mmap_next, 0x6c000);
 
         let host = space.g2h(new_addr);
         let mapped = unsafe { std::slice::from_raw_parts(host, payload.len()) };

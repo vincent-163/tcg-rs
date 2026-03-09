@@ -648,11 +648,8 @@ fn main() {
         eprintln!("[tcg] guest_base={:#x}", lcpu.cpu.guest_base);
     }
 
-    // mmap_next starts after brk
-    let mut mmap_next =
-        tcg_linux_user::guest_space::page_align_up(
-            info.brk,
-        ) + 0x1000_0000;
+    // Auto mmaps are allocated top-down below the guest stack area.
+    let mut mmap_next = tcg_linux_user::guest_space::GUEST_STACK_TOP - 0x1000_0000;
 
     // Install SIGSEGV handler to dump guest state
     unsafe {
