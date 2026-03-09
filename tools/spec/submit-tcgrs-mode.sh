@@ -23,7 +23,8 @@ bench_name=${bench_base%%_base*}
 if [[ "$TCG_SPEC_MODE" == "jit" ]]; then
     if [[ "$bench_name" == "perlbench" && -z "${TCG_LLVM_MAX_PC:-}" ]]; then
         export TCG_LLVM=1
-        export TCG_LLVM_MAX_PC=${TCG_PERLBENCH_LLVM_MAX_PC:-0x420000}
+        export TCG_LLVM_MAX_PC=${TCG_PERLBENCH_LLVM_MAX_PC:-0x402000}
+        export TCG_MAX_INSNS=${TCG_PERLBENCH_MAX_INSNS:-1}
     fi
     exec "$TCG_RS" "$exe" "$@"
 fi
