@@ -1582,6 +1582,38 @@ fn a64_difftest_ccmp_after_bics_eq_gate() {
 }
 
 #[test]
+fn a64_difftest_ccmp_w_hi_false_path_followed_by_cset_le() {
+    // Pattern from SPEC perlbench S_regrepeat hot loop:
+    //   cmp  x23, x19
+    //   ccmp w22, w20, #4, hi
+    //   cset w0, le
+    let seq = [
+        a64_subs_r(1, 31, 23, 19),
+        0x7a54_82c4,
+        a64_csinc(0, 0, 31, 31, 0b1100),
+    ];
+    let cases: Vec<(u64, u64, u64, u64)> = vec![
+        (10, 5, 9, 3),
+        (10, 5, 3, 9),
+        (5, 10, 9, 3),
+        (5, 10, 3, 9),
+        (7, 7, 8, 8),
+        (0x1_0000_0000, 0xffff_ffff, 1, 2),
+        (0xffff_ffff, 0x1_0000_0000, 2, 1),
+    ];
+    for (x23, x19, x22, x20) in cases {
+        difftest_sequence(
+            "ccmp_w_hi_false_path_followed_by_cset_le",
+            &[(23, x23), (19, x19), (22, x22), (20, x20)],
+            &seq,
+            "    cmp x23, x19\n    ccmp w22, w20, #4, hi\n    cset w0, le\n",
+            &[0],
+            true,
+        );
+    }
+}
+
+#[test]
 #[ignore] // BUG: helper_sdiv64 panics on i64::MIN / -1 (Rust overflow)
 fn a64_difftest_sdiv() {
     let cases: Vec<(u64, u64)> = vec![
@@ -2793,6 +2825,32 @@ fn a64_difftest_add_x_sxtw_lsl2_hotspot() {
         &[14],
         false,
     );
+}
+
+#[test]
+fn a64_difftest_ldrb_w_sxtw_hotspot_runtime() {
+    // 0x3860caa0: ldrb w0, [x21, w0, sxtw]
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(21, 0x200), (0, 0xffff_ffff)],
+        &[0x3860_caa0],
+        &[(0x1ff, 0x7f)],
+    );
+    assert_eq!(cpu.xregs[0], 0x7f);
+    assert_eq!(cpu.xregs[21], 0x200);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrh_w_uxtw_hotspot_runtime() {
+    // 0x78615800: ldrh w0, [x0, w1, uxtw #1]
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(0, 0x200), (1, 1)],
+        &[0x7861_5800],
+        &[(0x202, 0xcd), (0x203, 0xab)],
+    );
+    assert_eq!(cpu.xregs[0], 0xabcd);
+    assert_eq!(cpu.xregs[1], 1);
+    assert_eq!(cpu.pc, 4);
 }
 
 #[test]
