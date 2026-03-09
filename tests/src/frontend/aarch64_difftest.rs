@@ -2131,6 +2131,7 @@ fn a64_difftest_bcond_w_mi_le() {
     let subs_w = a64_subs_r(0, 2, 2, 7); // subs w2, w2, w7
     let bmi = a64_bcond(0b0100, 12); // b.mi +12
     let ble = a64_bcond(0b1101, 12); // b.le +12
+    let blt = a64_bcond(0b1011, 12); // b.lt +12
 
     // Negative result => MI taken
     let cpu = run_tcgrs(&[(2, 1), (7, 2)], &[subs_w, bmi]);
@@ -2147,6 +2148,13 @@ fn a64_difftest_bcond_w_mi_le() {
     // > 0 => LE not taken
     let cpu = run_tcgrs(&[(2, 2), (7, 1)], &[subs_w, ble]);
     assert_eq!(cpu.pc, 8, "b.le (w) not taken: pc={:#x}", cpu.pc);
+
+    // Negative result => LT taken
+    let cpu = run_tcgrs(&[(2, 1), (7, 2)], &[subs_w, blt]);
+    assert_eq!(cpu.pc, 16, "b.lt (w) taken: pc={:#x}", cpu.pc);
+    // Non-negative result => LT not taken
+    let cpu = run_tcgrs(&[(2, 2), (7, 1)], &[subs_w, blt]);
+    assert_eq!(cpu.pc, 8, "b.lt (w) not taken: pc={:#x}", cpu.pc);
 }
 
 #[test]
@@ -3000,6 +3008,210 @@ fn a64_difftest_cmlt_v0_16b_zero_runtime() {
 }
 
 #[test]
+fn a64_difftest_perl_save_alloc_hotspot_runtime() {
+    let asm = r#"
+.global _start
+_start:
+    adrp x22, base22
+    add x22, x22, :lo12:base22
+    adrp x23, base23
+    add x23, x23, :lo12:base23
+    adrp x24, base24
+    add x24, x24, :lo12:base24
+    adrp x10, arr
+    add x10, x10, :lo12:arr
+    str x10, [x23, #4064]
+    mov w10, #5
+    str w10, [x22, #4060]
+    mov w10, #16
+    str w10, [x24, #4056]
+    mov x19, #2
+    mov x1, #1
+    ldr w0, [x22, #4060]
+    add w21, w1, w0, lsl #3
+    ldr w2, [x24, #4056]
+    add w0, w0, w19
+    add w3, w0, #1
+    ldr x1, [x23, #4064]
+    cmp w3, w2
+    b.lt 1f
+    brk #0
+1:
+    sbfiz x2, x0, #3, #32
+    mov x9, x2
+    str w3, [x22, #4060]
+    mov w3, #0x1c
+    mov w0, w21
+    str w19, [x1, x2]
+    ldr w1, [x22, #4060]
+    ldr x2, [x23, #4064]
+    add w4, w1, #1
+    sbfiz x1, x1, #3, #32
+    str w4, [x22, #4060]
+    str w3, [x2, x1]
+    ldr w5, [x22, #4060]
+    ldr w6, [x2, x1]
+    ldr w7, [x2, x9]
+    adrp x3, save_area
+    add x3, x3, :lo12:save_area
+    str x0, [x3, #0]
+    str x1, [x3, #8]
+    str x2, [x3, #16]
+    str x3, [x3, #24]
+    str x4, [x3, #32]
+    str x5, [x3, #40]
+    str x6, [x3, #48]
+    str x7, [x3, #56]
+    str x8, [x3, #64]
+    str x9, [x3, #72]
+    str x10, [x3, #80]
+    str x11, [x3, #88]
+    str x12, [x3, #96]
+    str x13, [x3, #104]
+    str x14, [x3, #112]
+    str x15, [x3, #120]
+    str x16, [x3, #128]
+    str x17, [x3, #136]
+    str x18, [x3, #144]
+    str x19, [x3, #152]
+    str x20, [x3, #160]
+    str x21, [x3, #168]
+    str x22, [x3, #176]
+    str x23, [x3, #184]
+    str x24, [x3, #192]
+    str x25, [x3, #200]
+    str x26, [x3, #208]
+    str x27, [x3, #216]
+    str x28, [x3, #224]
+    str x29, [x3, #232]
+    str x30, [x3, #240]
+    mov x8, #64
+    mov x0, #1
+    mov x1, x3
+    mov x2, #248
+    svc #0
+    mov x8, #93
+    mov x0, #0
+    svc #0
+
+.bss
+.align 3
+base22: .space 4096
+base23: .space 4096
+base24: .space 4096
+arr: .space 256
+save_area: .space 248
+"#;
+    let qemu = run_qemu(asm);
+
+    let insns: [u32; 24] = [
+        0xb94f_dec0,
+        0x0b00_0c35,
+        0xb94f_db02,
+        0x0b13_0000,
+        0x1100_0403,
+        0xf947_f2e1,
+        0x6b02_007f,
+        0x5400_004b,
+        0xd420_0000,
+        0x937d_7c02,
+        0xaa02_03e9,
+        0xb90f_dec3,
+        0x5280_0383,
+        0x2a15_03e0,
+        0xb822_6833,
+        0xb94f_dec1,
+        0xf947_f2e2,
+        0x1100_0424,
+        0x937d_7c21,
+        0xb90f_dec4,
+        0xb821_6843,
+        0xb94f_dec5,
+        0xb861_6846,
+        0xb869_6847,
+    ];
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 8192];
+    mem[..code.len()].copy_from_slice(&code);
+    for (off, value) in [(0x200 + 4060, 5u32), (0x600 + 4056, 16u32)] {
+        mem[off..off + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    mem[0x400 + 4064..0x400 + 4072].copy_from_slice(&(0x700u64).to_le_bytes());
+    let guest_base = mem.as_ptr();
+
+    let mut cpu = Aarch64Cpu::new();
+    cpu.guest_base = guest_base as u64;
+    cpu.xregs[1] = 1;
+    cpu.xregs[19] = 2;
+    cpu.xregs[22] = 0x200;
+    cpu.xregs[23] = 0x400;
+    cpu.xregs[24] = 0x600;
+
+    {
+        let mut backend = X86_64CodeGen::new();
+        backend.guest_base_offset =
+            tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
+        let mut buf = CodeBuffer::new(4096).unwrap();
+        backend.emit_prologue(&mut buf);
+        backend.emit_epilogue(&mut buf);
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(0, guest_base);
+        disas.base.max_insns = insns.len() as u32;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+        unsafe {
+            translate_and_execute(
+                &mut ctx,
+                &backend,
+                &mut buf,
+                &mut cpu as *mut Aarch64Cpu as *mut u8,
+            );
+        }
+    }
+    assert_eq!(cpu.pc, 0x24, "expected branch into hotspot body");
+
+    {
+        let mut backend = X86_64CodeGen::new();
+        backend.guest_base_offset =
+            tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
+        let mut buf = CodeBuffer::new(4096).unwrap();
+        backend.emit_prologue(&mut buf);
+        backend.emit_epilogue(&mut buf);
+        let mut ctx = Context::new();
+        backend.init_context(&mut ctx);
+        let mut disas = Aarch64DisasContext::new(0x24, guest_base);
+        disas.base.max_insns = 32;
+        translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+        unsafe {
+            translate_and_execute(
+                &mut ctx,
+                &backend,
+                &mut buf,
+                &mut cpu as *mut Aarch64Cpu as *mut u8,
+            );
+        }
+    }
+
+    for (r, q) in [
+        (0usize, qemu[0]),
+        (1, qemu[1]),
+        (4, qemu[4]),
+        (5, qemu[5]),
+        (6, qemu[6]),
+        (7, qemu[7]),
+        (9, qemu[9]),
+        (19, qemu[19]),
+        (21, qemu[21]),
+    ] {
+        assert_eq!(
+            cpu.xregs[r], q,
+            "DIFFTEST FAIL [perl_save_alloc_hotspot]: x{r} tcg-rs={:#x} qemu={:#x}",
+            cpu.xregs[r], q,
+        );
+    }
+}
+
+#[test]
 fn a64_difftest_uxtl2_v4_4s_from_v4_8h_runtime() {
     // 0x6f10a484: uxtl2 v4.4s, v4.8h
     // High halfword lanes [4..7] become 32-bit lanes [0..3].
@@ -3204,6 +3416,81 @@ fn a64_difftest_ldp_x_postindex_neg16_writeback_runtime() {
     assert_eq!(cpu.xregs[1], 0x8877_6655_4433_2211);
     assert_eq!(cpu.xregs[2], 0x10ff_eedd_ccbb_aa99);
     assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_perl_save_alloc_epilogue_runtime() {
+    let insns: [u32; 11] = [
+        0xa941_53f3,
+        0xb94f_dec1,
+        0xf947_f2e2,
+        0x1100_0424,
+        0x937d_7c21,
+        0xb90f_dec4,
+        0xa942_5bf5,
+        0xb821_6843,
+        0xa943_63f7,
+        0xa8c5_7bfd,
+        0xd65f_03c0,
+    ];
+    let code: Vec<u8> = insns.iter().flat_map(|i| i.to_le_bytes()).collect();
+    let mut mem = vec![0u8; 8192];
+    mem[..code.len()].copy_from_slice(&code);
+
+    mem[0x200 + 4060..0x200 + 4064].copy_from_slice(&8u32.to_le_bytes());
+    mem[0x400 + 4064..0x400 + 4072].copy_from_slice(&(0x700u64).to_le_bytes());
+    mem[0x500..0x508].copy_from_slice(&(0xaaaa_bbbb_cccc_dddd_u64).to_le_bytes());
+    mem[0x508..0x510].copy_from_slice(&(0x88u64).to_le_bytes());
+    mem[0x510..0x518].copy_from_slice(&(0x1111_2222_3333_4444_u64).to_le_bytes());
+    mem[0x518..0x520].copy_from_slice(&(0x5555_6666_7777_8888_u64).to_le_bytes());
+    mem[0x520..0x528].copy_from_slice(&(0x9999_aaaa_bbbb_cccc_u64).to_le_bytes());
+    mem[0x528..0x530].copy_from_slice(&(0x1234_5678_9abc_def0_u64).to_le_bytes());
+    mem[0x530..0x538].copy_from_slice(&(0x0fed_cba9_8765_4321_u64).to_le_bytes());
+    mem[0x538..0x540].copy_from_slice(&(0x0102_0304_0506_0708_u64).to_le_bytes());
+
+    let guest_base = mem.as_ptr();
+    let mut backend = X86_64CodeGen::new();
+    backend.guest_base_offset =
+        tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
+    let mut buf = CodeBuffer::new(4096).unwrap();
+    backend.emit_prologue(&mut buf);
+    backend.emit_epilogue(&mut buf);
+    let mut ctx = Context::new();
+    backend.init_context(&mut ctx);
+    let mut disas = Aarch64DisasContext::new(0, guest_base);
+    disas.base.max_insns = insns.len() as u32;
+    translator_loop::<Aarch64Translator>(&mut disas, &mut ctx);
+
+    let mut cpu = Aarch64Cpu::new();
+    cpu.guest_base = guest_base as u64;
+    cpu.sp = 0x500;
+    cpu.xregs[3] = 0x1c;
+    cpu.xregs[22] = 0x200;
+    cpu.xregs[23] = 0x400;
+
+    unsafe {
+        translate_and_execute(
+            &mut ctx,
+            &backend,
+            &mut buf,
+            &mut cpu as *mut Aarch64Cpu as *mut u8,
+        );
+    }
+
+    assert_eq!(cpu.xregs[19], 0x1111_2222_3333_4444);
+    assert_eq!(cpu.xregs[20], 0x5555_6666_7777_8888);
+    assert_eq!(cpu.xregs[21], 0x9999_aaaa_bbbb_cccc);
+    assert_eq!(cpu.xregs[22], 0x1234_5678_9abc_def0);
+    assert_eq!(cpu.xregs[23], 0x0fed_cba9_8765_4321);
+    assert_eq!(cpu.xregs[24], 0x0102_0304_0506_0708);
+    assert_eq!(cpu.xregs[29], 0xaaaa_bbbb_cccc_dddd);
+    assert_eq!(cpu.xregs[30], 0x88);
+    assert_eq!(cpu.sp, 0x550);
+    assert_eq!(cpu.pc, 0x88);
+    assert_eq!(cpu.xregs[1], 0x40);
+    assert_eq!(cpu.xregs[4], 9);
+    assert_eq!(u32::from_le_bytes(mem[0x200 + 4060..0x200 + 4064].try_into().unwrap()), 9);
+    assert_eq!(u32::from_le_bytes(mem[0x700 + 0x40..0x700 + 0x44].try_into().unwrap()), 0x1c);
 }
 
 #[test]
