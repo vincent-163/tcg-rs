@@ -137,6 +137,29 @@ impl GuestSpace {
         }
     }
 
+    /// Replace a guest region with a PROT_NONE reservation again.
+    pub fn munmap_fixed(&self, guest_addr: u64, size: usize) -> io::Result<()> {
+        let host = self.g2h(guest_addr);
+        let ret = unsafe {
+            libc::mmap(
+                host as *mut libc::c_void,
+                size,
+                libc::PROT_NONE,
+                libc::MAP_PRIVATE
+                    | libc::MAP_ANONYMOUS
+                    | libc::MAP_FIXED
+                    | libc::MAP_NORESERVE,
+                -1,
+                0,
+            )
+        };
+        if ret == libc::MAP_FAILED {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Change protection on a guest region.
     pub fn mprotect(
         &self,

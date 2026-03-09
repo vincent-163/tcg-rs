@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use tcg_linux_user::elf::{
-    Elf64Ehdr, Elf64Phdr, AT_EXECFN, AT_NULL, AT_PHDR, EM_RISCV, ET_EXEC, PF_R,
-    PF_X, PT_LOAD,
+    Elf64Ehdr, Elf64Phdr, AT_EXECFN, AT_NULL, AT_PHDR, AT_SYSINFO_EHDR, EM_AARCH64,
+    EM_RISCV, ET_EXEC, PF_R, PF_X, PT_LOAD,
 };
 use tcg_linux_user::guest_space::{
     GuestSpace, GUEST_STACK_SIZE, GUEST_STACK_TOP,
@@ -15,13 +15,10 @@ use tcg_linux_user::loader::load_elf;
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// Build a minimal valid RISC-V ELF in memory.
-fn make_minimal_elf() -> Vec<u8> {
+fn make_minimal_elf(machine: u16, code: [u8; 4]) -> Vec<u8> {
     let ehdr_sz = mem::size_of::<Elf64Ehdr>();
     let phdr_sz = mem::size_of::<Elf64Phdr>();
     let code_offset = ehdr_sz + phdr_sz;
-    // Minimal code: RISC-V NOP (addi x0,x0,0)
-    let code: [u8; 4] = [0x13, 0x00, 0x00, 0x00];
     let file_size = code_offset + code.len();
     let load_vaddr: u64 = 0x10000;
 
@@ -32,49 +29,39 @@ fn make_minimal_elf() -> Vec<u8> {
     buf[4] = 2; // ELFCLASS64
     buf[5] = 1; // ELFDATA2LSB
     buf[6] = 1; // EV_CURRENT
-                // e_type = ET_EXEC
     buf[16..18].copy_from_slice(&ET_EXEC.to_le_bytes());
-    // e_machine = EM_RISCV
-    buf[18..20].copy_from_slice(&EM_RISCV.to_le_bytes());
-    // e_version
+    buf[18..20].copy_from_slice(&machine.to_le_bytes());
     buf[20..24].copy_from_slice(&1u32.to_le_bytes());
-    // e_entry
     buf[24..32].copy_from_slice(&load_vaddr.to_le_bytes());
-    // e_phoff
     buf[32..40].copy_from_slice(&(ehdr_sz as u64).to_le_bytes());
-    // e_ehsize
     buf[52..54].copy_from_slice(&(ehdr_sz as u16).to_le_bytes());
-    // e_phentsize
     buf[54..56].copy_from_slice(&(phdr_sz as u16).to_le_bytes());
-    // e_phnum = 1
     buf[56..58].copy_from_slice(&1u16.to_le_bytes());
 
-    // Program header (PT_LOAD)
     let ph_off = ehdr_sz;
-    // p_type = PT_LOAD
     buf[ph_off..ph_off + 4].copy_from_slice(&PT_LOAD.to_le_bytes());
-    // p_flags = PF_R | PF_X
     buf[ph_off + 4..ph_off + 8].copy_from_slice(&(PF_R | PF_X).to_le_bytes());
-    // p_offset
     buf[ph_off + 8..ph_off + 16]
         .copy_from_slice(&(code_offset as u64).to_le_bytes());
-    // p_vaddr
     buf[ph_off + 16..ph_off + 24].copy_from_slice(&load_vaddr.to_le_bytes());
-    // p_paddr
     buf[ph_off + 24..ph_off + 32].copy_from_slice(&load_vaddr.to_le_bytes());
-    // p_filesz
     buf[ph_off + 32..ph_off + 40]
         .copy_from_slice(&(code.len() as u64).to_le_bytes());
-    // p_memsz
     buf[ph_off + 40..ph_off + 48]
         .copy_from_slice(&(code.len() as u64).to_le_bytes());
-    // p_align
     buf[ph_off + 48..ph_off + 56].copy_from_slice(&4096u64.to_le_bytes());
 
-    // Code
     buf[code_offset..code_offset + code.len()].copy_from_slice(&code);
 
     buf
+}
+
+fn make_minimal_riscv_elf() -> Vec<u8> {
+    make_minimal_elf(EM_RISCV, [0x13, 0x00, 0x00, 0x00])
+}
+
+fn make_minimal_aarch64_elf() -> Vec<u8> {
+    make_minimal_elf(EM_AARCH64, [0x1f, 0x20, 0x03, 0xd5])
 }
 
 /// Simple temp file helper.
@@ -125,7 +112,7 @@ unsafe fn read_cstr(space: &GuestSpace, addr: u64) -> String {
 
 #[test]
 fn test_load_minimal_elf() {
-    let elf_data = make_minimal_elf();
+    let elf_data = make_minimal_riscv_elf();
 
     let mut tmpfile = tempfile().expect("create tmpfile");
     tmpfile.write_all(&elf_data).expect("write elf");
@@ -148,7 +135,7 @@ fn test_load_minimal_elf() {
 
 #[test]
 fn test_stack_layout() {
-    let elf_data = make_minimal_elf();
+    let elf_data = make_minimal_riscv_elf();
     let mut tmpfile = tempfile().expect("create tmpfile");
     tmpfile.write_all(&elf_data).expect("write elf");
     let path = tmpfile.path();
@@ -194,5 +181,36 @@ fn test_stack_layout() {
         assert_ne!(execfn_ptr, 0);
         let execfn = read_cstr(&space, execfn_ptr);
         assert!(execfn.ends_with(".bin"));
+    }
+}
+
+#[test]
+fn test_aarch64_loader_sets_sysinfo_ehdr() {
+    let elf_data = make_minimal_aarch64_elf();
+
+    let mut tmpfile = tempfile().expect("create tmpfile");
+    tmpfile.write_all(&elf_data).expect("write elf");
+    let path = tmpfile.path();
+
+    let mut space = GuestSpace::new().expect("guest space");
+    let info = load_elf(path, &mut space, &["./prog"], &[], EM_AARCH64)
+        .expect("load_elf");
+
+    unsafe {
+        let mut auxp = info.sp + 32;
+        let mut vdso_addr = 0u64;
+        loop {
+            let typ = space.read_u64(auxp);
+            let val = space.read_u64(auxp + 8);
+            auxp += 16;
+            if typ == AT_SYSINFO_EHDR {
+                vdso_addr = val;
+            }
+            if typ == AT_NULL {
+                break;
+            }
+        }
+        assert_ne!(vdso_addr, 0);
+        assert_eq!(space.read_u64(vdso_addr) & 0xffff_ffff, 0x464c457f);
     }
 }

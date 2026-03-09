@@ -9,6 +9,7 @@ const EV_CURRENT: u8 = 1;
 
 // ELF types
 pub const ET_EXEC: u16 = 2;
+pub const ET_DYN: u16 = 3;
 
 // Machine types
 pub const EM_AARCH64: u16 = 183;
@@ -40,6 +41,7 @@ pub const AT_RANDOM: u64 = 25;
 pub const AT_HWCAP: u64 = 16;
 pub const AT_HWCAP2: u64 = 26;
 pub const AT_EXECFN: u64 = 31;
+pub const AT_SYSINFO_EHDR: u64 = 33;
 
 #[derive(Debug)]
 pub enum ElfError {
@@ -142,25 +144,20 @@ impl Elf64Rela {
 }
 
 impl Elf64Ehdr {
-    pub fn from_bytes(data: &[u8]) -> Result<&Self, ElfError> {
+    pub fn from_bytes(data: &[u8]) -> Result<Self, ElfError> {
         if data.len() < mem::size_of::<Self>() {
             return Err(ElfError::TooSmall);
         }
-        // SAFETY: data is large enough, Elf64Ehdr is repr(C)
-        // with no padding requirements beyond alignment.
-        // u8 slice has alignment 1; we use read_unaligned
-        // via pointer cast which is safe for packed reads
-        // on x86-64. For correctness on all platforms, we
-        // copy into an aligned buffer.
-        let ehdr = unsafe { &*(data.as_ptr() as *const Self) };
-        Ok(ehdr)
+        Ok(unsafe {
+            std::ptr::read_unaligned(data.as_ptr() as *const Self)
+        })
     }
 
     pub fn validate_riscv64(&self) -> Result<(), ElfError> {
         self.validate(EM_RISCV)
     }
 
-    pub fn validate(&self, machine: u16) -> Result<(), ElfError> {
+    pub fn validate_ident(&self) -> Result<(), ElfError> {
         if self.e_ident[0..4] != ELF_MAGIC {
             return Err(ElfError::InvalidMagic);
         }
@@ -173,19 +170,29 @@ impl Elf64Ehdr {
         if self.e_ident[6] != EV_CURRENT {
             return Err(ElfError::InvalidMagic);
         }
+        Ok(())
+    }
+
+    pub fn validate_machine(&self, machine: u16) -> Result<(), ElfError> {
+        self.validate_ident()?;
         if self.e_machine != machine {
             return Err(ElfError::UnsupportedMachine);
         }
+        Ok(())
+    }
+
+    pub fn validate(&self, machine: u16) -> Result<(), ElfError> {
+        self.validate_machine(machine)?;
         if self.e_type != ET_EXEC {
             return Err(ElfError::UnsupportedType);
         }
         Ok(())
     }
 
-    pub fn program_headers<'a>(
+    pub fn program_headers(
         &self,
-        data: &'a [u8],
-    ) -> Result<&'a [Elf64Phdr], ElfError> {
+        data: &[u8],
+    ) -> Result<Vec<Elf64Phdr>, ElfError> {
         let off = self.e_phoff as usize;
         let num = self.e_phnum as usize;
         let ent = self.e_phentsize as usize;
@@ -198,38 +205,45 @@ impl Elf64Ehdr {
         if end > data.len() {
             return Err(ElfError::InvalidPhdr);
         }
-        // SAFETY: bounds checked above, repr(C) struct.
-        let phdrs = unsafe {
-            std::slice::from_raw_parts(
-                data[off..].as_ptr() as *const Elf64Phdr,
-                num,
-            )
-        };
+
+        let mut phdrs = Vec::with_capacity(num);
+        for index in 0..num {
+            let start = off + index * ent;
+            phdrs.push(unsafe {
+                std::ptr::read_unaligned(
+                    data[start..].as_ptr() as *const Elf64Phdr,
+                )
+            });
+        }
         Ok(phdrs)
     }
 
-    pub fn section_headers<'a>(
+    pub fn section_headers(
         &self,
-        data: &'a [u8],
-    ) -> Result<&'a [Elf64Shdr], ElfError> {
+        data: &[u8],
+    ) -> Result<Vec<Elf64Shdr>, ElfError> {
         let off = self.e_shoff as usize;
         let num = self.e_shnum as usize;
         let ent = self.e_shentsize as usize;
         if num == 0 || ent < mem::size_of::<Elf64Shdr>() {
-            return Ok(&[]);
+            return Ok(Vec::new());
         }
         let end = off
             .checked_add(num.checked_mul(ent).ok_or(ElfError::InvalidPhdr)?)
             .ok_or(ElfError::InvalidPhdr)?;
         if end > data.len() {
-            return Ok(&[]);
+            return Ok(Vec::new());
         }
-        let shdrs = unsafe {
-            std::slice::from_raw_parts(
-                data[off..].as_ptr() as *const Elf64Shdr,
-                num,
-            )
-        };
+
+        let mut shdrs = Vec::with_capacity(num);
+        for index in 0..num {
+            let start = off + index * ent;
+            shdrs.push(unsafe {
+                std::ptr::read_unaligned(
+                    data[start..].as_ptr() as *const Elf64Shdr,
+                )
+            });
+        }
         Ok(shdrs)
     }
 }

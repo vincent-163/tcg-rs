@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::elf::*;
 use crate::guest_space::*;
+use crate::vdso::map_guest_vdso;
 
 #[derive(Debug)]
 pub enum LoadError {
@@ -92,7 +93,7 @@ pub fn load_elf(
     // Find phdr_addr from PT_PHDR or first PT_LOAD,
     // and the vaddr of the first executable PT_LOAD segment.
     let mut first_load_vaddr: Option<u64> = None;
-    for ph in phdrs {
+    for ph in &phdrs {
         if ph.p_type == PT_PHDR {
             phdr_addr = ph.p_vaddr;
         }
@@ -110,7 +111,7 @@ pub fn load_elf(
     }
 
     // Load PT_LOAD segments
-    for ph in phdrs {
+    for ph in &phdrs {
         if ph.p_type != PT_LOAD {
             continue;
         }
@@ -162,6 +163,8 @@ pub fn load_elf(
 
     space.set_brk(brk);
 
+    let sysinfo_ehdr = map_guest_vdso(space, machine)?;
+
     // Extract IRELATIVE relocations from section headers
     let mut irelatives = Vec::new();
     if let Ok(shdrs) = ehdr.section_headers(&data) {
@@ -203,6 +206,7 @@ pub fn load_elf(
         argv,
         envp,
         execfn.as_ref(),
+        sysinfo_ehdr,
     )?;
 
     Ok(ElfInfo {
@@ -225,6 +229,7 @@ fn setup_stack(
     argv: &[&str],
     envp: &[&str],
     execfn: &str,
+    sysinfo_ehdr: Option<u64>,
 ) -> Result<u64, LoadError> {
     let stack_top = GUEST_STACK_TOP;
     let stack_base = stack_top - GUEST_STACK_SIZE as u64;
@@ -296,18 +301,20 @@ fn setup_stack(
     // Align to 16 bytes
     pos &= !15;
 
-    let auxv: [(u64, u64); 10] = [
-        (AT_PHDR, phdr_addr),
-        (AT_PHENT, 56), // sizeof(Elf64Phdr)
-        (AT_PHNUM, phnum as u64),
-        (AT_PAGESZ, page_size() as u64),
-        (AT_ENTRY, entry),
-        (AT_RANDOM, random_addr),
-        (AT_EXECFN, execfn_addr),
-        (AT_HWCAP, 0),  // no NEON/SVE
-        (AT_HWCAP2, 0),
-        (AT_NULL, 0),
-    ];
+    let mut auxv = Vec::with_capacity(11);
+    auxv.push((AT_PHDR, phdr_addr));
+    auxv.push((AT_PHENT, 56)); // sizeof(Elf64Phdr)
+    auxv.push((AT_PHNUM, phnum as u64));
+    auxv.push((AT_PAGESZ, page_size() as u64));
+    auxv.push((AT_ENTRY, entry));
+    auxv.push((AT_RANDOM, random_addr));
+    auxv.push((AT_EXECFN, execfn_addr));
+    auxv.push((AT_HWCAP, 0)); // no NEON/SVE
+    auxv.push((AT_HWCAP2, 0));
+    if let Some(vdso_addr) = sysinfo_ehdr {
+        auxv.push((AT_SYSINFO_EHDR, vdso_addr));
+    }
+    auxv.push((AT_NULL, 0));
 
     // Calculate total size of the stack frame:
     // argc + argv ptrs + NULL + envp ptrs + NULL + auxv pairs

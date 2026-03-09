@@ -8,6 +8,7 @@ const SYS_DUP3: u64 = 24;
 const SYS_IOCTL: u64 = 29;
 const SYS_GETCWD: u64 = 17;
 const SYS_PIPE2: u64 = 59;
+const SYS_MKDIRAT: u64 = 34;
 const SYS_UNLINKAT: u64 = 35;
 const SYS_FACCESSAT: u64 = 48;
 const SYS_OPENAT: u64 = 56;
@@ -55,7 +56,6 @@ const SYS_CLONE: u64 = 220;
 
 const ENOSYS: u64 = (-38i64) as u64;
 const ENOTTY: u64 = (-25i64) as u64;
-const ENOMEM: u64 = (-12i64) as u64;
 const EINVAL: u64 = (-22i64) as u64;
 
 /// Handle an AArch64 Linux syscall.
@@ -100,7 +100,7 @@ pub fn handle_syscall_aarch64(
             }
         }
         SYS_EXIT | SYS_EXIT_GROUP => SyscallResult::Exit(a0 as i32),
-        SYS_BRK => do_brk(space, a0),
+        SYS_BRK => do_brk(space, a0, mmap_next),
         SYS_MMAP => do_mmap(space, a0, a1, a2, a3, a4, a5, mmap_next),
         SYS_MREMAP => do_mremap(space, a0, a1, a2, a3, a4, mmap_next),
         SYS_MPROTECT => {
@@ -112,7 +112,8 @@ pub fn handle_syscall_aarch64(
                 Err(_) => SyscallResult::Continue((-22i64) as u64),
             }
         }
-        SYS_MUNMAP | SYS_SET_ROBUST_LIST | SYS_RT_SIGACTION
+        SYS_MUNMAP => do_munmap(space, a0, a1),
+        SYS_SET_ROBUST_LIST | SYS_RT_SIGACTION
         | SYS_RT_SIGPROCMASK | SYS_MADVISE => SyscallResult::Continue(0),
         SYS_SET_TID_ADDRESS => SyscallResult::Continue(host_gettid() as u64),
         SYS_GETPID => SyscallResult::Continue(unsafe { libc::getpid() as u64 }),
@@ -155,6 +156,7 @@ pub fn handle_syscall_aarch64(
         SYS_DUP3 => do_dup3(a0, a1, a2),
         SYS_GETCWD => do_getcwd(space, a0, a1),
         SYS_PIPE2 => do_pipe2(space, a0, a1),
+        SYS_MKDIRAT => do_mkdirat(space, a0, a1, a2),
         SYS_UNLINKAT => do_unlinkat(space, a0, a1, a2),
         SYS_FSTAT => do_fstat(space, a0, a1),
         SYS_FSTATFS => do_fstatfs(space, a0, a1),
@@ -171,7 +173,7 @@ pub fn handle_syscall_aarch64(
         SYS_CLOCK_NANOSLEEP => do_clock_nanosleep(space, a0, a1, a2, a3),
         SYS_CLONE => do_clone(space, a0, a1, a2, a3, a4),
         SYS_WAIT4 => do_wait4(space, a0, a1, a2, a3),
-        SYS_EXECVE => SyscallResult::Continue(ENOSYS),
+        SYS_EXECVE => do_execve(space, a0, a1, a2),
         _ => {
             eprintln!("[tcg] unknown syscall {nr} → -ENOSYS");
             SyscallResult::Continue(ENOSYS)
@@ -276,6 +278,80 @@ fn do_clone(
     }
 }
 
+fn read_guest_cstring(
+    space: &GuestSpace,
+    addr: u64,
+) -> Result<std::ffi::CString, u64> {
+    let mut bytes = Vec::new();
+    let mut cur = addr;
+    loop {
+        let byte = unsafe { *(space.g2h(cur) as *const u8) };
+        if byte == 0 {
+            break;
+        }
+        bytes.push(byte);
+        cur += 1;
+    }
+    std::ffi::CString::new(bytes).map_err(|_| EINVAL)
+}
+
+fn read_guest_cstring_array(
+    space: &GuestSpace,
+    addr: u64,
+) -> Result<Vec<std::ffi::CString>, u64> {
+    if addr == 0 {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut cur = addr;
+    loop {
+        let ptr = unsafe { space.read_u64(cur) };
+        if ptr == 0 {
+            break;
+        }
+        out.push(read_guest_cstring(space, ptr)?);
+        cur += 8;
+    }
+    Ok(out)
+}
+
+fn do_execve(
+    space: &mut GuestSpace,
+    path_addr: u64,
+    argv_addr: u64,
+    envp_addr: u64,
+) -> SyscallResult {
+    let path = match read_guest_cstring(space, path_addr) {
+        Ok(v) => v,
+        Err(e) => return SyscallResult::Continue(e),
+    };
+    let argv = match read_guest_cstring_array(space, argv_addr) {
+        Ok(v) => v,
+        Err(e) => return SyscallResult::Continue(e),
+    };
+    let envp = match read_guest_cstring_array(space, envp_addr) {
+        Ok(v) => v,
+        Err(e) => return SyscallResult::Continue(e),
+    };
+
+    let mut argv_ptrs: Vec<*const libc::c_char> = if argv.is_empty() {
+        vec![path.as_ptr()]
+    } else {
+        argv.iter().map(|s| s.as_ptr()).collect()
+    };
+    argv_ptrs.push(std::ptr::null());
+
+    let mut envp_ptrs: Vec<*const libc::c_char> =
+        envp.iter().map(|s| s.as_ptr()).collect();
+    envp_ptrs.push(std::ptr::null());
+
+    let ret = unsafe {
+        libc::execve(path.as_ptr(), argv_ptrs.as_ptr(), envp_ptrs.as_ptr())
+    };
+    debug_assert_eq!(ret, -1);
+    SyscallResult::Continue(errno_ret())
+}
+
 fn do_wait4(
     space: &mut GuestSpace,
     pid: u64,
@@ -365,7 +441,11 @@ fn host_gettid() -> i64 {
     unsafe { libc::syscall(libc::SYS_gettid) as i64 }
 }
 
-fn do_brk(space: &mut GuestSpace, addr: u64) -> SyscallResult {
+fn do_brk(
+    space: &mut GuestSpace,
+    addr: u64,
+    mmap_next: &mut u64,
+) -> SyscallResult {
     let old = space.brk();
     if addr == 0 {
         return SyscallResult::Continue(old);
@@ -374,6 +454,9 @@ fn do_brk(space: &mut GuestSpace, addr: u64) -> SyscallResult {
     if addr >= old {
         let new_brk = crate::guest_space::page_align_up(addr);
         let old_aligned = crate::guest_space::page_align_up(old);
+        if new_brk > *mmap_next {
+            return SyscallResult::Continue(old);
+        }
         if new_brk > old_aligned {
             let sz = (new_brk - old_aligned) as usize;
             if space
@@ -384,6 +467,7 @@ fn do_brk(space: &mut GuestSpace, addr: u64) -> SyscallResult {
             }
         }
         space.set_brk(addr);
+        *mmap_next = (*mmap_next).max(new_brk);
         return SyscallResult::Continue(addr);
     }
 
@@ -424,8 +508,10 @@ fn do_mmap(
     let guest_addr = if addr != 0 {
         addr
     } else {
-        let a = *mmap_next;
-        *mmap_next += aligned_len as u64;
+        let a = crate::guest_space::page_align_up((*mmap_next).max(
+            crate::guest_space::page_align_up(space.brk()),
+        ));
+        *mmap_next = a + aligned_len as u64;
         a
     };
 
@@ -453,60 +539,72 @@ fn do_mremap(
     new_addr_arg: u64,
     mmap_next: &mut u64,
 ) -> SyscallResult {
-    const MREMAP_MAYMOVE: u64 = 1;
-    const MREMAP_FIXED: u64 = 2;
+    const GUEST_MREMAP_MAYMOVE: u64 = 1;
+    const GUEST_MREMAP_FIXED: u64 = 2;
 
-    let old_len = crate::guest_space::page_align_up(old_len);
-    let new_len = crate::guest_space::page_align_up(new_len);
+    let old_len = crate::guest_space::page_align_up(old_len) as usize;
+    let new_len = crate::guest_space::page_align_up(new_len) as usize;
     if old_len == 0 || new_len == 0 {
         return SyscallResult::Continue(EINVAL);
     }
 
-    if new_len <= old_len {
-        return SyscallResult::Continue(old_addr);
-    }
-
-    let grow_from = old_addr.saturating_add(old_len);
-    let grow_len = (new_len - old_len) as usize;
-    if space
-        .mmap_fixed(grow_from, grow_len, libc::PROT_READ | libc::PROT_WRITE)
-        .is_ok()
-    {
-        return SyscallResult::Continue(old_addr);
-    }
-
-    if (flags & MREMAP_MAYMOVE) == 0 {
-        return SyscallResult::Continue(ENOMEM);
-    }
-
-    let new_addr = if (flags & MREMAP_FIXED) != 0 {
-        new_addr_arg
-    } else {
-        let addr = *mmap_next;
-        *mmap_next += new_len;
-        addr
+    let host_old = space.g2h(old_addr) as *mut libc::c_void;
+    let mut guest_result_addr = old_addr;
+    let host_ret = unsafe {
+        if (flags & GUEST_MREMAP_FIXED) != 0 {
+            guest_result_addr = new_addr_arg;
+            libc::mremap(
+                host_old,
+                old_len,
+                new_len,
+                libc::MREMAP_MAYMOVE | libc::MREMAP_FIXED,
+                space.g2h(guest_result_addr) as *mut libc::c_void,
+            )
+        } else if (flags & GUEST_MREMAP_MAYMOVE) != 0 {
+            guest_result_addr = crate::guest_space::page_align_up((*mmap_next).max(
+                crate::guest_space::page_align_up(space.brk()),
+            ));
+            libc::mremap(
+                host_old,
+                old_len,
+                new_len,
+                libc::MREMAP_MAYMOVE | libc::MREMAP_FIXED,
+                space.g2h(guest_result_addr) as *mut libc::c_void,
+            )
+        } else {
+            libc::mremap(host_old, old_len, new_len, 0)
+        }
     };
 
-    if space
-        .mmap_fixed(
-            new_addr,
-            new_len as usize,
-            libc::PROT_READ | libc::PROT_WRITE,
-        )
-        .is_err()
-    {
-        return SyscallResult::Continue(ENOMEM);
+    if host_ret == libc::MAP_FAILED {
+        return SyscallResult::Continue(errno_ret());
     }
 
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            space.g2h(old_addr) as *const u8,
-            space.g2h(new_addr),
-            old_len as usize,
-        );
+    if (flags & GUEST_MREMAP_FIXED) == 0 && (flags & GUEST_MREMAP_MAYMOVE) != 0 {
+        *mmap_next = guest_result_addr + new_len as u64;
     }
 
-    SyscallResult::Continue(new_addr)
+    if (flags & GUEST_MREMAP_FIXED) == 0 && (flags & GUEST_MREMAP_MAYMOVE) == 0 {
+        guest_result_addr = space.h2g(host_ret as *const u8);
+    }
+
+    SyscallResult::Continue(guest_result_addr)
+}
+
+fn do_munmap(space: &mut GuestSpace, addr: u64, len: u64) -> SyscallResult {
+    if len == 0 {
+        return SyscallResult::Continue(EINVAL);
+    }
+    let aligned_addr = crate::guest_space::page_align_down(addr);
+    let end = crate::guest_space::page_align_up(addr.saturating_add(len));
+    let aligned_len = (end - aligned_addr) as usize;
+    match space.munmap_fixed(aligned_addr, aligned_len) {
+        Ok(()) => SyscallResult::Continue(0),
+        Err(e) => {
+            let errno = e.raw_os_error().unwrap_or(libc::ENOMEM);
+            SyscallResult::Continue((-(errno as i64)) as u64)
+        }
+    }
 }
 
 fn do_writev(
@@ -765,10 +863,53 @@ fn do_openat(
             mode as libc::mode_t,
         )
     };
+    if std::env::var("TCG_SYSCALL").is_ok() {
+        if fd < 0 {
+            let errno = unsafe { *libc::__errno_location() };
+            eprintln!(
+                "[openat] dirfd={} path={:?} flags={:#x} mode={:#o} -> -{}",
+                dirfd as i32,
+                path,
+                flags,
+                mode,
+                errno
+            );
+        } else {
+            eprintln!(
+                "[openat] dirfd={} path={:?} flags={:#x} mode={:#o} -> {}",
+                dirfd as i32,
+                path,
+                flags,
+                mode,
+                fd
+            );
+        }
+    }
     if fd < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
         SyscallResult::Continue(fd as u64)
+    }
+}
+
+// ---------------------------------------------------------------
+// mkdirat(dirfd, pathname, mode)
+// ---------------------------------------------------------------
+
+fn do_mkdirat(
+    space: &mut GuestSpace,
+    dirfd: u64,
+    path_addr: u64,
+    mode: u64,
+) -> SyscallResult {
+    let host_path = space.g2h(path_addr);
+    let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
+    let ret =
+        unsafe { libc::mkdirat(dirfd as i32, path.as_ptr(), mode as libc::mode_t) };
+    if ret < 0 {
+        SyscallResult::Continue(errno_ret())
+    } else {
+        SyscallResult::Continue(0)
     }
 }
 
@@ -778,10 +919,6 @@ fn do_openat(
 
 fn do_close(fd: u64) -> SyscallResult {
     let fd = fd as i32;
-    // Don't close stdio
-    if fd <= 2 {
-        return SyscallResult::Continue(0);
-    }
     let ret = unsafe { libc::close(fd) };
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
@@ -942,6 +1079,25 @@ fn do_faccessat(
     let path = unsafe { std::ffi::CStr::from_ptr(host_path as *const i8) };
     let ret =
         unsafe { libc::faccessat(dirfd as i32, path.as_ptr(), mode as i32, 0) };
+    if std::env::var("TCG_SYSCALL").is_ok() {
+        if ret < 0 {
+            let errno = unsafe { *libc::__errno_location() };
+            eprintln!(
+                "[faccessat] dirfd={} path={:?} mode={:#o} -> -{}",
+                dirfd as i32,
+                path,
+                mode,
+                errno
+            );
+        } else {
+            eprintln!(
+                "[faccessat] dirfd={} path={:?} mode={:#o} -> 0",
+                dirfd as i32,
+                path,
+                mode
+            );
+        }
+    }
     if ret < 0 {
         SyscallResult::Continue(errno_ret())
     } else {
@@ -1119,6 +1275,42 @@ mod tests {
     }
 
     #[test]
+    fn test_mkdirat_absolute_path() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let guest_base = 0x38000u64;
+        space
+            .mmap_fixed(guest_base, 4096, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map mkdirat buffer");
+
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "tcgrs-a64-mkdirat-{}-{uniq}",
+            std::process::id()
+        ));
+        let path = format!("{}\0", dir.to_string_lossy());
+        unsafe {
+            space.write_bytes(guest_base, path.as_bytes());
+        }
+
+        let res = do_mkdirat(
+            &mut space,
+            libc::AT_FDCWD as u64,
+            guest_base,
+            0o755,
+        );
+        match res {
+            SyscallResult::Continue(v) => assert_eq!(v, 0),
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        }
+        assert!(dir.is_dir());
+
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
     fn test_mmap_anonymous_zeroed() {
         let mut space = GuestSpace::new().expect("guest space");
         let mut mmap_next = 0x30000u64;
@@ -1182,5 +1374,225 @@ mod tests {
 
         drop(file);
         let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_brk_growth_respects_existing_mmap_floor() {
+        let mut space = GuestSpace::new().expect("guest space");
+        space.set_brk(0x2000);
+        let mut mmap_next = 0x3000u64;
+
+        let res = do_brk(&mut space, 0x4800, &mut mmap_next);
+        let returned = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(returned, 0x2000);
+        assert_eq!(space.brk(), 0x2000);
+        assert_eq!(mmap_next, 0x3000);
+    }
+
+    #[test]
+    fn test_brk_growth_below_mmap_floor_succeeds() {
+        let mut space = GuestSpace::new().expect("guest space");
+        space.set_brk(0x2000);
+        let mut mmap_next = 0x9000u64;
+
+        let res = do_brk(&mut space, 0x4800, &mut mmap_next);
+        let returned = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(returned, 0x4800);
+        assert_eq!(space.brk(), 0x4800);
+        assert_eq!(mmap_next, 0x9000);
+    }
+
+    #[test]
+    fn test_mmap_anon_uses_current_brk_floor() {
+        let mut space = GuestSpace::new().expect("guest space");
+        space.set_brk(0x4800);
+        let mut mmap_next = 0x3000u64;
+
+        let res = do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        );
+        let returned = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(returned, 0x5000);
+        assert_eq!(mmap_next, 0x6000);
+    }
+
+    #[test]
+    fn test_mremap_maymove_uses_current_brk_floor() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let old_addr = 0x4000u64;
+        let old_len = 0x1000u64;
+        let new_len = 0x2000u64;
+        let mut mmap_next = 0x5000u64;
+        space.set_brk(0x7800);
+
+        space
+            .mmap_fixed(old_addr, old_len as usize, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map old region");
+        unsafe {
+            space.write_u64(old_addr, 0x1122_3344_5566_7788);
+        }
+
+        let res = do_mremap(
+            &mut space,
+            old_addr,
+            old_len,
+            new_len,
+            1,
+            0,
+            &mut mmap_next,
+        );
+        let new_addr = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        assert_eq!(new_addr, 0x8000);
+        assert_eq!(mmap_next, 0xa000);
+        assert_eq!(unsafe { space.read_u64(new_addr) }, 0x1122_3344_5566_7788);
+    }
+
+    #[test]
+    fn test_munmap_clears_old_contents_before_remap() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let guest_addr = 0x90000u64;
+        space
+            .mmap_fixed(guest_addr, 4096, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map guest region");
+        unsafe {
+            space.write_u64(guest_addr, 0xdead_beef_cafe_f00d);
+        }
+
+        let res = do_munmap(&mut space, guest_addr, 4096);
+        let returned = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(returned, 0);
+
+        space
+            .mmap_fixed(guest_addr, 4096, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("remap guest region");
+        assert_eq!(unsafe { space.read_u64(guest_addr) }, 0);
+    }
+
+    #[test]
+    fn test_mremap_maymove_preserves_data() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let old_addr = 0x60000u64;
+        let old_len = 0x2000u64;
+        let new_len = 0x4000u64;
+        let mut mmap_next = 0x70000u64;
+        let payload = b"tcgrs-mremap-payload";
+
+        space
+            .mmap_fixed(old_addr, old_len as usize, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map old region");
+        unsafe {
+            space.write_bytes(old_addr, payload);
+        }
+
+        let res = do_mremap(
+            &mut space,
+            old_addr,
+            old_len,
+            new_len,
+            1,
+            0,
+            &mut mmap_next,
+        );
+        let new_addr = match res {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        assert_eq!(new_addr, 0x70000);
+        assert_eq!(mmap_next, 0x74000);
+
+        let host = space.g2h(new_addr);
+        let mapped = unsafe { std::slice::from_raw_parts(host, payload.len()) };
+        assert_eq!(mapped, payload);
+    }
+
+    #[test]
+    fn test_execve_host_shell_in_child() {
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            let mut space = GuestSpace::new().expect("guest space");
+            let guest_base = 0x50000u64;
+            space
+                .mmap_fixed(guest_base, 4096, libc::PROT_READ | libc::PROT_WRITE)
+                .expect("map execve buffers");
+
+            let path_addr = guest_base;
+            let arg0_addr = guest_base + 0x20;
+            let arg1_addr = guest_base + 0x40;
+            let arg2_addr = guest_base + 0x60;
+            let argv_addr = guest_base + 0x100;
+
+            unsafe {
+                space.write_bytes(path_addr, b"/bin/sh\0");
+                space.write_bytes(arg0_addr, b"/bin/sh\0");
+                space.write_bytes(arg1_addr, b"-c\0");
+                space.write_bytes(arg2_addr, b"exit 42\0");
+                space.write_u64(argv_addr, arg0_addr);
+                space.write_u64(argv_addr + 8, arg1_addr);
+                space.write_u64(argv_addr + 16, arg2_addr);
+                space.write_u64(argv_addr + 24, 0);
+            }
+
+            match do_execve(&mut space, path_addr, argv_addr, 0) {
+                SyscallResult::Continue(_) => unsafe { libc::_exit(127) },
+                SyscallResult::Exit(code) => unsafe { libc::_exit(code) },
+            }
+        }
+
+        let mut status = 0;
+        let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(waited, pid);
+        assert!(libc::WIFEXITED(status));
+        assert_eq!(libc::WEXITSTATUS(status), 42);
+    }
+
+    #[test]
+    fn test_close_stdio_fd_in_child() {
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            match do_close(1) {
+                SyscallResult::Continue(0) => {}
+                SyscallResult::Continue(ret) => {
+                    panic!("unexpected close return: {ret:#x}")
+                }
+                SyscallResult::Exit(code) => {
+                    panic!("unexpected close exit: {code}")
+                }
+            }
+            let ret = unsafe { libc::fcntl(1, libc::F_GETFD) };
+            let code = if ret == -1 { 0 } else { 1 };
+            unsafe { libc::_exit(code) }
+        }
+
+        let mut status = 0;
+        let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+        assert_eq!(waited, pid);
+        assert!(libc::WIFEXITED(status));
+        assert_eq!(libc::WEXITSTATUS(status), 0);
     }
 }
