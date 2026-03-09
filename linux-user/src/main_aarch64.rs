@@ -517,6 +517,10 @@ mod tests {
     }
 }
 
+fn tcg_info_logs() -> bool {
+    env::var("TCG_INFO").is_ok()
+}
+
 fn save_profile<B: tcg_backend::HostCodeGen>(
     env: &ExecEnv<B>,
     load_vaddr: u64,
