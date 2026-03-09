@@ -170,6 +170,15 @@ where B: HostCodeGen, C: GuestCpu,
 {
     if shared.code_buf().remaining() < MIN_CODE_BUF_REMAINING { return None; }
 
+#[cfg(feature = "llvm")]
+fn llvm_helper_brcond_fallback(ir: &tcg_core::Context) -> bool {
+    let ops = ir.ops();
+    if !ops.iter().any(|op| op.opc == tcg_core::Opcode::GotoTb) {
+        return false;
+    }
+    ops.windows(2).any(|w| w[0].opc == tcg_core::Opcode::Call && w[1].opc == tcg_core::Opcode::BrCond)
+}
+
     let mut guard = shared.translate_lock.lock().unwrap();
 
     if let Some(ptr) = shared.tb_store.lookup(pc, flags) {
@@ -222,10 +231,13 @@ where B: HostCodeGen, C: GuestCpu,
         #[cfg(feature = "llvm")]
         {
             let TranslateGuard { ref mut ir_ctx, ref mut llvm_jit } = *guard;
-            let use_llvm = llvm_jit.is_some() && match std::env::var("TCG_LLVM_MAX_PC") {
+            let llvm_max_pc = match std::env::var("TCG_LLVM_MAX_PC") {
                 Ok(s) => pc <= u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or(u64::MAX),
                 Err(_) => true,
             };
+            let llvm_helper_brcond = std::env::var("TCG_LLVM_HELPER_BRCOND_FALLBACK").is_ok()
+                && llvm_helper_brcond_fallback(ir_ctx);
+            let use_llvm = llvm_jit.is_some() && (llvm_max_pc || llvm_helper_brcond);
             if use_llvm {
                 let prof_addr = if shared.profiling {
                     unsafe { std::ptr::addr_of!((*tb_ptr).exec_count) as u64 }

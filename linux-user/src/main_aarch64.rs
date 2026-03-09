@@ -715,6 +715,16 @@ fn main() {
         );
     }
 
+    if env::var_os("TCG_ENABLE_DIRECT_CHAIN").is_none()
+        && env::var_os("TCG_DISABLE_DIRECT_CHAIN").is_none()
+        && env::var_os("TCG_DISABLE_CHAIN").is_none()
+    {
+        env::set_var("TCG_DISABLE_DIRECT_CHAIN", "1");
+        if tcg_info_logs() {
+            eprintln!("[tcg] direct chaining disabled by default on tcg-aarch64; set TCG_ENABLE_DIRECT_CHAIN=1 to override");
+        }
+    }
+
     // Run
     let show_stats = env::var("TCG_STATS").is_ok();
     let profiling = env::var("TCG_PROFILE").is_ok();
