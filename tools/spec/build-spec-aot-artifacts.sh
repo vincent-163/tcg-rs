@@ -15,6 +15,31 @@ profile_dir="$artifact_dir/profiles"
 aot_dir="$artifact_dir/aot"
 mkdir -p "$aot_dir"
 
+tcg_aot_bin=${TCG_AOT_BIN:-}
+if [[ -z "$tcg_aot_bin" ]]; then
+    candidates=(
+        "$repo_root/target/release/tcg-aot"
+    )
+    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+        candidates+=("$(readlink -f "$CARGO_TARGET_DIR")/release/tcg-aot")
+    fi
+    candidates+=(
+        "$repo_root/.cargo-target-llvm/release/tcg-aot"
+        "$repo_root/.cargo-target/release/tcg-aot"
+    )
+    for candidate in "${candidates[@]}"; do
+        if [[ -x "$candidate" ]]; then
+            tcg_aot_bin=$candidate
+            break
+        fi
+    done
+fi
+
+if [[ -z "$tcg_aot_bin" ]]; then
+    echo "build-spec-aot-artifacts.sh: could not find tcg-aot; set TCG_AOT_BIN or build it first" >&2
+    exit 2
+fi
+
 if [[ ! -d "$meta_dir" ]]; then
     echo "build-spec-aot-artifacts.sh: missing $meta_dir" >&2
     exit 2
@@ -39,7 +64,7 @@ build_one() {
 
     exe=$(<"$exe_file")
     echo "[aot] compiling $bench_name"
-    "$repo_root/target/release/tcg-aot" "$profile_bin" "$exe" -o "$aot_o"
+    "$tcg_aot_bin" "$profile_bin" "$exe" -o "$aot_o"
     cc -shared -o "$aot_so" "$aot_o"
 }
 
