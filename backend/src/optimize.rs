@@ -110,7 +110,7 @@ pub fn optimize(ctx: &mut Context) {
                 | Opcode::Call
         ) {
             invalidate_outputs(&mut info, def, &args, ctx);
-            reset_copies(&mut info);
+            reset_temp_info(&mut info, ctx);
             continue;
         }
 
@@ -188,9 +188,14 @@ fn resolve_copy(info: &[TempInfo], tidx: TempIdx) -> Option<TempIdx> {
     }
 }
 
-/// Reset all copy relationships (at BB boundaries).
-fn reset_copies(info: &mut [TempInfo]) {
-    for ti in info.iter_mut() {
+/// Reset all tracked temp facts at BB boundaries.
+fn reset_temp_info(info: &mut [TempInfo], ctx: &Context) {
+    for (idx, ti) in info.iter_mut().enumerate() {
+        let tidx = TempIdx(idx as u32);
+        ti.is_const = idx < ctx.nb_temps() as usize && ctx.temp(tidx).is_const();
+        if ti.is_const {
+            ti.val = ctx.temp(tidx).val;
+        }
         ti.copy_of = None;
     }
 }
@@ -631,6 +636,7 @@ fn invalidate_one(info: &mut Vec<TempInfo>, dst: TempIdx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tcg_core::types::Cond;
 
     #[test]
     fn eval_cond_i32_signed_compare_sign_extends() {
@@ -638,5 +644,33 @@ mod tests {
         assert!(eval_cond(0xFFFF_FF88, 178, Cond::Lt, Type::I32));
         assert!(!eval_cond(0xFFFF_FF88, 178, Cond::Gt, Type::I32));
         assert!(!eval_cond(0xFFFF_FF88, 178, Cond::Ge, Type::I32));
+    }
+
+    #[test]
+    fn optimize_does_not_keep_consts_across_label_join() {
+        let mut ctx = Context::new();
+        let tmp = ctx.new_temp(Type::I64);
+        let cond = ctx.new_temp(Type::I64);
+        let out = ctx.new_temp(Type::I64);
+        let zero = ctx.new_const(Type::I64, 0);
+        let one = ctx.new_const(Type::I64, 1);
+        let two = ctx.new_const(Type::I64, 2);
+        let taken = ctx.new_label();
+        let done = ctx.new_label();
+
+        ctx.gen_mov(Type::I64, tmp, one);
+        ctx.gen_brcond(Type::I64, cond, zero, Cond::Eq, taken);
+        ctx.gen_mov(Type::I64, tmp, two);
+        ctx.gen_br(done);
+        ctx.gen_set_label(taken);
+        ctx.gen_set_label(done);
+        ctx.gen_add(Type::I64, out, tmp, zero);
+
+        optimize(&mut ctx);
+
+        let last = ctx.op(OpIdx((ctx.num_ops() - 1) as u32));
+        assert_eq!(last.opc, Opcode::Mov);
+        assert_eq!(last.args[0], out);
+        assert_eq!(last.args[1], tmp);
     }
 }

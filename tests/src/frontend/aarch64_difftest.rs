@@ -2043,6 +2043,22 @@ fn a64_difftest_cbz() {
 }
 
 #[test]
+fn a64_difftest_cbz_w_uses_low32() {
+    let cases: Vec<(u64, bool)> = vec![
+        (0, true),
+        (1, false),
+        (0x0000_0001_0000_0000, true),
+        (0xffff_ffff_0000_0000, true),
+        (0xffff_ffff_0000_0001, false),
+    ];
+    for (val, expect_taken) in cases {
+        let cpu = run_tcgrs(&[(1, val)], &[a64_cbz(0, 1, 16)]);
+        let taken = cpu.pc == 16;
+        assert_eq!(taken, expect_taken, "cbz w1={val:#x}: pc={:#x}", cpu.pc);
+    }
+}
+
+#[test]
 fn a64_difftest_cbnz() {
     let cases: Vec<(u64, bool)> =
         vec![(0, false), (1, true), (VNEG1, true), (VMIN, true)];
@@ -2050,6 +2066,22 @@ fn a64_difftest_cbnz() {
         let cpu = run_tcgrs(&[(1, val)], &[a64_cbnz(1, 1, 16)]);
         let taken = cpu.pc == 16;
         assert_eq!(taken, expect_taken, "cbnz x1={val:#x}: pc={:#x}", cpu.pc);
+    }
+}
+
+#[test]
+fn a64_difftest_cbnz_w_uses_low32() {
+    let cases: Vec<(u64, bool)> = vec![
+        (0, false),
+        (1, true),
+        (0x0000_0001_0000_0000, false),
+        (0xffff_ffff_0000_0000, false),
+        (0xffff_ffff_0000_0001, true),
+    ];
+    for (val, expect_taken) in cases {
+        let cpu = run_tcgrs(&[(1, val)], &[a64_cbnz(0, 1, 16)]);
+        let taken = cpu.pc == 16;
+        assert_eq!(taken, expect_taken, "cbnz w1={val:#x}: pc={:#x}", cpu.pc);
     }
 }
 
