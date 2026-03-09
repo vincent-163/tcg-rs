@@ -2853,6 +2853,19 @@ fn a64_difftest_str_ldr_w_lsl_indexed_roundtrip_runtime() {
 }
 
 #[test]
+fn a64_difftest_str_ldr_x_lsl_indexed_roundtrip_runtime() {
+    // 0xf8217883: str x3, [x4, x1, lsl #3]
+    // 0xf8617882: ldr x2, [x4, x1, lsl #3]
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(1, 2), (3, 0x5555_0000_0000_0001), (4, 0x200)],
+        &[0xf821_7883, 0xf861_7882],
+        &[],
+    );
+    assert_eq!(cpu.xregs[2], 0x5555_0000_0000_0001);
+    assert_eq!(cpu.pc, 8);
+}
+
+#[test]
 fn a64_difftest_umov_w_from_h_lane_runtime() {
     // 0x0e023c00: umov w0, v0.h[0]
     let cpu = run_tcgrs_with_state(
@@ -2875,6 +2888,28 @@ fn a64_difftest_dup_v2_2d_from_x0_runtime() {
     assert_eq!(cpu.vregs[2 * 2], 0x1122_3344_5566_7788);
     assert_eq!(cpu.vregs[2 * 2 + 1], 0x1122_3344_5566_7788);
     assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_dup_str_q_postindex_pos16_runtime() {
+    // Hot Perl_av_store fill pattern:
+    // 0x4e080ca0: dup v0.2d, x5
+    // 0x3c8104e0: str q0, [x7], #16
+    // 0xf9400029: ldr x9, [x1]
+    // 0xf940042a: ldr x10, [x1, #8]
+    let cpu = run_tcgrs_with_guest_mem(
+        &[
+            (1, 0x200),
+            (5, 0x1122_3344_5566_7788),
+            (7, 0x200),
+        ],
+        &[0x4e08_0ca0, 0x3c81_04e0, 0xf940_0029, 0xf940_042a],
+        &[],
+    );
+    assert_eq!(cpu.xregs[7], 0x210);
+    assert_eq!(cpu.xregs[9], 0x1122_3344_5566_7788);
+    assert_eq!(cpu.xregs[10], 0x1122_3344_5566_7788);
+    assert_eq!(cpu.pc, 16);
 }
 
 #[test]
