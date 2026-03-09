@@ -3366,6 +3366,20 @@ fn a64_difftest_shll2_v16_4s_alias_runtime() {
 }
 
 #[test]
+fn a64_difftest_shrn_v3_4h_from_4s_runtime() {
+    // Hot instruction from SPEC464/h264ref at guest pc 0x42b948:
+    // 0x0f1f8463: shrn v3.4h, v3.4s, #1
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[(3, 0x1234_5678_0001_0002, 0x0000_0003_8000_0000)],
+        &[0x0f1f_8463],
+    );
+    assert_eq!(cpu.vregs[3 * 2], 0x0001_0000_2b3c_8001);
+    assert_eq!(cpu.vregs[3 * 2 + 1], 0);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
 fn a64_difftest_uzp1_v16b_runtime() {
     // Hot pattern from SPEC401:
     // 0x4e1c1827: uzp1 v7.16b, v1.16b, v28.16b

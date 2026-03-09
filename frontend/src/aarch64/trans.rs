@@ -4294,6 +4294,26 @@ pub unsafe extern "C" fn helper_shrn8(a: u64, shift: u64) -> u64 {
     r
 }
 
+/// Narrowing shift right (32→16 bit elements, 2 elements per u64 half).
+#[no_mangle]
+pub unsafe extern "C" fn helper_shrn16(a: u64, shift: u64) -> u64 {
+    let mut r = 0u64;
+    for i in 0..2 {
+        let elem = (a >> (i * 32)) & 0xffff_ffff;
+        let shifted = (elem >> shift) & 0xffff;
+        r |= shifted << (i * 16);
+    }
+    r
+}
+
+/// Narrowing shift right (64→32 bit elements, 1 element per u64 half).
+#[no_mangle]
+pub unsafe extern "C" fn helper_shrn32(lo: u64, hi: u64, shift: u64) -> u64 {
+    let e0 = ((lo >> shift) as u32) as u64;
+    let e1 = ((hi >> shift) as u32) as u64;
+    e0 | (e1 << 32)
+}
+
 /// Byte-wise EXT: concatenate and extract.
 #[no_mangle]
 pub unsafe extern "C" fn helper_ext8(a: u64, b: u64, pos: u64) -> u64 {
@@ -7447,6 +7467,41 @@ impl Aarch64DisasContext {
             ir.gen_shl(Type::I64, hi_shifted, d_hi, c32);
             let d = ir.new_temp(Type::I64);
             ir.gen_or(Type::I64, d, d_lo, hi_shifted);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        // SHRN: U=0 opcode=10000, narrow shift right (32→16)
+        // Narrows 4x32-bit (128-bit src) → 4x16-bit (64-bit dst)
+        if u == 0 && opcode == 0b10000 && (2..4).contains(&immh) {
+            let shift = 32 - immhb;
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let d_lo = ir.new_temp(Type::I64);
+            gen_helper_call!(ir, d_lo, helper_shrn16, [lo, sh]);
+            let d_hi = ir.new_temp(Type::I64);
+            gen_helper_call!(ir, d_hi, helper_shrn16, [hi, sh]);
+            let c32 = ir.new_const(Type::I64, 32);
+            let hi_shifted = ir.new_temp(Type::I64);
+            ir.gen_shl(Type::I64, hi_shifted, d_hi, c32);
+            let d = ir.new_temp(Type::I64);
+            ir.gen_or(Type::I64, d, d_lo, hi_shifted);
+            self.write_vreg_lo(ir, rd, d);
+            self.clear_vreg_hi(ir, rd);
+            return true;
+        }
+
+        // SHRN: U=0 opcode=10000, narrow shift right (64→32)
+        // Narrows 2x64-bit (128-bit src) → 2x32-bit (64-bit dst)
+        if u == 0 && opcode == 0b10000 && (4..8).contains(&immh) {
+            let shift = 64 - immhb;
+            let lo = self.read_vreg_lo(ir, rn);
+            let hi = self.read_vreg_hi(ir, rn);
+            let sh = ir.new_const(Type::I64, shift as u64);
+            let d = ir.new_temp(Type::I64);
+            gen_helper_call!(ir, d, helper_shrn32, [lo, hi, sh]);
             self.write_vreg_lo(ir, rd, d);
             self.clear_vreg_hi(ir, rd);
             return true;
