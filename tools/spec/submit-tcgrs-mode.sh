@@ -21,10 +21,21 @@ bench_base=$(basename "$exe")
 bench_name=${bench_base%%_base*}
 
 if [[ "$TCG_SPEC_MODE" == "jit" ]]; then
+    perl_case=
+    for arg in "$@"; do
+        if [[ "$arg" == *.pl ]]; then
+            perl_case=$arg
+            break
+        fi
+    done
     if [[ "$bench_name" == "perlbench" && -z "${TCG_LLVM_MAX_PC:-}" ]]; then
-        export TCG_LLVM=1
-        export TCG_LLVM_MAX_PC=${TCG_PERLBENCH_LLVM_MAX_PC:-0x402000}
-        export TCG_MAX_INSNS=${TCG_PERLBENCH_MAX_INSNS:-2}
+        case "$perl_case" in
+            splitmail.pl|diffmail.pl)
+                export TCG_LLVM=1
+                export TCG_LLVM_MAX_PC=${TCG_PERLBENCH_LLVM_MAX_PC:-0x402000}
+                export TCG_MAX_INSNS=${TCG_PERLBENCH_MAX_INSNS:-2}
+                ;;
+        esac
     fi
     exec "$TCG_RS" "$exe" "$@"
 fi
