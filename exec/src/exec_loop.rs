@@ -38,6 +38,8 @@ where B: HostCodeGen, C: GuestCpu,
         .unwrap_or(0);
     let tb_trace = tb_limit > 0;
     let tb_dump = std::env::var("TCG_TB_DUMP").is_ok();
+    let disable_direct_chain = std::env::var("TCG_DISABLE_CHAIN").is_ok()
+        || std::env::var("TCG_DISABLE_DIRECT_CHAIN").is_ok();
     let mut tb_count: u64 = 0;
     let mut tb_dump_idx: u64 = 0;
     let mut last_pcs: [u64; 8] = [0; 8];
@@ -86,7 +88,7 @@ where B: HostCodeGen, C: GuestCpu,
                     Some(ptr) => ptr,
                     None => return ExitReason::BufferFull,
                 };
-                if tb_limit == 0 {
+                if tb_limit == 0 && !disable_direct_chain {
                     tb_add_jump(shared, per_cpu, src_tb, v, dst);
                 }
                 next_tb_hint = Some(dst);
