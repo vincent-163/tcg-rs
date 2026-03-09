@@ -70,8 +70,6 @@ struct LinuxCpu {
     max_insns_override: Option<u32>,
 }
 
-const AARCH64_SAFE_MAX_INSNS: u32 = 4;
-
 fn effective_max_insns(
     single_step: bool,
     max_insns: u32,
@@ -81,7 +79,7 @@ fn effective_max_insns(
     if let Some(v) = max_insns_override {
         max_insns = v.max(1);
     }
-    max_insns.min(AARCH64_SAFE_MAX_INSNS)
+    max_insns
 }
 
 impl GuestCpu for LinuxCpu {
@@ -99,8 +97,9 @@ impl GuestCpu for LinuxCpu {
         pc: u64,
         max_insns: u32,
     ) -> u32 {
-        // SPEC2006/perlbench still exposes long-TB correctness issues in AArch64 JIT.
-        // Keep a conservative default cap unless explicitly overridden.
+        // Long-TB correctness issues are currently narrowed to specific
+        // perlbench paths. Keep the generic AArch64 default intact and rely on
+        // targeted TCG_MAX_INSNS overrides from the submit wrapper where needed.
         let max_insns = effective_max_insns(
             self.single_step,
             max_insns,
@@ -469,7 +468,6 @@ fn decode_bitmask_64(insn: u32) -> Option<u64> {
 mod tests {
     use super::{
         decode_bitmask_64, effective_max_insns,
-        AARCH64_SAFE_MAX_INSNS,
     };
 
     #[test]
@@ -485,10 +483,10 @@ mod tests {
     }
 
     #[test]
-    fn max_insns_uses_safe_default_cap() {
+    fn max_insns_uses_backend_default_without_override() {
         assert_eq!(
             effective_max_insns(false, 32, None),
-            AARCH64_SAFE_MAX_INSNS
+            32
         );
         assert_eq!(
             effective_max_insns(false, 3, None),
@@ -504,7 +502,7 @@ mod tests {
         );
         assert_eq!(
             effective_max_insns(true, 32, Some(6)),
-            AARCH64_SAFE_MAX_INSNS
+            6
         );
         assert_eq!(
             effective_max_insns(false, 32, Some(1)),
@@ -512,7 +510,7 @@ mod tests {
         );
         assert_eq!(
             effective_max_insns(false, 32, Some(99)),
-            AARCH64_SAFE_MAX_INSNS
+            99
         );
     }
 }
