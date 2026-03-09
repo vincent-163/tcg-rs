@@ -1647,6 +1647,10 @@ impl Aarch64DisasContext {
     fn try_fp_data(&mut self, ir: &mut Context, insn: u32) -> bool {
         // DUP (general) — 0 Q 00 1110 000 imm5 0 0001 1 Rn Rd
         // Encodes as: 0x0e000c00 mask 0xbfe0fc00
+        // MOV (element to scalar) / DUP (scalar) — 0101 1110 000 imm5 0 0000 1 Rn Rd
+        if insn & 0xffe0_fc00 == 0x5e00_0400 {
+            return self.neon_dup_scalar(ir, insn);
+        }
         // DUP (element) — 0 Q 00 1110 000 imm5 0 0000 1 Rn Rd
         if insn & 0xbfe0_fc00 == 0x0e00_0400 {
             return self.neon_dup_element(ir, insn);
@@ -1893,6 +1897,91 @@ impl Aarch64DisasContext {
         }
         // Dispatch 3-same / 2-reg-misc / shift-imm by top bits
         self.try_neon_3same_misc(ir, insn)
+    }
+
+    /// MOV (element to scalar): copy a vector lane into the low bits of a
+    /// scalar SIMD/FP register and clear the rest of the destination register.
+    fn neon_dup_scalar(&mut self, ir: &mut Context, insn: u32) -> bool {
+        let imm5 = (insn >> 16) & 0x1f;
+        let rn = ((insn >> 5) & 0x1f) as usize;
+        let rd = (insn & 0x1f) as usize;
+
+        if imm5 & 1 != 0 {
+            let idx = (imm5 >> 1) as usize;
+            let half = if idx < 8 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
+            let bit_off = (idx % 8) * 8;
+            let elem = if bit_off != 0 {
+                let sh = ir.new_const(Type::I64, bit_off as u64);
+                let t = ir.new_temp(Type::I64);
+                ir.gen_shr(Type::I64, t, half, sh);
+                t
+            } else {
+                half
+            };
+            let mask = ir.new_const(Type::I64, 0xff);
+            let result = ir.new_temp(Type::I64);
+            ir.gen_and(Type::I64, result, elem, mask);
+            self.write_vreg_lo(ir, rd, result);
+            self.clear_vreg_hi(ir, rd);
+        } else if imm5 & 2 != 0 {
+            let idx = (imm5 >> 2) as usize;
+            let half = if idx < 4 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
+            let bit_off = (idx % 4) * 16;
+            let elem = if bit_off != 0 {
+                let sh = ir.new_const(Type::I64, bit_off as u64);
+                let t = ir.new_temp(Type::I64);
+                ir.gen_shr(Type::I64, t, half, sh);
+                t
+            } else {
+                half
+            };
+            let mask = ir.new_const(Type::I64, 0xffff);
+            let result = ir.new_temp(Type::I64);
+            ir.gen_and(Type::I64, result, elem, mask);
+            self.write_vreg_lo(ir, rd, result);
+            self.clear_vreg_hi(ir, rd);
+        } else if imm5 & 4 != 0 {
+            let idx = (imm5 >> 3) as usize;
+            let half = if idx < 2 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
+            let bit_off = (idx % 2) * 32;
+            let elem = if bit_off != 0 {
+                let sh = ir.new_const(Type::I64, bit_off as u64);
+                let t = ir.new_temp(Type::I64);
+                ir.gen_shr(Type::I64, t, half, sh);
+                t
+            } else {
+                half
+            };
+            let mask = ir.new_const(Type::I64, 0xffff_ffff);
+            let result = ir.new_temp(Type::I64);
+            ir.gen_and(Type::I64, result, elem, mask);
+            self.write_vreg_lo(ir, rd, result);
+            self.clear_vreg_hi(ir, rd);
+        } else if imm5 & 8 != 0 {
+            let idx = (imm5 >> 4) as usize;
+            let half = if idx == 0 {
+                self.read_vreg_lo(ir, rn)
+            } else {
+                self.read_vreg_hi(ir, rn)
+            };
+            self.write_vreg_lo(ir, rd, half);
+            self.clear_vreg_hi(ir, rd);
+        } else {
+            return false;
+        }
+        true
     }
 
     /// DUP (element): replicate a vector element into all lanes.

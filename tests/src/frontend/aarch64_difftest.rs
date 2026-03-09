@@ -2976,6 +2976,54 @@ fn a64_difftest_umov_w_from_h_lane_runtime() {
 }
 
 #[test]
+fn a64_difftest_mov_h_from_h_lane_runtime() {
+    // 0x5e060401: mov h1, v0.h[1]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x1122_3344_5566_7788, 0x99aa_bbcc_ddee_ff00),
+            (1, 0xaaaa_aaaa_aaaa_aaaa, 0xbbbb_bbbb_bbbb_bbbb),
+        ],
+        &[0x5e06_0401],
+    );
+    assert_eq!(cpu.vregs[1 * 2], 0x5566);
+    assert_eq!(cpu.vregs[1 * 2 + 1], 0);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_mov_s_from_s_lane_runtime() {
+    // 0x5e0c0402: mov s2, v0.s[1]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x1122_3344_5566_7788, 0x99aa_bbcc_ddee_ff00),
+            (2, 0xcccc_cccc_cccc_cccc, 0xdddd_dddd_dddd_dddd),
+        ],
+        &[0x5e0c_0402],
+    );
+    assert_eq!(cpu.vregs[2 * 2], 0x1122_3344);
+    assert_eq!(cpu.vregs[2 * 2 + 1], 0);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_mov_d_from_d_lane_runtime() {
+    // 0x5e180403: mov d3, v0.d[1]
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x1122_3344_5566_7788, 0x99aa_bbcc_ddee_ff00),
+            (3, 0xeeee_eeee_eeee_eeee, 0xffff_ffff_ffff_ffff),
+        ],
+        &[0x5e18_0403],
+    );
+    assert_eq!(cpu.vregs[3 * 2], 0x99aa_bbcc_ddee_ff00);
+    assert_eq!(cpu.vregs[3 * 2 + 1], 0);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
 fn a64_difftest_dup_v2_2d_from_x0_runtime() {
     // 0x4e080c02: dup v2.2d, x0
     let cpu = run_tcgrs_with_state(
