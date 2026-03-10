@@ -23,6 +23,14 @@ jit_benches=(
 )
 aot_benches=("${jit_benches[@]}")
 
+ps_cmd() {
+  if [[ -n ${PS_CMD_FILE:-} ]]; then
+    cat "$PS_CMD_FILE"
+  else
+    ps -eo cmd
+  fi
+}
+
 state_for() {
   local bench=$1
   local col=$2
@@ -36,12 +44,7 @@ is_satisfied() {
 }
 
 live_total() {
-  ps -eo cmd | rg -c "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg" || true
-}
-
-live_for_bench() {
-  local bench=$1
-  ps -eo cmd | rg -q "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg.* ${bench}"
+  ps_cmd | rg -c "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg" || true
 }
 
 latest_run_dir() {
@@ -49,6 +52,30 @@ latest_run_dir() {
   local mode=$2
   find "$SPEC_ROOT/benchspec/CPU2006/$bench/run" -maxdepth 1 -type d \
     -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" 2>/dev/null | sort | tail -n 1
+}
+
+live_for_bench() {
+  local bench=$1
+  local mode
+  local dir
+  local run_name
+
+  if ps_cmd | rg -q "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg.* ${bench}( |$)"; then
+    return 0
+  fi
+
+  for mode in jit profile aot; do
+    dir=$(latest_run_dir "$bench" "$mode")
+    if [[ -z "$dir" ]]; then
+      continue
+    fi
+    run_name=$(basename "$dir")
+    if ps_cmd | rg -Fq -- "$dir" || ps_cmd | rg -Fq -- "$run_name"; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 maybe_rerun_compare() {
@@ -104,26 +131,45 @@ all_done() {
   return 0
 }
 
+advance_bench() {
+  local mode=$1
+  local bench=$2
+  local cfg=$3
+  local col=$4
+  local state
+
+  state=$(state_for "$bench" "$col")
+  if is_satisfied "$state"; then
+    return 1
+  fi
+
+  if [[ "$state" == compare ]]; then
+    maybe_rerun_compare "$bench" "$mode"
+    return 0
+  fi
+
+  if live_for_bench "$bench"; then
+    return 1
+  fi
+
+  wait_for_slot
+  if live_for_bench "$bench"; then
+    return 1
+  fi
+
+  run_validate "$mode" "$bench" "$cfg"
+  return 0
+}
+
 main() {
   echo "[$(date '+%F %T')] queue driver started"
 
   while ! all_done jit_benches 2; do
     local bench
-    local state
     for bench in "${jit_benches[@]}"; do
-      state=$(state_for "$bench" 2)
-      if is_satisfied "$state"; then
-        continue
+      if advance_bench jit "$bench" "$JIT_CFG" 2; then
+        break
       fi
-      if live_for_bench "$bench"; then
-        continue
-      fi
-      wait_for_slot
-      if live_for_bench "$bench"; then
-        continue
-      fi
-      run_validate jit "$bench" "$JIT_CFG"
-      break
     done
     sleep "$SLEEP_SECS"
   done
@@ -132,21 +178,10 @@ main() {
 
   while ! all_done aot_benches 4; do
     local bench
-    local state
     for bench in "${aot_benches[@]}"; do
-      state=$(state_for "$bench" 4)
-      if is_satisfied "$state"; then
-        continue
+      if advance_bench aot "$bench" "$AOT_CFG" 4; then
+        break
       fi
-      if live_for_bench "$bench"; then
-        continue
-      fi
-      wait_for_slot
-      if live_for_bench "$bench"; then
-        continue
-      fi
-      run_validate aot "$bench" "$AOT_CFG"
-      break
     done
     sleep "$SLEEP_SECS"
   done
