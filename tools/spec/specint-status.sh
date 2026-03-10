@@ -25,13 +25,61 @@ run_dir_for() {
     -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" 2>/dev/null | sort | tail -n 1
 }
 
+has_compare_output() {
+  local dir=$1
+  [[ -f "$dir/compare.out" || -f "$dir/compare.stdout" || -f "$dir/compare.rerun.stdout" ]]
+}
+
+best_run_state() {
+  local bench=$1
+  local mode=$2
+  local latest_dir
+  local dir
+  local found_ok=0
+
+  latest_dir=$(run_dir_for "$bench" "$mode" || true)
+  if [[ -z "$latest_dir" ]]; then
+    echo '-'
+    return
+  fi
+
+  while IFS= read -r dir; do
+    if has_compare_output "$dir"; then
+      found_ok=1
+      break
+    fi
+  done < <(
+    find "$SPEC_ROOT/benchspec/CPU2006/$bench/run" -maxdepth 1 -type d \
+      -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" 2>/dev/null | sort
+  )
+
+  if (( found_ok )); then
+    if has_compare_output "$latest_dir"; then
+      echo ok
+      return
+    fi
+    if [[ -f "$latest_dir/compare.cmd" ]]; then
+      echo ok+cmp
+      return
+    fi
+    if [[ -f "$latest_dir/speccmds.cmd" ]]; then
+      echo ok+run
+      return
+    fi
+    echo ok
+    return
+  fi
+
+  run_state "$latest_dir"
+}
+
 run_state() {
   local dir=$1
   if [[ -z "$dir" ]]; then
     echo '-'
     return
   fi
-  if [[ -f "$dir/compare.out" || -f "$dir/compare.stdout" || -f "$dir/compare.rerun.stdout" ]]; then
+  if has_compare_output "$dir"; then
     echo ok
     return
   fi
@@ -56,8 +104,8 @@ for bench in "${benches[@]}"; do
   [[ -f "$ARTIFACT_DIR/aot/$so_base.aot.so" ]] && so_flag=yes
   printf '%-14s %-8s %-8s %-8s %-3s\n' \
     "$bench" \
-    "$(run_state "${jit_dir:-}")" \
-    "$(run_state "${prof_dir:-}")" \
-    "$(run_state "${aot_dir:-}")" \
+    "$(best_run_state "$bench" jit)" \
+    "$(best_run_state "$bench" profile)" \
+    "$(best_run_state "$bench" aot)" \
     "$so_flag"
 done

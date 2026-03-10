@@ -47,6 +47,14 @@ mkdir -p "$tmpdir/spec/benchspec/CPU2006/483.xalancbmk/run/run_base_ref_aarch64.
 touch "$tmpdir/spec/benchspec/CPU2006/483.xalancbmk/run/run_base_ref_aarch64.Ofast.tcgrs.20260310a.aot.0000/compare.rerun.stdout"
 
 status_out=$(SPEC_ROOT="$tmpdir/spec" "$repo_root/tools/spec/specint-status.sh" 20260310a "$artifact_dir")
-echo "$status_out" | rg '^483\.xalancbmk\s+\S+\s+\S+\s+ok\s+yes$' >/dev/null
+echo "$status_out" | rg '^483\.xalancbmk\s+\S+\s+\S+\s+ok\s+yes\s*$' >/dev/null
+
+mkdir -p "$tmpdir/spec/benchspec/CPU2006/445.gobmk/run/run_base_ref_aarch64.Ofast.tcgrs.20260310a.jit.0000"
+mkdir -p "$tmpdir/spec/benchspec/CPU2006/445.gobmk/run/run_base_ref_aarch64.Ofast.tcgrs.20260310a.jit.0001"
+touch "$tmpdir/spec/benchspec/CPU2006/445.gobmk/run/run_base_ref_aarch64.Ofast.tcgrs.20260310a.jit.0000/compare.rerun.stdout"
+touch "$tmpdir/spec/benchspec/CPU2006/445.gobmk/run/run_base_ref_aarch64.Ofast.tcgrs.20260310a.jit.0001/speccmds.cmd"
+
+status_out=$(SPEC_ROOT="$tmpdir/spec" "$repo_root/tools/spec/specint-status.sh" 20260310a "$artifact_dir")
+echo "$status_out" | rg '^445\.gobmk\s+ok\+run\s+\S+\s+\S+\s+no\s*$' >/dev/null
 
 echo 'ok'
