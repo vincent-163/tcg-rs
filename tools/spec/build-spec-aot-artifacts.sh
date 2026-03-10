@@ -46,6 +46,15 @@ if [[ ! -d "$meta_dir" ]]; then
     exit 2
 fi
 
+resolve_bench_name() {
+    case "$1" in
+        403.gcc|gcc) echo gcc ;;
+        483.xalancbmk|xalancbmk|Xalan) echo Xalan ;;
+        *.*) echo "${1#*.}" ;;
+        *) echo "$1" ;;
+    esac
+}
+
 build_one() {
     local bench_name=$1
     local exe_file="$meta_dir/$bench_name.exe"
@@ -70,7 +79,7 @@ build_one() {
 }
 
 if [[ -n "$bench_filter" ]]; then
-    build_one "$bench_filter"
+    build_one "$(resolve_bench_name "$bench_filter")"
     exit 0
 fi
 

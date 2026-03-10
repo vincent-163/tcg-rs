@@ -13,7 +13,7 @@ benches=(
 artifact_name() {
   case "$1" in
     403.gcc) echo gcc ;;
-    483.xalancbmk) echo xalancbmk ;;
+    483.xalancbmk) echo Xalan ;;
     *) echo "${1#*.}" ;;
   esac
 }
@@ -22,7 +22,7 @@ run_dir_for() {
   local bench=$1
   local mode=$2
   find "$SPEC_ROOT/benchspec/CPU2006/$bench/run" -maxdepth 1 -type d \
-    -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" | sort | tail -n 1
+    -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" 2>/dev/null | sort | tail -n 1
 }
 
 run_state() {
