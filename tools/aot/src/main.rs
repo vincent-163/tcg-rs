@@ -23,24 +23,16 @@ use tcg_core::context::Context;
 use tcg_core::tb::TranslationBlock;
 use tcg_core::temp::TempKind;
 use tcg_core::{Opcode, TempIdx, OPCODE_DEFS};
-use tcg_exec::profile::ProfileData;
+use tcg_exec::profile::{ProfileData, ProfileEntry};
 use tcg_frontend::aarch64::cpu::{
-    LOAD_BIAS_OFFSET as AA64_LB_OFFSET,
-    NUM_XREGS,
-    PC_OFFSET as AA64_PC_OFFSET,
+    LOAD_BIAS_OFFSET as AA64_LB_OFFSET, NUM_XREGS, PC_OFFSET as AA64_PC_OFFSET,
 };
-use tcg_frontend::aarch64::{
-    Aarch64DisasContext, Aarch64Translator,
-};
+use tcg_frontend::aarch64::{Aarch64DisasContext, Aarch64Translator};
 use tcg_frontend::riscv::cpu::{
-    LOAD_BIAS_OFFSET as RV64_LB_OFFSET,
-    NUM_GPRS,
-    PC_OFFSET as RV64_PC_OFFSET,
+    LOAD_BIAS_OFFSET as RV64_LB_OFFSET, NUM_GPRS, PC_OFFSET as RV64_PC_OFFSET,
 };
 use tcg_frontend::riscv::ext::RiscvCfg;
-use tcg_frontend::riscv::{
-    RiscvDisasContext, RiscvTranslator,
-};
+use tcg_frontend::riscv::{RiscvDisasContext, RiscvTranslator};
 use tcg_frontend::translator_loop;
 
 const USAGE: &str = "\
@@ -79,9 +71,7 @@ fn detect_arch(elf_data: &[u8]) -> Arch {
         eprintln!("[aot] ELF too short to read e_machine");
         process::exit(1);
     }
-    let e_machine = u16::from_le_bytes(
-        elf_data[18..20].try_into().unwrap(),
-    );
+    let e_machine = u16::from_le_bytes(elf_data[18..20].try_into().unwrap());
     match e_machine {
         EM_RISCV => Arch::Riscv64,
         EM_AARCH64 => Arch::Aarch64,
@@ -135,25 +125,17 @@ impl Arch {
         match self {
             Arch::Riscv64 => {
                 let cfg = RiscvCfg::default();
-                let mut d = RiscvDisasContext::new(
-                    guest_pc, base, cfg,
-                );
+                let mut d = RiscvDisasContext::new(guest_pc, base, cfg);
                 d.base.max_insns = max_insns;
                 setup_riscv_temps(&mut d, ir);
-                translator_loop::<RiscvTranslator>(
-                    &mut d, ir,
-                );
+                translator_loop::<RiscvTranslator>(&mut d, ir);
                 d.base.pc_next
             }
             Arch::Aarch64 => {
-                let mut d = Aarch64DisasContext::new(
-                    guest_pc, base,
-                );
+                let mut d = Aarch64DisasContext::new(guest_pc, base);
                 d.base.max_insns = max_insns;
                 setup_aarch64_temps(&mut d, ir);
-                translator_loop::<Aarch64Translator>(
-                    &mut d, ir,
-                );
+                translator_loop::<Aarch64Translator>(&mut d, ir);
                 d.base.pc_next
             }
         }
@@ -240,8 +222,8 @@ fn main() {
 
     match mode {
         Mode::Static { elf_path, output } => {
-            let elf_data = std::fs::read(&elf_path)
-                .expect("failed to read ELF");
+            let elf_data =
+                std::fs::read(&elf_path).expect("failed to read ELF");
             let arch = detect_arch(&elf_data);
             eprintln!("[aot] detected arch: {arch:?}");
             run_static(arch, &elf_path, &output);
@@ -251,21 +233,15 @@ fn main() {
             elf_path,
             output,
         } => {
-            run_profile(
-                &profile_path,
-                &elf_path,
-                &output,
-            );
+            run_profile(&profile_path, &elf_path, &output);
         }
     }
 }
 // ── Static mode ──────────────────────────────────────────
 
 fn run_static(arch: Arch, elf_path: &str, output: &str) {
-    let elf_data =
-        std::fs::read(elf_path).expect("failed to read ELF");
-    let (load_vaddr, load_file_offset) =
-        parse_elf_load(&elf_data);
+    let elf_data = std::fs::read(elf_path).expect("failed to read ELF");
+    let (load_vaddr, load_file_offset) = parse_elf_load(&elf_data);
     let entry = parse_elf_entry(&elf_data);
 
     eprintln!(
@@ -281,10 +257,7 @@ fn run_static(arch: Arch, elf_path: &str, output: &str) {
         load_file_offset,
         entry,
     );
-    eprintln!(
-        "[aot] discovered {} TBs via static analysis",
-        offsets.len()
-    );
+    eprintln!("[aot] discovered {} TBs via static analysis", offsets.len());
 
     // In static mode all TBs are exported (no frequency
     // data to distinguish hot/cold).
@@ -313,10 +286,9 @@ fn discover_tbs_static(
     entry: u64,
 ) -> Vec<u64> {
     let base = unsafe {
-        elf_data.as_ptr().offset(
-            load_file_offset as isize
-                - load_vaddr as isize,
-        )
+        elf_data
+            .as_ptr()
+            .offset(load_file_offset as isize - load_vaddr as isize)
     };
     let pc_temp = arch.pc_temp();
     let exec_segs = find_exec_segments(elf_data);
@@ -336,9 +308,9 @@ fn discover_tbs_static(
 
     while let Some(guest_pc) = worklist.pop_front() {
         // Bounds check: must be in an exec segment
-        let in_exec = exec_segs.iter().any(|&(lo, hi)| {
-            guest_pc >= lo && guest_pc < hi
-        });
+        let in_exec = exec_segs
+            .iter()
+            .any(|&(lo, hi)| guest_pc >= lo && guest_pc < hi);
         if !in_exec {
             continue;
         }
@@ -354,8 +326,7 @@ fn discover_tbs_static(
         arch.init_context(&mut ir);
         ir.tb_ptr = 0;
         let max_insns = TranslationBlock::max_insns(0);
-        let pc_next =
-            arch.translate_tb(&mut ir, guest_pc, base, max_insns);
+        let pc_next = arch.translate_tb(&mut ir, guest_pc, base, max_insns);
 
         // Collect goto_tb targets (direct branches)
         let mut targets: HashSet<u64> = HashSet::new();
@@ -374,43 +345,29 @@ fn discover_tbs_static(
 /// Find all executable PT_LOAD segments and return their
 /// (vaddr_lo, vaddr_hi) ranges.
 fn find_exec_segments(data: &[u8]) -> Vec<(u64, u64)> {
-    let e_phoff = u64::from_le_bytes(
-        data[32..40].try_into().unwrap(),
-    ) as usize;
-    let e_phentsize = u16::from_le_bytes(
-        data[54..56].try_into().unwrap(),
-    ) as usize;
-    let e_phnum = u16::from_le_bytes(
-        data[56..58].try_into().unwrap(),
-    ) as usize;
+    let e_phoff = u64::from_le_bytes(data[32..40].try_into().unwrap()) as usize;
+    let e_phentsize =
+        u16::from_le_bytes(data[54..56].try_into().unwrap()) as usize;
+    let e_phnum = u16::from_le_bytes(data[56..58].try_into().unwrap()) as usize;
 
     let mut segs = Vec::new();
     for i in 0..e_phnum {
         let off = e_phoff + i * e_phentsize;
-        let p_type = u32::from_le_bytes(
-            data[off..off + 4].try_into().unwrap(),
-        );
-        let p_flags = u32::from_le_bytes(
-            data[off + 4..off + 8].try_into().unwrap(),
-        );
+        let p_type = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+        let p_flags =
+            u32::from_le_bytes(data[off + 4..off + 8].try_into().unwrap());
         if p_type == 1 && (p_flags & 1) != 0 {
             let p_vaddr = u64::from_le_bytes(
-                data[off + 16..off + 24]
-                    .try_into()
-                    .unwrap(),
+                data[off + 16..off + 24].try_into().unwrap(),
             );
             let p_memsz = u64::from_le_bytes(
-                data[off + 32..off + 40]
-                    .try_into()
-                    .unwrap(),
+                data[off + 32..off + 40].try_into().unwrap(),
             );
             segs.push((p_vaddr, p_vaddr + p_memsz));
         }
     }
     if segs.is_empty() {
-        eprintln!(
-            "[aot] no executable PT_LOAD segment found"
-        );
+        eprintln!("[aot] no executable PT_LOAD segment found");
         process::exit(1);
     }
     segs
@@ -418,28 +375,18 @@ fn find_exec_segments(data: &[u8]) -> Vec<(u64, u64)> {
 
 /// Extract the ELF entry point.
 fn parse_elf_entry(data: &[u8]) -> u64 {
-    u64::from_le_bytes(
-        data[24..32].try_into().unwrap(),
-    )
+    u64::from_le_bytes(data[24..32].try_into().unwrap())
 }
 
 // ── Profile mode ─────────────────────────────────────────
 
-fn run_profile(
-    profile_path: &str,
-    elf_path: &str,
-    output: &str,
-) {
-    let profile =
-        ProfileData::load(Path::new(profile_path))
-            .expect("failed to load profile");
-    let elf_data =
-        std::fs::read(elf_path).expect("failed to read ELF");
+fn run_profile(profile_path: &str, elf_path: &str, output: &str) {
+    let profile = ProfileData::load(Path::new(profile_path))
+        .expect("failed to load profile");
+    let elf_data = std::fs::read(elf_path).expect("failed to read ELF");
     let arch = detect_arch(&elf_data);
-    let (load_vaddr, load_file_offset) =
-        parse_elf_load(&elf_data);
-    let profile_min_exec_count =
-        u64::from(profile.threshold.max(1));
+    let (load_vaddr, load_file_offset) = parse_elf_load(&elf_data);
+    let profile_min_exec_count = u64::from(profile.threshold.max(1));
     let arch_default_min_exec_count = match arch {
         // AArch64 CoreMark favors more aggressive trimming of
         // cold TBs to reduce dispatch and code-size pressure.
@@ -454,21 +401,17 @@ fn run_profile(
         }
         Arch::Riscv64 => profile_min_exec_count,
     };
-    let default_min_exec_count = profile_min_exec_count
-        .max(arch_default_min_exec_count);
-    let min_exec_count = match env::var(
-        "TCG_AOT_MIN_EXEC_COUNT",
-    ) {
+    let default_min_exec_count =
+        profile_min_exec_count.max(arch_default_min_exec_count);
+    let min_exec_count = match env::var("TCG_AOT_MIN_EXEC_COUNT") {
         Ok(s) => {
-            let parsed = s.parse::<u64>().unwrap_or_else(
-                |_| {
-                    eprintln!(
-                        "[aot] invalid \
+            let parsed = s.parse::<u64>().unwrap_or_else(|_| {
+                eprintln!(
+                    "[aot] invalid \
                          TCG_AOT_MIN_EXEC_COUNT={s:?}"
-                    );
-                    process::exit(1);
-                },
-            );
+                );
+                process::exit(1);
+            });
             eprintln!(
                 "[aot] override min_exec_count: \
                  profile={} -> env={}",
@@ -503,8 +446,7 @@ fn run_profile(
         .filter(|e| e.exec_count > min_exec_count)
         .collect();
     eprintln!(
-        "[aot] keeping {} entries with exec_count > {} \
-         (dropped {})",
+        "[aot] keeping {} entries with exec_count > {}          (dropped {})",
         selected_entries.len(),
         min_exec_count,
         profile.entries.len() - selected_entries.len()
@@ -517,30 +459,18 @@ fn run_profile(
         process::exit(1);
     }
 
-    // Determine which TBs to export vs keep internal
-    let export_set: HashSet<u64> = profile
-        .entries
-        .iter()
-        .filter(|e| e.exec_count > min_exec_count)
-        .filter(|e| ProfileData::should_export(e))
-        .map(|e| e.file_offset)
-        .collect();
-
+    let (all_entries, export_count, internal_count) =
+        select_profile_entries(arch, &selected_entries);
     eprintln!(
         "[aot] {} exported, {} internal",
-        export_set.len(),
-        selected_entries.len() - export_set.len()
+        export_count, internal_count
     );
-
-    let all_entries: Vec<(u64, bool)> = selected_entries
-        .iter()
-        .map(|e| {
-            (
-                e.file_offset,
-                export_set.contains(&e.file_offset),
-            )
-        })
-        .collect();
+    if matches!(arch, Arch::Aarch64) && internal_count != 0 {
+        eprintln!(
+            "[aot] AArch64 profile mode compiles exported TBs only;              {} internal TBs fall back to JIT",
+            internal_count
+        );
+    }
 
     compile_aot(
         arch,
@@ -550,6 +480,26 @@ fn run_profile(
         &all_entries,
         output,
     );
+}
+
+fn select_profile_entries(
+    arch: Arch,
+    selected_entries: &[ProfileEntry],
+) -> (Vec<(u64, bool)>, usize, usize) {
+    let export_set: HashSet<u64> = selected_entries
+        .iter()
+        .filter(|e| ProfileData::should_export(e))
+        .map(|e| e.file_offset)
+        .collect();
+    let export_count = export_set.len();
+    let export_only = matches!(arch, Arch::Aarch64);
+    let all_entries: Vec<(u64, bool)> = selected_entries
+        .iter()
+        .filter(|e| !export_only || export_set.contains(&e.file_offset))
+        .map(|e| (e.file_offset, export_set.contains(&e.file_offset)))
+        .collect();
+    let internal_count = selected_entries.len() - export_count;
+    (all_entries, export_count, internal_count)
 }
 
 // ── Shared LLVM compilation ──────────────────────────────
@@ -575,16 +525,12 @@ fn compile_aot(
 
     let llvm_ctx = unsafe { LLVMContextCreate() };
     let module = unsafe {
-        LLVMModuleCreateWithNameInContext(
-            c"tcg_aot".as_ptr(),
-            llvm_ctx,
-        )
+        LLVMModuleCreateWithNameInContext(c"tcg_aot".as_ptr(), llvm_ctx)
     };
 
     let (tm, triple_str) = create_target_machine();
     unsafe {
-        let triple_c =
-            CString::new(triple_str.as_str()).unwrap();
+        let triple_c = CString::new(triple_str.as_str()).unwrap();
         LLVMSetTarget(module, triple_c.as_ptr());
         let td = LLVMCreateTargetDataLayout(tm);
         let dl = LLVMCopyStringRepOfTargetData(td);
@@ -593,24 +539,16 @@ fn compile_aot(
         LLVMDisposeTargetData(td);
 
         let i32t = LLVMInt32TypeInContext(llvm_ctx);
-        let pic_val =
-            LLVMValueAsMetadata(LLVMConstInt(i32t, 2, 0));
-        LLVMAddModuleFlag(
-            module,
-            7,
-            c"PIC Level".as_ptr(),
-            9,
-            pic_val,
-        );
+        let pic_val = LLVMValueAsMetadata(LLVMConstInt(i32t, 2, 0));
+        LLVMAddModuleFlag(module, 7, c"PIC Level".as_ptr(), 9, pic_val);
     }
 
     let pc_temp = arch.pc_temp();
 
     let base = unsafe {
-        elf_data.as_ptr().offset(
-            load_file_offset as isize
-                - load_vaddr as isize,
-        )
+        elf_data
+            .as_ptr()
+            .offset(load_file_offset as isize - load_vaddr as isize)
     };
 
     // Pre-scan: collect all helper function addresses and names used in TBs.
@@ -636,7 +574,9 @@ fn compile_aot(
                 let cargs = op.cargs();
                 // cargs[0] contains the name_id
                 let name_id = cargs[0].0 as u64;
-                if let Some(name) = tcg_core::ir_builder::get_helper_name(name_id) {
+                if let Some(name) =
+                    tcg_core::ir_builder::get_helper_name(name_id)
+                {
                     if !is_embedded_aarch64_helper(arch, name.as_str()) {
                         // Resolve helper by symbol when it is not
                         // provided by embedded AArch64 helper bitcode.
@@ -646,7 +586,10 @@ fn compile_aot(
                             libc::dlsym(libc::RTLD_DEFAULT, c_name.as_ptr())
                         };
                         if func_ptr.is_null() {
-                            eprintln!("[aot] warning: failed to resolve helper: {}", name);
+                            eprintln!(
+                                "[aot] warning: failed to resolve helper: {}",
+                                name
+                            );
                             has_unnamed_helper = true;
                             continue;
                         }
@@ -663,7 +606,8 @@ fn compile_aot(
                         }
                     }
                     // Update or insert with max param count seen
-                    helper_info.entry(name.clone())
+                    helper_info
+                        .entry(name.clone())
                         .and_modify(|count| {
                             *count = (*count).max(num_params);
                         })
@@ -708,7 +652,10 @@ fn compile_aot(
     // Load helper bitcode module and link it
     if arch == Arch::Aarch64 {
         const HELPERS_BC: &[u8] = include_bytes!(env!("HELPERS_BC_PATH"));
-        eprintln!("[aot] linking embedded helper bitcode ({} bytes)", HELPERS_BC.len());
+        eprintln!(
+            "[aot] linking embedded helper bitcode ({} bytes)",
+            HELPERS_BC.len()
+        );
         unsafe {
             let mem_buf = LLVMCreateMemoryBufferWithMemoryRange(
                 HELPERS_BC.as_ptr() as *const i8,
@@ -721,7 +668,8 @@ fn compile_aot(
                 llvm_ctx,
                 mem_buf,
                 &mut helpers_module,
-            ) != 0 {
+            ) != 0
+            {
                 eprintln!("[aot] warning: failed to parse helper bitcode");
             } else {
                 if LLVMLinkModules2(module, helpers_module) != 0 {
@@ -750,20 +698,17 @@ fn compile_aot(
 
         optimize(&mut ir);
 
-        let tb_translator =
-            TbTranslator::new_with_peers(
-                llvm_ctx,
-                &ir,
-                &func_name,
-                &all_va_to_offset,
-                pc_temp,
-            );
+        let tb_translator = TbTranslator::new_with_peers(
+            llvm_ctx,
+            &ir,
+            &func_name,
+            &all_va_to_offset,
+            pc_temp,
+        );
         let tb_module = tb_translator.translate(&ir);
 
         unsafe {
-            let triple_c =
-                CString::new(triple_str.as_str())
-                    .unwrap();
+            let triple_c = CString::new(triple_str.as_str()).unwrap();
             LLVMSetTarget(tb_module, triple_c.as_ptr());
             let td = LLVMCreateTargetDataLayout(tm);
             let dl = LLVMCopyStringRepOfTargetData(td);
@@ -773,20 +718,15 @@ fn compile_aot(
         }
 
         unsafe {
-            let cfunc_name =
-                CString::new(func_name.as_str()).unwrap();
-            let func = LLVMGetNamedFunction(
-                tb_module,
-                cfunc_name.as_ptr(),
-            );
+            let cfunc_name = CString::new(func_name.as_str()).unwrap();
+            let func = LLVMGetNamedFunction(tb_module, cfunc_name.as_ptr());
             if !func.is_null() {
                 LLVMSetLinkage(func, 0);
                 if exported {
                     LLVMSetVisibility(func, 0);
                 }
             }
-            let err =
-                LLVMLinkModules2(module, tb_module);
+            let err = LLVMLinkModules2(module, tb_module);
             if err != 0 {
                 eprintln!(
                     "[aot] warning: failed to link \
@@ -799,22 +739,14 @@ fn compile_aot(
         translated += 1;
     }
 
-    eprintln!(
-        "[aot] translated {translated} TBs",
-    );
+    eprintln!("[aot] translated {translated} TBs",);
 
     // Post-link: set linkage for non-exported TBs
     unsafe {
         for &(offset, exported) in &all_entries {
             if !exported {
-                let name = CString::new(
-                    format!("tb_{offset:x}"),
-                )
-                .unwrap();
-                let func = LLVMGetNamedFunction(
-                    module,
-                    name.as_ptr(),
-                );
+                let name = CString::new(format!("tb_{offset:x}")).unwrap();
+                let func = LLVMGetNamedFunction(module, name.as_ptr());
                 if !func.is_null() {
                     LLVMSetLinkage(func, 8); // Internal linkage
                 }
@@ -823,27 +755,18 @@ fn compile_aot(
     }
 
     // Emit tb_index (exported TBs only)
-    let exported_offsets = collect_exported_offsets(
-        &all_entries,
-    );
+    let exported_offsets = collect_exported_offsets(&all_entries);
     emit_tb_index_pcs(module, llvm_ctx, &exported_offsets);
 
     // Emit aot_dispatch over exported TBs only.
-    emit_aot_dispatch(
-        arch,
-        module,
-        llvm_ctx,
-        &exported_offsets,
-    );
+    emit_aot_dispatch(arch, module, llvm_ctx, &exported_offsets);
 
     // Verify module
     unsafe {
         let mut err_msg: *mut i8 = ptr::null_mut();
-        let rc =
-            LLVMVerifyModule(module, 2, &mut err_msg);
+        let rc = LLVMVerifyModule(module, 2, &mut err_msg);
         if rc != 0 && !err_msg.is_null() {
-            let s = std::ffi::CStr::from_ptr(err_msg)
-                .to_string_lossy();
+            let s = std::ffi::CStr::from_ptr(err_msg).to_string_lossy();
             eprintln!("[aot] verify warning: {s}");
             LLVMDisposeMessage(err_msg);
         }
@@ -851,9 +774,7 @@ fn compile_aot(
 
     // Dump pre-optimization IR only when explicitly requested.
     let dump_ll = matches!(
-        env::var("TCG_AOT_DUMP_LL")
-            .ok()
-            .as_deref(),
+        env::var("TCG_AOT_DUMP_LL").ok().as_deref(),
         Some("1")
             | Some("true")
             | Some("TRUE")
@@ -865,14 +786,9 @@ fn compile_aot(
     if dump_ll {
         let ll_path = format!("{output}.ll");
         unsafe {
-            let c_path = CString::new(ll_path.as_str())
-                .unwrap();
+            let c_path = CString::new(ll_path.as_str()).unwrap();
             let mut err: *mut i8 = ptr::null_mut();
-            LLVMPrintModuleToFile(
-                module,
-                c_path.as_ptr(),
-                &mut err,
-            );
+            LLVMPrintModuleToFile(module, c_path.as_ptr(), &mut err);
             if !err.is_null() {
                 LLVMDisposeMessage(err);
             }
@@ -885,12 +801,10 @@ fn compile_aot(
     unsafe {
         let opts = LLVMCreatePassBuilderOptions();
         let passes = c"default<O3>";
-        let err =
-            LLVMRunPasses(module, passes.as_ptr(), tm, opts);
+        let err = LLVMRunPasses(module, passes.as_ptr(), tm, opts);
         if !err.is_null() {
             let msg = LLVMGetErrorMessage(err);
-            let s = std::ffi::CStr::from_ptr(msg)
-                .to_string_lossy();
+            let s = std::ffi::CStr::from_ptr(msg).to_string_lossy();
             eprintln!("[aot] pass error: {s}");
             LLVMDisposeErrorMessage(msg);
         }
@@ -900,17 +814,13 @@ fn compile_aot(
     // Emit object file
     eprintln!("[aot] emitting {output}...");
     unsafe {
-        let out_path =
-            CString::new(output).unwrap().into_raw();
+        let out_path = CString::new(output).unwrap().into_raw();
         let mut err: *mut i8 = ptr::null_mut();
-        let rc = LLVMTargetMachineEmitToFile(
-            tm, module, out_path, 1, &mut err,
-        );
+        let rc = LLVMTargetMachineEmitToFile(tm, module, out_path, 1, &mut err);
         let _ = CString::from_raw(out_path);
         if rc != 0 {
             if !err.is_null() {
-                let s = std::ffi::CStr::from_ptr(err)
-                    .to_string_lossy();
+                let s = std::ffi::CStr::from_ptr(err).to_string_lossy();
                 eprintln!("[aot] emit error: {s}");
                 LLVMDisposeMessage(err);
             }
@@ -925,72 +835,46 @@ fn compile_aot(
     }
 
     eprintln!("[aot] done: {output}");
-    eprintln!(
-        "[aot] link with: cc -shared -o aot.so {output}"
-    );
+    eprintln!("[aot] link with: cc -shared -o aot.so {output}");
 }
 
 // ── Helpers ──────────────────────────────────────────────
 
 fn parse_elf_load(data: &[u8]) -> (u64, usize) {
-    let e_phoff = u64::from_le_bytes(
-        data[32..40].try_into().unwrap(),
-    ) as usize;
-    let e_phentsize = u16::from_le_bytes(
-        data[54..56].try_into().unwrap(),
-    ) as usize;
-    let e_phnum = u16::from_le_bytes(
-        data[56..58].try_into().unwrap(),
-    ) as usize;
+    let e_phoff = u64::from_le_bytes(data[32..40].try_into().unwrap()) as usize;
+    let e_phentsize =
+        u16::from_le_bytes(data[54..56].try_into().unwrap()) as usize;
+    let e_phnum = u16::from_le_bytes(data[56..58].try_into().unwrap()) as usize;
 
     for i in 0..e_phnum {
         let off = e_phoff + i * e_phentsize;
-        let p_type = u32::from_le_bytes(
-            data[off..off + 4].try_into().unwrap(),
-        );
-        let p_flags = u32::from_le_bytes(
-            data[off + 4..off + 8].try_into().unwrap(),
-        );
+        let p_type = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+        let p_flags =
+            u32::from_le_bytes(data[off + 4..off + 8].try_into().unwrap());
         if p_type == 1 && (p_flags & 1) != 0 {
-            let p_offset = u64::from_le_bytes(
-                data[off + 8..off + 16]
-                    .try_into()
-                    .unwrap(),
-            );
+            let p_offset =
+                u64::from_le_bytes(data[off + 8..off + 16].try_into().unwrap());
             let p_vaddr = u64::from_le_bytes(
-                data[off + 16..off + 24]
-                    .try_into()
-                    .unwrap(),
+                data[off + 16..off + 24].try_into().unwrap(),
             );
             return (p_vaddr, p_offset as usize);
         }
     }
-    eprintln!(
-        "[aot] no executable PT_LOAD segment found"
-    );
+    eprintln!("[aot] no executable PT_LOAD segment found");
     process::exit(1);
 }
 
-fn create_target_machine()
-    -> (LLVMTargetMachineRef, String)
-{
+fn create_target_machine() -> (LLVMTargetMachineRef, String) {
     unsafe {
         let triple = LLVMGetDefaultTargetTriple();
-        let triple_str =
-            std::ffi::CStr::from_ptr(triple)
-                .to_string_lossy()
-                .into_owned();
+        let triple_str = std::ffi::CStr::from_ptr(triple)
+            .to_string_lossy()
+            .into_owned();
         let mut target: LLVMTargetRef = ptr::null_mut();
         let mut err: *mut i8 = ptr::null_mut();
-        if LLVMGetTargetFromTriple(
-            triple,
-            &mut target,
-            &mut err,
-        ) != 0
-        {
+        if LLVMGetTargetFromTriple(triple, &mut target, &mut err) != 0 {
             if !err.is_null() {
-                let s = std::ffi::CStr::from_ptr(err)
-                    .to_string_lossy();
+                let s = std::ffi::CStr::from_ptr(err).to_string_lossy();
                 eprintln!("[aot] target error: {s}");
                 LLVMDisposeMessage(err);
             }
@@ -1023,9 +907,8 @@ fn create_target_machine()
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or(host_cpu);
-        let features_str = env::var("TCG_AOT_FEATURES")
-            .ok()
-            .unwrap_or(host_features);
+        let features_str =
+            env::var("TCG_AOT_FEATURES").ok().unwrap_or(host_features);
         let cpu = CString::new(cpu_str.as_str())
             .expect("target cpu contains interior NUL");
         let features = CString::new(features_str.as_str())
@@ -1053,10 +936,7 @@ fn create_target_machine()
     }
 }
 
-fn setup_riscv_temps(
-    d: &mut RiscvDisasContext,
-    _ir: &Context,
-) {
+fn setup_riscv_temps(d: &mut RiscvDisasContext, _ir: &Context) {
     d.env = TempIdx(0);
     for i in 0..NUM_GPRS {
         d.gpr[i] = TempIdx(1 + i as u32);
@@ -1066,10 +946,7 @@ fn setup_riscv_temps(
     d.load_val = TempIdx(1 + NUM_GPRS as u32 + 2);
 }
 
-fn setup_aarch64_temps(
-    d: &mut Aarch64DisasContext,
-    _ir: &Context,
-) {
+fn setup_aarch64_temps(d: &mut Aarch64DisasContext, _ir: &Context) {
     d.env = TempIdx(0);
     for i in 0..NUM_XREGS {
         d.xregs[i] = TempIdx(1 + i as u32);
@@ -1113,41 +990,27 @@ fn collect_goto_targets(
     }
 }
 
-fn emit_tb_index_pcs(
-    module: LLVMModuleRef,
-    ctx: LLVMContextRef,
-    pcs: &[u64],
-) {
+fn emit_tb_index_pcs(module: LLVMModuleRef, ctx: LLVMContextRef, pcs: &[u64]) {
     unsafe {
         let i64t = LLVMInt64TypeInContext(ctx);
-        let mut vals: Vec<LLVMValueRef> = pcs
-            .iter()
-            .map(|&pc| LLVMConstInt(i64t, pc, 0))
-            .collect();
+        let mut vals: Vec<LLVMValueRef> =
+            pcs.iter().map(|&pc| LLVMConstInt(i64t, pc, 0)).collect();
         // Sentinel: u64::MAX (avoids conflict with
         // TB at file offset 0)
         vals.push(LLVMConstInt(i64t, u64::MAX, 0));
 
-        let arr_ty =
-            LLVMArrayType2(i64t, vals.len() as u64);
-        let arr_val = LLVMConstArray2(
-            i64t,
-            vals.as_ptr(),
-            vals.len() as u64,
-        );
+        let arr_ty = LLVMArrayType2(i64t, vals.len() as u64);
+        let arr_val = LLVMConstArray2(i64t, vals.as_ptr(), vals.len() as u64);
 
         let name = c"tb_index";
-        let global =
-            LLVMAddGlobal(module, arr_ty, name.as_ptr());
+        let global = LLVMAddGlobal(module, arr_ty, name.as_ptr());
         LLVMSetInitializer(global, arr_val);
         LLVMSetGlobalConstant(global, 1);
         LLVMSetLinkage(global, 0);
     }
 }
 
-fn collect_exported_offsets(
-    all_entries: &[(u64, bool)],
-) -> Vec<u64> {
+fn collect_exported_offsets(all_entries: &[(u64, bool)]) -> Vec<u64> {
     all_entries
         .iter()
         .filter(|&&(_, exp)| exp)
@@ -1169,26 +1032,14 @@ fn emit_aot_dispatch(
 
         // Emit TbCacheEntry structure array in BSS
         // Each entry: { u64 guest_pc, void* host_tb_ptr }
-        let entry_type = LLVMStructTypeInContext(
-            ctx,
-            [i64t, ptr].as_mut_ptr(),
-            2,
-            0,
-        );
+        let entry_type =
+            LLVMStructTypeInContext(ctx, [i64t, ptr].as_mut_ptr(), 2, 0);
         for &offset in all_offsets {
-            let entry_name = CString::new(
-                format!("tb_entry_{offset:x}"),
-            )
-            .unwrap();
-            let entry_global = LLVMAddGlobal(
-                module,
-                entry_type,
-                entry_name.as_ptr(),
-            );
-            LLVMSetInitializer(
-                entry_global,
-                LLVMConstNull(entry_type),
-            );
+            let entry_name =
+                CString::new(format!("tb_entry_{offset:x}")).unwrap();
+            let entry_global =
+                LLVMAddGlobal(module, entry_type, entry_name.as_ptr());
+            LLVMSetInitializer(entry_global, LLVMConstNull(entry_type));
             LLVMSetLinkage(entry_global, 8);
         }
 
@@ -1196,97 +1047,42 @@ fn emit_aot_dispatch(
         // cache_ptr points to a pointer (void**) that stores
         // the last dispatched TbCacheEntry*
         let mut params = [ptr, i64t, ptr];
-        let fty = LLVMFunctionType(
-            i64t,
-            params.as_mut_ptr(),
-            3,
-            0,
-        );
+        let fty = LLVMFunctionType(i64t, params.as_mut_ptr(), 3, 0);
 
-        let mut func = LLVMGetNamedFunction(
-            module,
-            c"aot_dispatch".as_ptr(),
-        );
+        let mut func = LLVMGetNamedFunction(module, c"aot_dispatch".as_ptr());
         if func.is_null() {
-            func = LLVMAddFunction(
-                module,
-                c"aot_dispatch".as_ptr(),
-                fty,
-            );
+            func = LLVMAddFunction(module, c"aot_dispatch".as_ptr(), fty);
         }
         LLVMSetLinkage(func, 0);
         LLVMSetVisibility(func, 1);
 
         let builder = LLVMCreateBuilderInContext(ctx);
-        let entry = LLVMAppendBasicBlockInContext(
-            ctx,
-            func,
-            c"entry".as_ptr(),
-        );
+        let entry = LLVMAppendBasicBlockInContext(ctx, func, c"entry".as_ptr());
         LLVMPositionBuilderAtEnd(builder, entry);
 
         let env = LLVMGetParam(func, 0);
         let guest_base = LLVMGetParam(func, 1);
         let cache_ptr = LLVMGetParam(func, 2);
 
-        let pc_off = LLVMConstInt(
-            i64t,
-            arch.pc_offset() as u64,
-            0,
-        );
-        let pc_ptr = LLVMBuildGEP2(
-            builder,
-            i8t,
-            env,
-            [pc_off].as_ptr(),
-            1,
-            E,
-        );
-        let pc_val = LLVMBuildLoad2(
-            builder,
-            i64t,
-            pc_ptr,
-            c"pc".as_ptr(),
-        );
+        let pc_off = LLVMConstInt(i64t, arch.pc_offset() as u64, 0);
+        let pc_ptr = LLVMBuildGEP2(builder, i8t, env, [pc_off].as_ptr(), 1, E);
+        let pc_val = LLVMBuildLoad2(builder, i64t, pc_ptr, c"pc".as_ptr());
 
         // Fast path: atomically load cache
-        let entry_type = LLVMStructTypeInContext(
-            ctx,
-            [i64t, ptr].as_mut_ptr(),
-            2,
-            0,
-        );
-        let cached_entry_ptr = LLVMBuildLoad2(
-            builder,
-            ptr,
-            cache_ptr,
-            c"cached_entry".as_ptr(),
-        );
+        let entry_type =
+            LLVMStructTypeInContext(ctx, [i64t, ptr].as_mut_ptr(), 2, 0);
+        let cached_entry_ptr =
+            LLVMBuildLoad2(builder, ptr, cache_ptr, c"cached_entry".as_ptr());
         LLVMSetOrdering(cached_entry_ptr, 2); // Acquire
         LLVMSetAlignment(cached_entry_ptr, 8);
 
-        let cache_check_bb = LLVMAppendBasicBlockInContext(
-            ctx,
-            func,
-            c"cache_check".as_ptr(),
-        );
-        let slow_path_bb = LLVMAppendBasicBlockInContext(
-            ctx,
-            func,
-            c"slow_path".as_ptr(),
-        );
+        let cache_check_bb =
+            LLVMAppendBasicBlockInContext(ctx, func, c"cache_check".as_ptr());
+        let slow_path_bb =
+            LLVMAppendBasicBlockInContext(ctx, func, c"slow_path".as_ptr());
 
-        let is_null = LLVMBuildIsNull(
-            builder,
-            cached_entry_ptr,
-            E,
-        );
-        LLVMBuildCondBr(
-            builder,
-            is_null,
-            slow_path_bb,
-            cache_check_bb,
-        );
+        let is_null = LLVMBuildIsNull(builder, cached_entry_ptr, E);
+        LLVMBuildCondBr(builder, is_null, slow_path_bb, cache_check_bb);
 
         // Cache check: compare guest PC
         LLVMPositionBuilderAtEnd(builder, cache_check_bb);
@@ -1297,12 +1093,8 @@ fn emit_aot_dispatch(
             0,
             c"pc_ptr".as_ptr(),
         );
-        let cached_pc = LLVMBuildLoad2(
-            builder,
-            i64t,
-            cached_pc_ptr,
-            c"cached_pc".as_ptr(),
-        );
+        let cached_pc =
+            LLVMBuildLoad2(builder, i64t, cached_pc_ptr, c"cached_pc".as_ptr());
         let pc_match = LLVMBuildICmp(
             builder,
             LLVMIntPredicate::LLVMIntEQ,
@@ -1311,17 +1103,9 @@ fn emit_aot_dispatch(
             c"pc_match".as_ptr(),
         );
 
-        let cache_hit_bb = LLVMAppendBasicBlockInContext(
-            ctx,
-            func,
-            c"cache_hit".as_ptr(),
-        );
-        LLVMBuildCondBr(
-            builder,
-            pc_match,
-            cache_hit_bb,
-            slow_path_bb,
-        );
+        let cache_hit_bb =
+            LLVMAppendBasicBlockInContext(ctx, func, c"cache_hit".as_ptr());
+        LLVMBuildCondBr(builder, pc_match, cache_hit_bb, slow_path_bb);
 
         // Cache hit: jump to cached TB
         LLVMPositionBuilderAtEnd(builder, cache_hit_bb);
@@ -1359,25 +1143,10 @@ fn emit_aot_dispatch(
         // Slow path: compute file offset and switch
         LLVMPositionBuilderAtEnd(builder, slow_path_bb);
 
-        let lb_off = LLVMConstInt(
-            i64t,
-            arch.load_bias_offset() as u64,
-            0,
-        );
-        let lb_ptr = LLVMBuildGEP2(
-            builder,
-            i8t,
-            env,
-            [lb_off].as_ptr(),
-            1,
-            E,
-        );
-        let load_bias_val = LLVMBuildLoad2(
-            builder,
-            i64t,
-            lb_ptr,
-            c"load_bias".as_ptr(),
-        );
+        let lb_off = LLVMConstInt(i64t, arch.load_bias_offset() as u64, 0);
+        let lb_ptr = LLVMBuildGEP2(builder, i8t, env, [lb_off].as_ptr(), 1, E);
+        let load_bias_val =
+            LLVMBuildLoad2(builder, i64t, lb_ptr, c"load_bias".as_ptr());
 
         let file_offset_val = LLVMBuildSub(
             builder,
@@ -1386,11 +1155,8 @@ fn emit_aot_dispatch(
             c"file_offset".as_ptr(),
         );
 
-        let miss_bb = LLVMAppendBasicBlockInContext(
-            ctx,
-            func,
-            c"miss".as_ptr(),
-        );
+        let miss_bb =
+            LLVMAppendBasicBlockInContext(ctx, func, c"miss".as_ptr());
 
         let sw = LLVMBuildSwitch(
             builder,
@@ -1401,111 +1167,52 @@ fn emit_aot_dispatch(
 
         // miss block: return TB_EXIT_NOCHAIN
         LLVMPositionBuilderAtEnd(builder, miss_bb);
-        let nochain = LLVMConstInt(
-            i64t,
-            tcg_core::tb::TB_EXIT_NOCHAIN,
-            0,
-        );
+        let nochain = LLVMConstInt(i64t, tcg_core::tb::TB_EXIT_NOCHAIN, 0);
         LLVMBuildRet(builder, nochain);
 
         for &offset in all_offsets {
-            let name = CString::new(
-                format!("tb_{offset:x}"),
-            )
-            .unwrap();
-            let tb_func = LLVMGetNamedFunction(
-                module,
-                name.as_ptr(),
-            );
+            let name = CString::new(format!("tb_{offset:x}")).unwrap();
+            let tb_func = LLVMGetNamedFunction(module, name.as_ptr());
             if tb_func.is_null() {
                 continue;
             }
 
-            let bb_name = CString::new(
-                format!("offset_{offset:x}"),
-            )
-            .unwrap();
-            let bb = LLVMAppendBasicBlockInContext(
-                ctx,
-                func,
-                bb_name.as_ptr(),
-            );
-            LLVMAddCase(
-                sw,
-                LLVMConstInt(i64t, offset, 0),
-                bb,
-            );
+            let bb_name = CString::new(format!("offset_{offset:x}")).unwrap();
+            let bb = LLVMAppendBasicBlockInContext(ctx, func, bb_name.as_ptr());
+            LLVMAddCase(sw, LLVMConstInt(i64t, offset, 0), bb);
 
             LLVMPositionBuilderAtEnd(builder, bb);
 
             // Get TbCacheEntry for this TB
-            let entry_name = CString::new(
-                format!("tb_entry_{offset:x}"),
-            )
-            .unwrap();
-            let entry_global = LLVMGetNamedGlobal(
-                module,
-                entry_name.as_ptr(),
-            );
+            let entry_name =
+                CString::new(format!("tb_entry_{offset:x}")).unwrap();
+            let entry_global = LLVMGetNamedGlobal(module, entry_name.as_ptr());
 
             // 1. Store current guest PC to target TB entry
-            let entry_pc_ptr = LLVMBuildStructGEP2(
-                builder,
-                entry_type,
-                entry_global,
-                0,
-                E,
-            );
-            let pc_store = LLVMBuildStore(
-                builder,
-                pc_val,
-                entry_pc_ptr,
-            );
+            let entry_pc_ptr =
+                LLVMBuildStructGEP2(builder, entry_type, entry_global, 0, E);
+            let pc_store = LLVMBuildStore(builder, pc_val, entry_pc_ptr);
             LLVMSetOrdering(pc_store, 3); // Release
             LLVMSetAlignment(pc_store, 8);
 
             // 2. Store TB function pointer in entry (field 1)
-            let entry_tb_ptr = LLVMBuildStructGEP2(
-                builder,
-                entry_type,
-                entry_global,
-                1,
-                E,
-            );
+            let entry_tb_ptr =
+                LLVMBuildStructGEP2(builder, entry_type, entry_global, 1, E);
             // Cast function to pointer type before storing
-            let tb_func_ptr = LLVMBuildBitCast(
-                builder,
-                tb_func,
-                ptr,
-                E,
-            );
-            let tb_store = LLVMBuildStore(
-                builder,
-                tb_func_ptr,
-                entry_tb_ptr,
-            );
+            let tb_func_ptr = LLVMBuildBitCast(builder, tb_func, ptr, E);
+            let tb_store = LLVMBuildStore(builder, tb_func_ptr, entry_tb_ptr);
             LLVMSetOrdering(tb_store, 3); // Release
             LLVMSetAlignment(tb_store, 8);
 
             // 3. Atomically store target TB entry ptr to cache
-            let cache_store = LLVMBuildStore(
-                builder,
-                entry_global,
-                cache_ptr,
-            );
+            let cache_store = LLVMBuildStore(builder, entry_global, cache_ptr);
             LLVMSetOrdering(cache_store, 3); // Release
             LLVMSetAlignment(cache_store, 8);
 
             // Call TB function with 3 parameters (third is cache_ptr)
             let mut args = [env, guest_base, cache_ptr];
-            let call = LLVMBuildCall2(
-                builder,
-                fty,
-                tb_func,
-                args.as_mut_ptr(),
-                3,
-                E,
-            );
+            let call =
+                LLVMBuildCall2(builder, fty, tb_func, args.as_mut_ptr(), 3, E);
             LLVMSetTailCallKind(call, 2); // MustTail
             LLVMBuildRet(builder, call);
         }
@@ -1520,15 +1227,59 @@ fn emit_aot_dispatch(
 
 #[cfg(test)]
 mod tests {
-    use super::collect_exported_offsets;
+    use super::{collect_exported_offsets, select_profile_entries, Arch};
+    use tcg_exec::profile::ProfileEntry;
 
     #[test]
     fn collect_exported_offsets_only_exports() {
-        let all_entries =
-            vec![(0x10, true), (0x20, false), (0x30, true)];
-        assert_eq!(
-            collect_exported_offsets(&all_entries),
-            vec![0x10, 0x30]
-        );
+        let all_entries = vec![(0x10, true), (0x20, false), (0x30, true)];
+        assert_eq!(collect_exported_offsets(&all_entries), vec![0x10, 0x30]);
+    }
+
+    #[test]
+    fn aarch64_profile_selection_keeps_only_exports() {
+        let selected_entries = vec![
+            ProfileEntry {
+                file_offset: 0x10,
+                exec_count: 100,
+                indirect_target: true,
+            },
+            ProfileEntry {
+                file_offset: 0x20,
+                exec_count: 90,
+                indirect_target: false,
+            },
+            ProfileEntry {
+                file_offset: 0x30,
+                exec_count: 80,
+                indirect_target: true,
+            },
+        ];
+        let (entries, exported, internal) =
+            select_profile_entries(Arch::Aarch64, &selected_entries);
+        assert_eq!(entries, vec![(0x10, true), (0x30, true)]);
+        assert_eq!(exported, 2);
+        assert_eq!(internal, 1);
+    }
+
+    #[test]
+    fn riscv_profile_selection_keeps_internal_tbs() {
+        let selected_entries = vec![
+            ProfileEntry {
+                file_offset: 0x10,
+                exec_count: 100,
+                indirect_target: true,
+            },
+            ProfileEntry {
+                file_offset: 0x20,
+                exec_count: 90,
+                indirect_target: false,
+            },
+        ];
+        let (entries, exported, internal) =
+            select_profile_entries(Arch::Riscv64, &selected_entries);
+        assert_eq!(entries, vec![(0x10, true), (0x20, false)]);
+        assert_eq!(exported, 1);
+        assert_eq!(internal, 1);
     }
 }
