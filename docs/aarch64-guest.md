@@ -108,6 +108,13 @@ source shrc
 bin/runspec --config=aarch64.Ofast.tcgrs.local --size=test --iterations=1 999.specrand
 ```
 
+Or use the tcg-rs wrapper, which sources `shrc` for you before invoking `runspec`:
+
+```bash
+/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/tools/spec/run-runspec-tcgrs.sh \
+  --config=aarch64.Ofast.tcgrs.local --size=test --iterations=1 999.specrand
+```
+
 `999.specrand` is the easiest correctness baseline for this flow.
 
 Before trusting a `runspec` result, spot-check that the active run dir uses the
