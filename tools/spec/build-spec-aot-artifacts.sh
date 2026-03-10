@@ -25,6 +25,7 @@ if [[ -z "$tcg_aot_bin" ]]; then
     fi
     candidates+=(
         "$repo_root/.cargo-target-llvm/release/tcg-aot"
+        "$repo_root/.cargo-target-llvm-unclamped/release/tcg-aot"
         "$repo_root/.cargo-target/release/tcg-aot"
     )
     for candidate in "${candidates[@]}"; do
