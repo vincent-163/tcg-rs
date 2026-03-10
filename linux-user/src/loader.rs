@@ -222,7 +222,7 @@ pub fn load_elf(
 
 /// Build initial stack per Linux ABI.
 fn setup_stack(
-    space: &GuestSpace,
+    space: &mut GuestSpace,
     entry: u64,
     phdr_addr: u64,
     phnum: u16,

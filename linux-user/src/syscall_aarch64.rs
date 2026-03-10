@@ -446,15 +446,14 @@ fn alloc_mmap_top_down(
     mmap_next: &mut u64,
     aligned_len: usize,
 ) -> Option<u64> {
+    const AUTO_MMAP_TOP_GUARD: u64 = crate::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+
     let floor = crate::guest_space::page_align_up(space.brk());
-    let top = crate::guest_space::page_align_down(*mmap_next);
-    if top < floor.saturating_add(aligned_len as u64) {
-        return None;
-    }
-    let guest_addr = top - aligned_len as u64;
-    if guest_addr < floor {
-        return None;
-    }
+    let guest_addr = space.find_free_range_top_down(
+        floor,
+        AUTO_MMAP_TOP_GUARD,
+        aligned_len,
+    )?;
     *mmap_next = guest_addr;
     Some(guest_addr)
 }
@@ -470,16 +469,19 @@ fn do_brk(
     }
 
     if addr >= old {
+        const AUTO_MMAP_TOP_GUARD: u64 = crate::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+
         let new_brk = crate::guest_space::page_align_up(addr);
         let old_aligned = crate::guest_space::page_align_up(old);
-        if new_brk > *mmap_next {
+        if new_brk > AUTO_MMAP_TOP_GUARD {
             return SyscallResult::Continue(old);
         }
         if new_brk > old_aligned {
             let sz = (new_brk - old_aligned) as usize;
-            if space
-                .mmap_fixed(old_aligned, sz, libc::PROT_READ | libc::PROT_WRITE)
-                .is_err()
+            if !space.range_is_free(old_aligned, sz)
+                || space
+                    .mmap_fixed(old_aligned, sz, libc::PROT_READ | libc::PROT_WRITE)
+                    .is_err()
             {
                 return SyscallResult::Continue(old);
             }
@@ -1401,6 +1403,9 @@ mod tests {
         let mut space = GuestSpace::new().expect("guest space");
         space.set_brk(0x2000);
         let mut mmap_next = 0x3000u64;
+        space
+            .mmap_fixed(0x4000, 0x1000, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map conflicting region");
 
         let res = do_brk(&mut space, 0x4800, &mut mmap_next);
         let returned = match res {
@@ -1448,8 +1453,9 @@ mod tests {
             SyscallResult::Continue(v) => v,
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
-        assert_eq!(returned, 0x8000);
-        assert_eq!(mmap_next, 0x8000);
+        const AUTO_TOP_GUARD: u64 = crate::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+        assert_eq!(returned, AUTO_TOP_GUARD - 0x1000);
+        assert_eq!(mmap_next, AUTO_TOP_GUARD - 0x1000);
     }
 
     #[test]
@@ -1485,10 +1491,116 @@ mod tests {
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
 
-        assert_eq!(first, 0x10000);
-        assert_eq!(second, 0xf000);
-        assert_eq!(mmap_next, 0xf000);
+        const AUTO_TOP_GUARD: u64 = crate::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+        assert_eq!(first, AUTO_TOP_GUARD - 0x2000);
+        assert_eq!(second, AUTO_TOP_GUARD - 0x3000);
+        assert_eq!(mmap_next, AUTO_TOP_GUARD - 0x3000);
         assert_eq!(second + 0x1000, first);
+    }
+
+    #[test]
+    fn test_brk_growth_can_reuse_space_after_unmap() {
+        let mut space = GuestSpace::new().expect("guest space");
+        space.set_brk(0x2000);
+        let mut mmap_next = 0x9000u64;
+
+        let first = match do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        let second = match do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(first, 0x8000);
+        assert_eq!(second, 0x7000);
+
+        let unmapped = match do_munmap(&mut space, second, 0x1000) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(unmapped, 0);
+
+        let brk_res = match do_brk(&mut space, 0x6800, &mut mmap_next) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(brk_res, 0x6800);
+        assert_eq!(space.brk(), 0x6800);
+    }
+
+    #[test]
+    fn test_auto_mmap_reuses_freed_top_down_gap() {
+        let mut space = GuestSpace::new().expect("guest space");
+        space.set_brk(0x2000);
+        let mut mmap_next = 0x9000u64;
+
+        let _first = match do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        let second = match do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        let unmapped = match do_munmap(&mut space, second, 0x1000) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+        assert_eq!(unmapped, 0);
+
+        let reused = match do_mmap(
+            &mut space,
+            0,
+            0x1000,
+            libc::PROT_READ as u64,
+            libc::MAP_PRIVATE as u64 | libc::MAP_ANONYMOUS as u64,
+            !0u64,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        assert_eq!(reused, second);
     }
 
     #[test]

@@ -19,7 +19,7 @@ fn test_g2h_h2g_roundtrip() {
 
 #[test]
 fn test_mmap_fixed_and_write() {
-    let space = GuestSpace::new().unwrap();
+    let mut space = GuestSpace::new().unwrap();
     let addr: u64 = 0x10000;
     let size = page_size();
     space

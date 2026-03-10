@@ -5,7 +5,7 @@ const AARCH64_VDSO_BYTES: &[u8] =
     include_bytes!("../vdso/aarch64/linux-vdso.so.1");
 
 pub fn map_guest_vdso(
-    space: &GuestSpace,
+    space: &mut GuestSpace,
     machine: u16,
 ) -> Result<Option<u64>, ElfError> {
     if machine != EM_AARCH64 {
@@ -56,7 +56,7 @@ pub fn map_guest_vdso(
 }
 
 fn map_load_segment(
-    space: &GuestSpace,
+    space: &mut GuestSpace,
     data: &[u8],
     ph: &Elf64Phdr,
     load_bias: u64,
