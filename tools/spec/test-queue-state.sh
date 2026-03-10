@@ -6,6 +6,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 mkdir -p \
+  "$TMPDIR/spec/benchspec/CPU2006/400.perlbench/run/run_base_ref_aarch64.Ofast.tcgrs.testtag.aot.0000" \
   "$TMPDIR/spec/benchspec/CPU2006/458.sjeng/run/run_base_ref_aarch64.Ofast.tcgrs.testtag.jit.0001" \
   "$TMPDIR/artifacts"
 
@@ -59,6 +60,7 @@ source "$ROOT/tools/spec/queue-specint.sh"
 [[ "$(state_for 403.gcc 2)" == "run" ]]
 [[ "$(state_for 458.sjeng 2)" == "compare" ]]
 
+! live_for_bench 400.perlbench
 live_for_bench 458.sjeng
 advance_bench jit 458.sjeng "$TMPDIR/fake.cfg" 2
 

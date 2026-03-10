@@ -44,7 +44,9 @@ is_satisfied() {
 }
 
 live_total() {
-  ps_cmd | rg -c "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg" || true
+  local snapshot
+  snapshot=$(ps_cmd)
+  grep -Ec "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg" <<<"$snapshot" || true
 }
 
 latest_run_dir() {
@@ -59,8 +61,10 @@ live_for_bench() {
   local mode
   local dir
   local run_name
+  local snapshot
 
-  if ps_cmd | rg -q "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg.* ${bench}( |$)"; then
+  snapshot=$(ps_cmd)
+  if grep -Eq "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg.* ${bench}( |$)" <<<"$snapshot"; then
     return 0
   fi
 
@@ -70,7 +74,7 @@ live_for_bench() {
       continue
     fi
     run_name=$(basename "$dir")
-    if ps_cmd | rg -Fq -- "$dir" || ps_cmd | rg -Fq -- "$run_name"; then
+    if grep -Fq -- "$dir" <<<"$snapshot" || grep -Fq -- "$run_name" <<<"$snapshot"; then
       return 0
     fi
   done
