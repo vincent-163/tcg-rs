@@ -84,7 +84,7 @@ impl GuestSpace {
         guest_addr.saturating_add(size as u64)
     }
 
-    fn remove_mapped_range(&mut self, guest_addr: u64, size: usize) {
+    pub(crate) fn remove_mapped_range(&mut self, guest_addr: u64, size: usize) {
         let end = Self::range_end(guest_addr, size);
         let overlaps: Vec<(u64, u64)> = self
             .mapped
@@ -109,7 +109,7 @@ impl GuestSpace {
         }
     }
 
-    fn insert_mapped_range(&mut self, guest_addr: u64, size: usize) {
+    pub(crate) fn insert_mapped_range(&mut self, guest_addr: u64, size: usize) {
         if size == 0 {
             return;
         }

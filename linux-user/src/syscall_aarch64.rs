@@ -610,6 +610,9 @@ fn do_mremap(
         guest_result_addr = space.h2g(host_ret as *const u8);
     }
 
+    space.remove_mapped_range(old_addr, old_len);
+    space.insert_mapped_range(guest_result_addr, new_len);
+
     SyscallResult::Continue(guest_result_addr)
 }
 
@@ -1633,8 +1636,9 @@ mod tests {
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
 
-        assert_eq!(new_addr, 0x9000);
-        assert_eq!(mmap_next, 0x9000);
+        const AUTO_TOP_GUARD: u64 = crate::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+        assert_eq!(new_addr, AUTO_TOP_GUARD - 0x2000);
+        assert_eq!(mmap_next, AUTO_TOP_GUARD - 0x2000);
         assert_eq!(unsafe { space.read_u64(new_addr) }, 0x1122_3344_5566_7788);
     }
 
@@ -1660,6 +1664,52 @@ mod tests {
             .mmap_fixed(guest_addr, 4096, libc::PROT_READ | libc::PROT_WRITE)
             .expect("remap guest region");
         assert_eq!(unsafe { space.read_u64(guest_addr) }, 0);
+    }
+
+    #[test]
+    fn test_mremap_maymove_updates_tracking_for_followup_growth() {
+        let mut space = GuestSpace::new().expect("guest space");
+        let old_addr = 0x60000u64;
+        let old_len = 0x2000u64;
+        let new_len = 0x4000u64;
+        let newer_len = 0x5000u64;
+        let mut mmap_next = 0x70000u64;
+
+        space
+            .mmap_fixed(old_addr, old_len as usize, libc::PROT_READ | libc::PROT_WRITE)
+            .expect("map old region");
+        unsafe {
+            space.write_u64(old_addr, 0x1122_3344_5566_7788);
+        }
+
+        let first_addr = match do_mremap(
+            &mut space,
+            old_addr,
+            old_len,
+            new_len,
+            1,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        let second_addr = match do_mremap(
+            &mut space,
+            first_addr,
+            new_len,
+            newer_len,
+            1,
+            0,
+            &mut mmap_next,
+        ) {
+            SyscallResult::Continue(v) => v,
+            SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
+        };
+
+        assert!(second_addr + newer_len <= first_addr || second_addr >= first_addr + new_len);
+        assert_eq!(unsafe { space.read_u64(second_addr) }, 0x1122_3344_5566_7788);
     }
 
     #[test]
@@ -1692,8 +1742,9 @@ mod tests {
             SyscallResult::Exit(code) => panic!("unexpected exit: {code}"),
         };
 
-        assert_eq!(new_addr, 0x6c000);
-        assert_eq!(mmap_next, 0x6c000);
+        const AUTO_TOP_GUARD: u64 = crate::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+        assert_eq!(new_addr, AUTO_TOP_GUARD - 0x4000);
+        assert_eq!(mmap_next, AUTO_TOP_GUARD - 0x4000);
 
         let host = space.g2h(new_addr);
         let mapped = unsafe { std::slice::from_raw_parts(host, payload.len()) };
