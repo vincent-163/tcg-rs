@@ -11,7 +11,7 @@ LOG_DIR=${LOG_DIR:-$WORKTREE/spec-logs}
 SPECINT_STATUS=${SPECINT_STATUS:-$WORKTREE/tools/spec/specint-status.sh}
 RERUN_COMPARE=${RERUN_COMPARE:-$WORKTREE/tools/spec/rerun-compare.sh}
 RUN_RUNSPEC=${RUN_RUNSPEC:-$WORKTREE/tools/spec/run-runspec-tcgrs.sh}
-MAX_LIVE=${MAX_LIVE:-4}
+MAX_LIVE=${MAX_LIVE:-1}
 SLEEP_SECS=${SLEEP_SECS:-20}
 WAIT_SLEEP_SECS=${WAIT_SLEEP_SECS:-60}
 

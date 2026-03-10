@@ -54,8 +54,10 @@ export SPEC_ROOT="$TMPDIR/spec"
 export TAG=testtag
 export ARTIFACT_DIR="$TMPDIR/artifacts"
 export PS_CMD_FILE="$TMPDIR/ps.txt"
+unset MAX_LIVE
 source "$ROOT/tools/spec/queue-specint.sh"
 
+[[ "$MAX_LIVE" == "1" ]]
 [[ "$(state_for 400.perlbench 2)" == "ok" ]]
 [[ "$(state_for 403.gcc 2)" == "run" ]]
 [[ "$(state_for 458.sjeng 2)" == "compare" ]]
