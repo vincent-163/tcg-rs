@@ -5121,6 +5121,18 @@ pub unsafe extern "C" fn helper_vfmin32(a: u64, b: u64) -> u64 {
     let b1 = f32::from_bits((b >> 32) as u32);
     a0.min(b0).to_bits() as u64 | ((a1.min(b1).to_bits() as u64) << 32)
 }
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfmaxnm32(a: u64, b: u64) -> u64 {
+    let lo = helper_fmaxnm32(a, b);
+    let hi = helper_fmaxnm32(a >> 32, b >> 32);
+    lo | (hi << 32)
+}
+#[no_mangle]
+pub unsafe extern "C" fn helper_vfminnm32(a: u64, b: u64) -> u64 {
+    let lo = helper_fminnm32(a, b);
+    let hi = helper_fminnm32(a >> 32, b >> 32);
+    lo | (hi << 32)
+}
 /// Vector FP: fcmeq (==) 2x f32: each lane: all-ones if equal, else 0
 #[no_mangle]
 pub unsafe extern "C" fn helper_vfcmeq32(a: u64, b: u64) -> u64 {
@@ -6420,18 +6432,22 @@ impl Aarch64DisasContext {
         let rn = ((insn >> 5) & 0x1f) as usize;
         let rd = (insn & 0x1f) as usize;
 
+        let fp_variant = (insn >> 23) & 1;
+
         if sz == 0 {
             // f32 — use vf*32 helpers that process 2x f32 per 64-bit half
-            let helper_name: Option<&str> = match (u, opcode) {
-                (0, 0b11010) => Some("helper_vfadd32"), // FADD
-                (0, 0b11101) => Some("helper_vfsub32"), // FSUB
-                (0, 0b11011) | (1, 0b11011) => Some("helper_vfmul32"), // FMUL/FMULX
-                (1, 0b11111) => Some("helper_vfdiv32"), // FDIV
-                (0, 0b11110) | (1, 0b11110) => Some("helper_vfmax32"), // FMAX/FMAXNM
-                (0, 0b11000) | (1, 0b11000) => Some("helper_vfmin32"), // FMIN/FMINNM
-                (0, 0b11100) => Some("helper_vfcmeq32"), // FCMEQ
-                (1, 0b11100) => Some("helper_vfcmge32"), // FCMGE
-                (1, 0b11101) => Some("helper_vfcmgt32"), // FCMGT
+            let helper_name: Option<&str> = match (u, opcode, fp_variant) {
+                (0, 0b11010, 0) => Some("helper_vfadd32"), // FADD
+                (0, 0b11010, 1) => Some("helper_vfsub32"), // FSUB
+                (0, 0b11011, _) | (1, 0b11011, _) => Some("helper_vfmul32"), // FMUL/FMULX
+                (1, 0b11111, 0) => Some("helper_vfdiv32"), // FDIV
+                (0, 0b11110, 0) => Some("helper_vfmax32"), // FMAX
+                (0, 0b11110, 1) => Some("helper_vfmin32"), // FMIN
+                (0, 0b11000, 0) => Some("helper_vfmaxnm32"), // FMAXNM
+                (0, 0b11000, 1) => Some("helper_vfminnm32"), // FMINNM
+                (0, 0b11100, 0) => Some("helper_vfcmeq32"), // FCMEQ
+                (1, 0b11100, 0) => Some("helper_vfcmge32"), // FCMGE
+                (1, 0b11100, 1) => Some("helper_vfcmgt32"), // FCMGT
                 _ => None,
             };
             if let Some(h) = helper_name {
@@ -6506,8 +6522,8 @@ impl Aarch64DisasContext {
         } else {
             // f64 — sz=1, only .2D (Q=1) or .1D (Q=0)
             // Process each 64-bit lane as a scalar f64 op
-            match (u, opcode) {
-                (0, 0b11010) => { // FADD
+            match (u, opcode, fp_variant) {
+                (0, 0b11010, 0) => { // FADD
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let d_lo = ir.new_temp(Type::I64);
@@ -6524,7 +6540,7 @@ impl Aarch64DisasContext {
                     }
                     return true;
                 }
-                (0, 0b11101) => { // FSUB
+                (0, 0b11010, 1) => { // FSUB
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let d_lo = ir.new_temp(Type::I64);
@@ -6541,7 +6557,7 @@ impl Aarch64DisasContext {
                     }
                     return true;
                 }
-                (0, 0b11011) | (1, 0b11011) => { // FMUL/FMULX
+                (0, 0b11011, _) | (1, 0b11011, _) => { // FMUL/FMULX
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let d_lo = ir.new_temp(Type::I64);
@@ -6558,7 +6574,7 @@ impl Aarch64DisasContext {
                     }
                     return true;
                 }
-                (1, 0b11111) => { // FDIV
+                (1, 0b11111, 0) => { // FDIV
                     let n_lo = self.read_vreg_lo(ir, rn);
                     let m_lo = self.read_vreg_lo(ir, rm);
                     let d_lo = ir.new_temp(Type::I64);
@@ -6569,6 +6585,74 @@ impl Aarch64DisasContext {
                         let m_hi = self.read_vreg_hi(ir, rm);
                         let d_hi = ir.new_temp(Type::I64);
                         gen_helper_call!(ir, d_hi, helper_fdiv64, [n_hi, m_hi]);
+                        self.write_vreg_hi(ir, rd, d_hi);
+                    } else {
+                        self.clear_vreg_hi(ir, rd);
+                    }
+                    return true;
+                }
+                (0, 0b11110, 0) => { // FMAX
+                    let n_lo = self.read_vreg_lo(ir, rn);
+                    let m_lo = self.read_vreg_lo(ir, rm);
+                    let d_lo = ir.new_temp(Type::I64);
+                    gen_helper_call!(ir, d_lo, helper_fmax64, [n_lo, m_lo]);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    if q != 0 {
+                        let n_hi = self.read_vreg_hi(ir, rn);
+                        let m_hi = self.read_vreg_hi(ir, rm);
+                        let d_hi = ir.new_temp(Type::I64);
+                        gen_helper_call!(ir, d_hi, helper_fmax64, [n_hi, m_hi]);
+                        self.write_vreg_hi(ir, rd, d_hi);
+                    } else {
+                        self.clear_vreg_hi(ir, rd);
+                    }
+                    return true;
+                }
+                (0, 0b11110, 1) => { // FMIN
+                    let n_lo = self.read_vreg_lo(ir, rn);
+                    let m_lo = self.read_vreg_lo(ir, rm);
+                    let d_lo = ir.new_temp(Type::I64);
+                    gen_helper_call!(ir, d_lo, helper_fmin64, [n_lo, m_lo]);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    if q != 0 {
+                        let n_hi = self.read_vreg_hi(ir, rn);
+                        let m_hi = self.read_vreg_hi(ir, rm);
+                        let d_hi = ir.new_temp(Type::I64);
+                        gen_helper_call!(ir, d_hi, helper_fmin64, [n_hi, m_hi]);
+                        self.write_vreg_hi(ir, rd, d_hi);
+                    } else {
+                        self.clear_vreg_hi(ir, rd);
+                    }
+                    return true;
+                }
+                (0, 0b11000, 0) => { // FMAXNM
+                    let n_lo = self.read_vreg_lo(ir, rn);
+                    let m_lo = self.read_vreg_lo(ir, rm);
+                    let d_lo = ir.new_temp(Type::I64);
+                    gen_helper_call!(ir, d_lo, helper_fmaxnm64, [n_lo, m_lo]);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    if q != 0 {
+                        let n_hi = self.read_vreg_hi(ir, rn);
+                        let m_hi = self.read_vreg_hi(ir, rm);
+                        let d_hi = ir.new_temp(Type::I64);
+                        gen_helper_call!(ir, d_hi, helper_fmaxnm64, [n_hi, m_hi]);
+                        self.write_vreg_hi(ir, rd, d_hi);
+                    } else {
+                        self.clear_vreg_hi(ir, rd);
+                    }
+                    return true;
+                }
+                (0, 0b11000, 1) => { // FMINNM
+                    let n_lo = self.read_vreg_lo(ir, rn);
+                    let m_lo = self.read_vreg_lo(ir, rm);
+                    let d_lo = ir.new_temp(Type::I64);
+                    gen_helper_call!(ir, d_lo, helper_fminnm64, [n_lo, m_lo]);
+                    self.write_vreg_lo(ir, rd, d_lo);
+                    if q != 0 {
+                        let n_hi = self.read_vreg_hi(ir, rn);
+                        let m_hi = self.read_vreg_hi(ir, rm);
+                        let d_hi = ir.new_temp(Type::I64);
+                        gen_helper_call!(ir, d_hi, helper_fminnm64, [n_hi, m_hi]);
                         self.write_vreg_hi(ir, rd, d_hi);
                     } else {
                         self.clear_vreg_hi(ir, rd);

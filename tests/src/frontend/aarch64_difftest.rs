@@ -1976,6 +1976,62 @@ fn a64_difftest_csel() {
 }
 
 #[test]
+fn a64_difftest_csel_w_alias_rn_ge() {
+    let cmp_w6_w5 = a64_subs_r(0, 31, 6, 5);
+    let csel_w7_w7_w0_ge = a64_csel(0, 7, 7, 0, 0b1010);
+
+    difftest_sequence(
+        "csel_w_alias_rn_ge_true",
+        &[
+            (0, 0xffff_ffff_0000_0007),
+            (7, 0xffff_ffff_0000_0005),
+            (5, 10),
+            (6, 10),
+        ],
+        &[cmp_w6_w5, csel_w7_w7_w0_ge],
+        "    cmp w6, w5\n    csel w7, w7, w0, ge\n",
+        &[7],
+        false,
+    );
+
+    difftest_sequence(
+        "csel_w_alias_rn_ge_false",
+        &[
+            (0, 0xffff_ffff_0000_0007),
+            (7, 0xffff_ffff_0000_0005),
+            (5, 11),
+            (6, 10),
+        ],
+        &[cmp_w6_w5, csel_w7_w7_w0_ge],
+        "    cmp w6, w5\n    csel w7, w7, w0, ge\n",
+        &[7],
+        false,
+    );
+}
+
+
+#[test]
+fn a64_difftest_csel_flag_liveness_across_add() {
+    let cmp_w6_w5 = a64_subs_r(0, 31, 6, 5);
+    let csel_w7_w7_w0_ge = a64_csel(0, 7, 7, 0, 0b1010);
+    let csel_w1_w1_w2_ge = a64_csel(0, 1, 1, 2, 0b1010);
+    let add_x0_1 = 0x9100_0400u32; // add x0, x0, #1
+
+    difftest_sequence(
+        "csel_flag_liveness_across_add_false",
+        &[(0, 7), (1, 100), (2, 200), (5, 11), (6, 10), (7, 5)],
+        &[cmp_w6_w5, csel_w7_w7_w0_ge, add_x0_1, csel_w1_w1_w2_ge],
+        "    cmp w6, w5
+    csel w7, w7, w0, ge
+    add x0, x0, #1
+    csel w1, w1, w2, ge
+",
+        &[1, 7],
+        false,
+    );
+}
+
+#[test]
 fn a64_difftest_csinc() {
     let subs_cmp = a64_subs_r(1, 31, 1, 2);
     // CSINC x0, x5, x6, EQ → eq: x5, ne: x6+1
@@ -2361,6 +2417,42 @@ fn a64_difftest_bhi_equal_not_taken() {
     assert_eq!(cpu.xregs[1], 0x942000);
 }
 
+
+#[test]
+fn a64_difftest_fcsel_d_mi_after_fcmpe_s_runtime() {
+    // Hot compute_surrounding_moyo_sizes pattern:
+    //   fcmpe s0, s5
+    //   fcvt d0, s0
+    //   fcsel d0, d0, d4, mi
+    //   fmov x0, d0
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x0000_0000_3f00_0000, 0),
+            (4, 0x3ff0_0000_0000_0000, 0),
+            (5, 0x0000_0000_3f80_0000, 0),
+        ],
+        &[0x1e25_2010, 0x1e22_c000, 0x1e64_4c00, 0x9e66_0000],
+    );
+    assert_eq!(cpu.xregs[0], 0x3fe0_0000_0000_0000);
+    assert_eq!(cpu.pc, 16);
+}
+
+#[test]
+fn a64_difftest_fcsel_d_mi_after_fcmpe_s_false_runtime() {
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x0000_0000_4000_0000, 0),
+            (4, 0x3ff0_0000_0000_0000, 0),
+            (5, 0x0000_0000_3f80_0000, 0),
+        ],
+        &[0x1e25_2010, 0x1e22_c000, 0x1e64_4c00, 0x9e66_0000],
+    );
+    assert_eq!(cpu.xregs[0], 0x3ff0_0000_0000_0000);
+    assert_eq!(cpu.pc, 16);
+}
+
 #[test]
 fn a64_difftest_fcvtzs_w_s_fixedpoint_scale12() {
     // fcvtzs w0, s1, #12
@@ -2607,6 +2699,24 @@ fn a64_difftest_ldr_w_literal_zero_ext() {
     );
 }
 
+
+#[test]
+fn a64_difftest_ldr_x_post_index_neg16_runtime() {
+    // 0xf85f0401: ldr x1, [x0], #-16
+    let mut bytes = Vec::new();
+    for (i, b) in 0x1122_3344_5566_7788u64.to_le_bytes().iter().enumerate() {
+        bytes.push((0x200usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(0, 0x200)],
+        &[0xf85f_0401],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[1], 0x1122_3344_5566_7788);
+    assert_eq!(cpu.xregs[0], 0x1f0);
+    assert_eq!(cpu.pc, 4);
+}
+
 #[test]
 fn a64_difftest_ldp_w_zero_ext() {
     // LDP W, W must use unsigned 32-bit loads for both lanes.
@@ -2775,7 +2885,7 @@ fn a64_difftest_ldp_w_hotspot_runtime() {
         &[0x294b_9263],
         &bytes,
     );
-    assert_eq!(cpu.xregs[3], 0x8000_0001);
+    assert_eq!(cpu.xregs[7], 0x8000_0001);
     assert_eq!(cpu.xregs[4], 0xffff_ffff);
     assert_eq!(cpu.pc, 4);
 }
@@ -2893,6 +3003,128 @@ fn a64_difftest_ldrh_w_uxtw_hotspot_runtime() {
     assert_eq!(cpu.pc, 4);
 }
 
+
+
+#[test]
+fn a64_difftest_ldrsb_w_uimm4_runtime() {
+    // Hot find_persistent_reading_cache_entry pattern:
+    // 0x39c01042: ldrsb w2, [x2, #4]
+    let mut bytes = Vec::new();
+    bytes.push((0x204usize, 0x80));
+    let cpu = run_tcgrs_with_guest_mem(&[(2, 0x200)], &[0x39c0_1042], &bytes);
+    assert_eq!(cpu.xregs[2], 0x0000_0000_ffff_ff80);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrsb_w_regoffset_runtime() {
+    // Hot find_persistent_reading_cache_entry pattern:
+    // 0x38f56a62: ldrsb w2, [x19, x21]
+    let mut bytes = Vec::new();
+    bytes.push((0x206usize, 0x81));
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(19, 0x200), (21, 6)],
+        &[0x38f5_6a62],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[2], 0x0000_0000_ffff_ff81);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldur_w_neg4_runtime() {
+    // Hot find_persistent_reading_cache_entry pattern:
+    // 0xb85fc262: ldur w2, [x19, #-4]
+    let mut bytes = Vec::new();
+    for (i, b) in 0x89ab_cdefu32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x1fcusize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(&[(19, 0x200)], &[0xb85f_c262], &bytes);
+    assert_eq!(cpu.xregs[2], 0x0000_0000_89ab_cdef);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrsh_w_regoffset_alias_index_runtime() {
+    // Hot gobmk/do_dfa_matchpat pattern:
+    // 0x78e06920: ldrsh w0, [x9, x0]
+    let mut bytes = Vec::new();
+    for (i, b) in (0xff80u16).to_le_bytes().iter().enumerate() {
+        bytes.push((0x204usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(9, 0x200), (0, 4)],
+        &[0x78e0_6920],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[0], 0x0000_0000_ffff_ff80);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_do_dfa_matchpat_csneg_csel_runtime() {
+    let negs_w9_w0 = 0x6b00_03e9u32;
+    let and_w2_w0_7 = 0x1200_0802u32;
+    let and_w9_w9_7 = 0x1200_0929u32;
+    let add_w6_w0_7 = 0x1100_1c06u32;
+    let csneg_w10_w2_w9_mi = 0x5a89_444au32;
+    let cmp_w0_0 = 0x7100_001fu32;
+    let csel_w6_w6_w0_lt = a64_csel(0, 6, 6, 0, 0b1011);
+    let asr_w6_3 = 0x1303_7cc6u32;
+
+    difftest_sequence(
+        "do_dfa_matchpat_csneg_csel_neg",
+        &[(0, 0xffff_ffff_ffff_fffb)],
+        &[
+            negs_w9_w0,
+            and_w2_w0_7,
+            and_w9_w9_7,
+            add_w6_w0_7,
+            csneg_w10_w2_w9_mi,
+            cmp_w0_0,
+            csel_w6_w6_w0_lt,
+            asr_w6_3,
+        ],
+        "    negs w9, w0
+    and w2, w0, #0x7
+    and w9, w9, #0x7
+    add w6, w0, #0x7
+    csneg w10, w2, w9, mi
+    cmp w0, #0
+    csel w6, w6, w0, lt
+    asr w6, w6, #3
+",
+        &[6, 9, 10],
+        true,
+    );
+
+    difftest_sequence(
+        "do_dfa_matchpat_csneg_csel_pos",
+        &[(0, 5)],
+        &[
+            negs_w9_w0,
+            and_w2_w0_7,
+            and_w9_w9_7,
+            add_w6_w0_7,
+            csneg_w10_w2_w9_mi,
+            cmp_w0_0,
+            csel_w6_w6_w0_lt,
+            asr_w6_3,
+        ],
+        "    negs w9, w0
+    and w2, w0, #0x7
+    and w9, w9, #0x7
+    add w6, w0, #0x7
+    csneg w10, w2, w9, mi
+    cmp w0, #0
+    csel w6, w6, w0, lt
+    asr w6, w6, #3
+",
+        &[6, 9, 10],
+        true,
+    );
+}
+
 #[test]
 fn a64_difftest_cmp_uxtb_then_csel_mi_hotspot() {
     // 0x6b20017f: cmp  w11, w0, uxtb
@@ -2919,6 +3151,136 @@ fn a64_difftest_cmp_uxtb_then_csel_mi_hotspot_not_taken() {
         &[0],
         true,
     );
+}
+
+
+
+
+#[test]
+fn a64_difftest_ldrsw_x_post_index_pos4_runtime() {
+    // Hot do_atari_atari pattern:
+    // 0xb8804401: ldrsw x1, [x0], #4
+    let mut bytes = Vec::new();
+    for (i, b) in 0x8000_0001u32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x200usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(&[(0, 0x200)], &[0xb880_4401], &bytes);
+    assert_eq!(cpu.xregs[1], 0xffff_ffff_8000_0001);
+    assert_eq!(cpu.xregs[0], 0x204);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrsw_x_post_index_pos4_alias_base_runtime() {
+    // Same form with a different base/dest pair from do_atari_atari:
+    // 0xb8804482: ldrsw x2, [x4], #4
+    let mut bytes = Vec::new();
+    for (i, b) in 0x7fff_fffeu32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x300usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(&[(4, 0x300)], &[0xb880_4482], &bytes);
+    assert_eq!(cpu.xregs[2], 0x7fff_fffe);
+    assert_eq!(cpu.xregs[4], 0x304);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrsw_x_w_sxtw_indexed_hotspot_runtime() {
+    // 0xb8a0db20: ldrsw x0, [x25, w0, sxtw #2]
+    let mut bytes = Vec::new();
+    for (i, b) in 0x7fff_fffeu32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x1fcusize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(25, 0x200), (0, 0xffff_ffff)],
+        &[0xb8a0_db20],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[0], 0x7fff_fffe);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldrsw_x_lsl_indexed_hotspot_runtime() {
+    // 0xb8a07aa2: ldrsw x2, [x21, x0, lsl #2]
+    let mut bytes = Vec::new();
+    for (i, b) in 0x8000_0001u32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x204usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(21, 0x200), (0, 1)],
+        &[0xb8a0_7aa2],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[2], 0xffff_ffff_8000_0001);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_ldr_w_x_lsl_indexed_hotspot_runtime() {
+    // 0xb8627b82: ldr w2, [x28, x2, lsl #2]
+    let mut bytes = Vec::new();
+    for (i, b) in 0xcafe_babeu32.to_le_bytes().iter().enumerate() {
+        bytes.push((0x304usize + i, *b));
+    }
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(28, 0x300), (2, 1)],
+        &[0xb862_7b82],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[2], 0xcafe_babe);
+    assert_eq!(cpu.pc, 4);
+}
+
+
+#[test]
+fn a64_difftest_compute_connection_distances_hotspot_runtime() {
+    let ldrsw_x2_x21_x0_lsl2 = 0xb8a0_7aa2u32;
+    let ldr_w2_x28_x2_lsl2 = 0xb862_7b82u32;
+    let cmp_w2_w1 = 0x6b01_005fu32;
+    let csel_w7_w7_w0_ge = a64_csel(0, 7, 7, 0, 0b1010);
+    let add_x0_1 = 0x9100_0400u32;
+    let csel_w1_w1_w2_ge = a64_csel(0, 1, 1, 2, 0b1010);
+
+    let mut bytes = Vec::new();
+    for (i, word) in [2u32, 0u32, 1u32].iter().enumerate() {
+        for (j, b) in word.to_le_bytes().iter().enumerate() {
+            bytes.push((0x200usize + i * 4 + j, *b));
+        }
+    }
+    for (i, word) in [50u32, 20u32, 30u32].iter().enumerate() {
+        for (j, b) in word.to_le_bytes().iter().enumerate() {
+            bytes.push((0x300usize + i * 4 + j, *b));
+        }
+    }
+
+    let cpu = run_tcgrs_with_guest_mem(
+        &[(0, 0), (1, 1000), (7, u64::MAX), (21, 0x200), (28, 0x300)],
+        &[
+            ldrsw_x2_x21_x0_lsl2,
+            ldr_w2_x28_x2_lsl2,
+            cmp_w2_w1,
+            csel_w7_w7_w0_ge,
+            add_x0_1,
+            csel_w1_w1_w2_ge,
+            ldrsw_x2_x21_x0_lsl2,
+            ldr_w2_x28_x2_lsl2,
+            cmp_w2_w1,
+            csel_w7_w7_w0_ge,
+            add_x0_1,
+            csel_w1_w1_w2_ge,
+            ldrsw_x2_x21_x0_lsl2,
+            ldr_w2_x28_x2_lsl2,
+            cmp_w2_w1,
+            csel_w7_w7_w0_ge,
+            add_x0_1,
+            csel_w1_w1_w2_ge,
+        ],
+        &bytes,
+    );
+    assert_eq!(cpu.xregs[1], 20);
+    assert_eq!(cpu.xregs[7], 2);
+    assert_eq!(cpu.xregs[0], 3);
 }
 
 #[test]
@@ -3071,6 +3433,100 @@ fn a64_difftest_cmeq_v0_4s_zero_runtime() {
     assert_eq!(cpu.vregs[0], 0x0000_0000_ffff_ffff);
     assert_eq!(cpu.vregs[1], 0xffff_ffff_0000_0000);
     assert_eq!(cpu.pc, 4);
+}
+
+
+#[test]
+fn a64_difftest_mvni_v17_4s_all_ones_runtime() {
+    // 0x6f000411: mvni v17.4s, #0
+    let cpu = run_tcgrs_with_state(&[], &[], &[0x6f00_0411]);
+    assert_eq!(cpu.vregs[17 * 2], u64::MAX);
+    assert_eq!(cpu.vregs[17 * 2 + 1], u64::MAX);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_fsub_v0_2s_runtime() {
+    // Gobmk blunder filter hotspot in find_best_move:
+    //   dup v8.2s, v8.s[0]
+    //   fsub v0.2s, v0.2s, v8.2s
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x41a3_ae14_41a3_ae14, 0),
+            (8, 0x0000_0000_40e0_0000, 0),
+        ],
+        &[0x0e04_0508, 0x0ea8_d400],
+    );
+    assert_eq!(cpu.vregs[0], 0x4157_5c28_4157_5c28);
+    assert_eq!(cpu.vregs[1], 0);
+    assert_eq!(cpu.pc, 8);
+}
+
+#[test]
+fn a64_difftest_fsub_v0_2d_runtime() {
+    // The same FP three-same pairing bug affects .2d as well.
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x4034_75c2_8f5c_28f6, 0x4034_75c2_8f5c_28f6),
+            (8, 0x401c_0000_0000_0000, 0x401c_0000_0000_0000),
+        ],
+        &[0x4ee8_d400],
+    );
+    assert_eq!(cpu.vregs[0], 0x402a_eb85_1eb8_51ec);
+    assert_eq!(cpu.vregs[1], 0x402a_eb85_1eb8_51ec);
+    assert_eq!(cpu.pc, 4);
+}
+
+#[test]
+fn a64_difftest_gobmk_new_position_mask_loop_runtime() {
+    // Hot loop from gobmk/new_position:
+    //   movi v16.16b, #3
+    //   cmeq v0.16b, v0.16b, v16.16b
+    //   sxtl v1.8h, v0.8b
+    //   sxtl2 v0.8h, v0.16b
+    //   sxtl v3.4s, v1.4h
+    //   sxtl v2.4s, v0.4h
+    //   sxtl2 v1.4s, v1.8h
+    //   sxtl2 v0.4s, v0.8h
+    //   orn v3.16b, v7.16b, v3.16b
+    //   orn v2.16b, v5.16b, v2.16b
+    //   orn v1.16b, v6.16b, v1.16b
+    //   orn v0.16b, v4.16b, v0.16b
+    let cpu = run_tcgrs_with_state(
+        &[],
+        &[
+            (0, 0x0303_0303_0303_0303, 0x0000_0000_0000_0000),
+            (4, 0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3210),
+            (5, 0x1111_2222_3333_4444, 0x5555_6666_7777_8888),
+            (6, 0x9999_aaaa_bbbb_cccc, 0xdddd_eeee_0123_4567),
+            (7, 0x1357_9bdf_2468_ace0, 0x0fed_cba9_8765_4321),
+        ],
+        &[
+            0x4f00_e470,
+            0x6e30_8c00,
+            0x0f08_a401,
+            0x4f08_a400,
+            0x0f10_a423,
+            0x0f10_a402,
+            0x4f10_a421,
+            0x4f10_a400,
+            0x4ee3_1ce3,
+            0x4ee2_1ca2,
+            0x4ee1_1cc1,
+            0x4ee0_1c80,
+        ],
+    );
+    assert_eq!(cpu.vregs[0 * 2], u64::MAX);
+    assert_eq!(cpu.vregs[0 * 2 + 1], u64::MAX);
+    assert_eq!(cpu.vregs[1 * 2], 0x9999_aaaa_bbbb_cccc);
+    assert_eq!(cpu.vregs[1 * 2 + 1], 0xdddd_eeee_0123_4567);
+    assert_eq!(cpu.vregs[2 * 2], u64::MAX);
+    assert_eq!(cpu.vregs[2 * 2 + 1], u64::MAX);
+    assert_eq!(cpu.vregs[3 * 2], 0x1357_9bdf_2468_ace0);
+    assert_eq!(cpu.vregs[3 * 2 + 1], 0x0fed_cba9_8765_4321);
+    assert_eq!(cpu.pc, 48);
 }
 
 #[test]
@@ -3323,7 +3779,7 @@ fn a64_difftest_dup_st1_lane_store_runtime() {
 fn a64_difftest_st1_s_lane_2_3_runtime() {
     // Hot pattern from SPEC401/BZ2_compressBlock:
     // 0x4d008068: st1 {v8.s}[2], [x3]
-    // 0x4d009048: st1 {v8.s}[3], [x2]
+    // 0x4d009048: st1 {v8.s}[7], [x2]
     // Follow with scalar loads to validate stored lanes.
     let cpu = run_tcgrs_with_state(
         &[(2, 0x204), (3, 0x200)],
@@ -3558,7 +4014,7 @@ fn a64_difftest_perl_save_alloc_epilogue_runtime() {
     let mut cpu = Aarch64Cpu::new();
     cpu.guest_base = guest_base as u64;
     cpu.sp = 0x500;
-    cpu.xregs[3] = 0x1c;
+    cpu.xregs[7] = 0x1c;
     cpu.xregs[22] = 0x200;
     cpu.xregs[23] = 0x400;
 
@@ -3624,7 +4080,7 @@ fn a64_difftest_str_q_preindex_neg16_runtime() {
     );
     assert_eq!(cpu.xregs[1], 0x200);
     assert_eq!(cpu.xregs[2], 0x1122_3344_5566_7788);
-    assert_eq!(cpu.xregs[3], 0x99aa_bbcc_ddee_ff00);
+    assert_eq!(cpu.xregs[7], 0x99aa_bbcc_ddee_ff00);
     assert_eq!(cpu.pc, 12);
 }
 
@@ -3653,7 +4109,7 @@ fn a64_difftest_ldr_x_regoffset_negative_runtime() {
         &[0xf861_6803],
         &bytes,
     );
-    assert_eq!(cpu.xregs[3], 0x5555_0000_0000_0001u64);
+    assert_eq!(cpu.xregs[7], 0x5555_0000_0000_0001u64);
     assert_eq!(cpu.pc, 4);
 }
 
