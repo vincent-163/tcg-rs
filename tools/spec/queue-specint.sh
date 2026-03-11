@@ -6,7 +6,9 @@ SPEC_ROOT=${SPEC_ROOT:-/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cog
 TAG=${TAG:-20260310a}
 ARTIFACT_DIR=${ARTIFACT_DIR:-$WORKTREE/.spec-artifacts/specint-$TAG}
 JIT_CFG=${JIT_CFG:-$SPEC_ROOT/config/aarch64.Ofast.tcgrs.$TAG.jit.cfg}
+PROFILE_CFG=${PROFILE_CFG:-$WORKTREE/spec-logs/aarch64.Ofast.tcgrs.$TAG.profile.cfg}
 AOT_CFG=${AOT_CFG:-$WORKTREE/spec-logs/aarch64.Ofast.tcgrs.$TAG.aot.cfg}
+BUILD_AOT=${BUILD_AOT:-$WORKTREE/tools/spec/build-spec-aot-artifacts.sh}
 LOG_DIR=${LOG_DIR:-$WORKTREE/spec-logs}
 SPECINT_STATUS=${SPECINT_STATUS:-$WORKTREE/tools/spec/specint-status.sh}
 RERUN_COMPARE=${RERUN_COMPARE:-$WORKTREE/tools/spec/rerun-compare.sh}
@@ -21,6 +23,7 @@ jit_benches=(
   400.perlbench 401.bzip2 403.gcc 429.mcf 445.gobmk 456.hmmer 458.sjeng
   462.libquantum 464.h264ref 471.omnetpp 473.astar 483.xalancbmk 999.specrand
 )
+profile_benches=("${jit_benches[@]}")
 aot_benches=("${jit_benches[@]}")
 
 ps_cmd() {
@@ -29,6 +32,20 @@ ps_cmd() {
   else
     ps -eo cmd
   fi
+}
+
+artifact_name() {
+  case "$1" in
+    403.gcc) echo gcc ;;
+    483.xalancbmk) echo Xalan ;;
+    *.*) echo "${1#*.}" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+aot_so_for() {
+  local bench=$1
+  echo "$ARTIFACT_DIR/aot/$(artifact_name "$bench").aot.so"
 }
 
 state_for() {
@@ -46,14 +63,15 @@ is_satisfied() {
 live_total() {
   local snapshot
   snapshot=$(ps_cmd)
-  grep -Ec "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg" <<<"$snapshot" || true
+  grep -Ec "runspec .*tcgrs\.$TAG\.(jit|profile|aot)\.cfg" <<<"$snapshot" || true
 }
 
 latest_run_dir() {
   local bench=$1
   local mode=$2
   find "$SPEC_ROOT/benchspec/CPU2006/$bench/run" -maxdepth 1 -type d \
-    -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" 2>/dev/null | sort | tail -n 1
+    -name "run_base_ref_aarch64.Ofast.tcgrs.$TAG.$mode.*" 2>/dev/null |
+    sort | tail -n 1
 }
 
 live_for_bench() {
@@ -64,7 +82,7 @@ live_for_bench() {
   local snapshot
 
   snapshot=$(ps_cmd)
-  if grep -Eq "runspec .*tcgrs\.$TAG\.(jit|aot)\.cfg.* ${bench}( |$)" <<<"$snapshot"; then
+  if grep -Eq "runspec .*tcgrs\.$TAG\.(jit|profile|aot)\.cfg.* ${bench}( |$)" <<<"$snapshot"; then
     return 0
   fi
 
@@ -97,18 +115,47 @@ run_validate() {
   local mode=$1
   local bench=$2
   local cfg=$3
-  local col=2
+  local col
   local log="$LOG_DIR/queue-${bench//./-}-$mode-$(date +%Y%m%d-%H%M%S).log"
-  if [[ "$mode" == aot ]]; then
-    col=4
-  fi
+
+  case "$mode" in
+    jit) col=2 ;;
+    profile) col=3 ;;
+    aot) col=4 ;;
+    *) echo "queue-specint.sh: unknown mode $mode" >&2; return 2 ;;
+  esac
+
   echo "[$(date '+%F %T')] start $mode $bench -> $log"
   "$RUN_RUNSPEC" \
-    --noreportable --action validate --size ref --iterations 1 --config="$cfg" "$bench" \
-    >"$log" 2>&1 || true
+    --noreportable --action validate --size ref --iterations 1 \
+    --config="$cfg" "$bench" >"$log" 2>&1 || true
   tail -n 30 "$log" || true
   maybe_rerun_compare "$bench" "$mode" >>"$log" 2>&1 || true
   echo "[$(date '+%F %T')] done $mode $bench state=$(state_for "$bench" "$col")"
+}
+
+build_aot_for_bench() {
+  local bench=$1
+  local so
+  local log
+
+  so=$(aot_so_for "$bench")
+  if [[ -f "$so" ]]; then
+    return 1
+  fi
+  if ! is_satisfied "$(state_for "$bench" 3)"; then
+    return 1
+  fi
+  if live_for_bench "$bench"; then
+    return 1
+  fi
+
+  log="$LOG_DIR/build-aot-${bench//./-}-$(date +%Y%m%d-%H%M%S).log"
+  echo "[$(date '+%F %T')] build aot $bench -> $log"
+  "$BUILD_AOT" "$ARTIFACT_DIR" "$bench" >"$log" 2>&1 || true
+  tail -n 30 "$log" || true
+  echo "[$(date '+%F %T')] done build aot $bench so=$([[ -f "$so" ]] && echo yes || echo no)"
+  return 0
 }
 
 wait_for_slot() {
@@ -165,6 +212,26 @@ advance_bench() {
   return 0
 }
 
+advance_aot_bench() {
+  local bench=$1
+  local cfg=$2
+  local so
+
+  if is_satisfied "$(state_for "$bench" 4)"; then
+    return 1
+  fi
+
+  so=$(aot_so_for "$bench")
+  if [[ ! -f "$so" ]]; then
+    if build_aot_for_bench "$bench"; then
+      return 0
+    fi
+    return 1
+  fi
+
+  advance_bench aot "$bench" "$cfg" 4
+}
+
 main() {
   echo "[$(date '+%F %T')] queue driver started"
 
@@ -180,10 +247,22 @@ main() {
 
   echo "[$(date '+%F %T')] jit phase satisfied"
 
+  while ! all_done profile_benches 3; do
+    local bench
+    for bench in "${profile_benches[@]}"; do
+      if advance_bench profile "$bench" "$PROFILE_CFG" 3; then
+        break
+      fi
+    done
+    sleep "$SLEEP_SECS"
+  done
+
+  echo "[$(date '+%F %T')] profile phase satisfied"
+
   while ! all_done aot_benches 4; do
     local bench
     for bench in "${aot_benches[@]}"; do
-      if advance_bench aot "$bench" "$AOT_CFG" 4; then
+      if advance_aot_bench "$bench" "$AOT_CFG"; then
         break
       fi
     done
