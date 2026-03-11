@@ -385,6 +385,36 @@ impl TbTranslator {
         }
     }
 
+    fn coerce_helper_arg_to_i64(
+        &self,
+        b: LLVMBuilderRef,
+        ty: Type,
+        val: LLVMValueRef,
+    ) -> LLVMValueRef {
+        unsafe {
+            if ty == Type::I32 {
+                LLVMBuildZExt(b, val, self.i64t, E)
+            } else {
+                val
+            }
+        }
+    }
+
+    fn coerce_helper_ret_from_i64(
+        &self,
+        b: LLVMBuilderRef,
+        ty: Type,
+        val: LLVMValueRef,
+    ) -> LLVMValueRef {
+        unsafe {
+            if ty == Type::I32 {
+                LLVMBuildTrunc(b, val, self.i32t, E)
+            } else {
+                val
+            }
+        }
+    }
+
     /// Load a TCG temp's current value.
     fn load_temp(&self, ir: &Context, tidx: TempIdx) -> LLVMValueRef {
         let temp = ir.temp(tidx);
@@ -1580,7 +1610,12 @@ impl TbTranslator {
                 let nb_call_iargs = nb_i;
                 let mut args = Vec::with_capacity(nb_call_iargs);
                 for i in 0..nb_call_iargs {
-                    args.push(ival!(i));
+                    let src = iarg!(i);
+                    args.push(self.coerce_helper_arg_to_i64(
+                        b,
+                        ir.temp(src).ty,
+                        ival!(i),
+                    ));
                 }
 
                 // In AOT mode, declare helpers as external functions
@@ -1651,6 +1686,11 @@ impl TbTranslator {
                     )
                 };
 
+                let ret = self.coerce_helper_ret_from_i64(
+                    b,
+                    ir.temp(oarg!(0)).ty,
+                    ret,
+                );
                 store_out!(0, ret);
                 // Reload globals after call
                 for i in 0..ir.nb_globals() as usize {
@@ -2035,5 +2075,43 @@ impl TbTranslator {
                 panic!("LLVM backend: unhandled opcode {:?}", op.opc);
             }
         }}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llvm::ffi::{LLVMDisposeMessage, LLVMVerifyModule};
+    use tcg_core::{Context, Type};
+
+    #[cfg(feature = "llvm")]
+    #[test]
+    fn helper_call_coerces_i32_args_for_llvm_signature() {
+        let mut ir = Context::new();
+        let dst = ir.new_temp(Type::I32);
+        let a = ir.new_const(Type::I32, 1);
+        let b = ir.new_const(Type::I32, 2);
+        ir.gen_call_named(dst, "helper_llvm_i32_sig_test", &[a, b]);
+
+        let jit = crate::llvm::LlvmJit::new();
+        let llvm_ctx = jit.context();
+        let mut translator = TbTranslator::new(llvm_ctx, &ir, "tb_helper_sig_test", None);
+        translator.is_aot = true;
+        let module = translator.translate(&ir);
+
+        unsafe {
+            let mut err_msg: *mut i8 = std::ptr::null_mut();
+            let rc = LLVMVerifyModule(module, 2, &mut err_msg);
+            let msg = if err_msg.is_null() {
+                String::new()
+            } else {
+                let s = std::ffi::CStr::from_ptr(err_msg)
+                    .to_string_lossy()
+                    .into_owned();
+                LLVMDisposeMessage(err_msg);
+                s
+            };
+            assert_eq!(rc, 0, "unexpected LLVM verify failure: {msg}");
+        }
     }
 }
