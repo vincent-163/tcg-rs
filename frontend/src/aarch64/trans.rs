@@ -6416,6 +6416,161 @@ fn neon_minmax32_inline(
     result
 }
 
+/// Inline 32-bit vector negate without helper call.
+#[inline]
+fn neon_neg32_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // Extract low 32 bits
+    let a_lo = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(a_lo, a);
+
+    // Extract high 32 bits
+    let a_hi = ir.new_temp(Type::I32);
+    ir.gen_extrh_i64_i32(a_hi, a);
+
+    // Negate each lane
+    let lo_res = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, lo_res, a_lo);
+    let hi_res = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, hi_res, a_hi);
+
+    // Combine results back into u64
+    let lo_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(lo_ext, lo_res);
+    let hi_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(hi_ext, hi_res);
+    let hi_shifted = ir.new_temp(Type::I64);
+    let shift = ir.new_const(Type::I64, 32);
+    ir.gen_shl(Type::I64, hi_shifted, hi_ext, shift);
+
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, lo_ext, hi_shifted);
+    result
+}
+
+/// Inline 16-bit vector negate without helper call (4 lanes per 64-bit).
+#[inline]
+fn neon_neg16_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // Process each 16-bit lane: extract, extend to 32-bit, negate, mask back to 16-bit
+    let mask16 = ir.new_const(Type::I64, 0xffff);
+    let shift16 = ir.new_const(Type::I64, 16);
+    let _zero = ir.new_const(Type::I32, 0);
+
+    // Lane 0 (bits 0-15)
+    let t0 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, t0, a, mask16);
+    let s0 = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(s0, t0);
+    let n0 = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, n0, s0);
+    let r0_64 = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(r0_64, n0);
+    let r0 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, r0, r0_64, mask16);
+
+    // Lane 1 (bits 16-31)
+    let t1_raw = ir.new_temp(Type::I64);
+    ir.gen_shr(Type::I64, t1_raw, a, shift16);
+    let t1 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, t1, t1_raw, mask16);
+    let s1 = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(s1, t1);
+    let n1 = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, n1, s1);
+    let r1_64 = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(r1_64, n1);
+    let r1_masked = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, r1_masked, r1_64, mask16);
+    let r1 = ir.new_temp(Type::I64);
+    ir.gen_shl(Type::I64, r1, r1_masked, shift16);
+
+    // Lane 2 (bits 32-47)
+    let shift32 = ir.new_const(Type::I64, 32);
+    let t2_raw = ir.new_temp(Type::I64);
+    ir.gen_shr(Type::I64, t2_raw, a, shift32);
+    let t2 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, t2, t2_raw, mask16);
+    let s2 = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(s2, t2);
+    let n2 = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, n2, s2);
+    let r2_64 = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(r2_64, n2);
+    let r2_masked = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, r2_masked, r2_64, mask16);
+    let r2 = ir.new_temp(Type::I64);
+    ir.gen_shl(Type::I64, r2, r2_masked, shift32);
+
+    // Lane 3 (bits 48-63)
+    let shift48 = ir.new_const(Type::I64, 48);
+    let t3_raw = ir.new_temp(Type::I64);
+    ir.gen_shr(Type::I64, t3_raw, a, shift48);
+    let t3 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, t3, t3_raw, mask16);
+    let s3 = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(s3, t3);
+    let n3 = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, n3, s3);
+    let r3_64 = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(r3_64, n3);
+    let r3_masked = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, r3_masked, r3_64, mask16);
+    let r3 = ir.new_temp(Type::I64);
+    ir.gen_shl(Type::I64, r3, r3_masked, shift48);
+
+    // Combine all lanes
+    let t01 = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, t01, r0, r1);
+    let t23 = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, t23, r2, r3);
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, t01, t23);
+    result
+}
+
+/// Inline 8-bit vector negate without helper call (8 lanes per 64-bit).
+#[inline]
+fn neon_neg8_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // For 8-bit lanes, we use a clever approach:
+    // Negate the whole 64-bit value, then correct for carries between bytes
+    // However, since the backend doesn't support vector ops, we do per-byte processing
+    // Using the same pattern as neg16 but for 8 lanes
+
+    let mask8 = ir.new_const(Type::I64, 0xff);
+    let _shift8 = ir.new_const(Type::I64, 8);
+    let mut result = ir.new_const(Type::I64, 0);
+
+    // Process all 8 lanes
+    for i in 0..8 {
+        let shift_amt = ir.new_const(Type::I64, i * 8);
+        // Extract byte
+        let t_raw = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, t_raw, a, shift_amt);
+        let t = ir.new_temp(Type::I64);
+        ir.gen_and(Type::I64, t, t_raw, mask8);
+        // Extend to 32-bit, negate
+        let s = ir.new_temp(Type::I32);
+        ir.gen_extrl_i64_i32(s, t);
+        let n = ir.new_temp(Type::I32);
+        ir.gen_neg(Type::I32, n, s);
+        // Mask and shift back
+        let r_64 = ir.new_temp(Type::I64);
+        ir.gen_ext_u32_i64(r_64, n);
+        let r_masked = ir.new_temp(Type::I64);
+        ir.gen_and(Type::I64, r_masked, r_64, mask8);
+        let r = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, r, r_masked, shift_amt);
+        // OR into result
+        let new_result = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, new_result, result, r);
+        result = new_result;
+    }
+
+    result
+}
+
 impl Aarch64DisasContext {
     /// Helper: apply a per-u64-half operation on vector registers.
     fn neon_binop_halves(
@@ -7693,9 +7848,38 @@ impl Aarch64DisasContext {
                 self.write_vreg_hi(ir, rd, d_hi);
                 true
             }
+            // FABS .2S/.4S: U=0 size=10 opcode=01111 — vector float abs (f32)
+            (0, 0b10, 0b01111) => {
+                // FABS clears sign bit (bit 31) of each f32 element
+                // For 2x f32 in 64-bit: mask = 0x7fff_ffff_7fff_ffff
+                self.neon_binop_halves(ir, q, rd, rn, rn, |ir, a, _b| {
+                    let mask =
+                        ir.new_const(Type::I64, 0x7fff_ffff_7fff_ffffu64);
+                    let d = ir.new_temp(Type::I64);
+                    ir.gen_and(Type::I64, d, a, mask);
+                    d
+                });
+                true
+            }
+            // FNEG .2S/.4S: U=1 size=10 opcode=01111 — vector float neg (f32)
+            (1, 0b10, 0b01111) => {
+                // FNEG flips sign bit (bit 31) of each f32 element
+                // For 2x f32 in 64-bit: sign_mask = 0x8000_0000_8000_0000
+                self.neon_binop_halves(ir, q, rd, rn, rn, |ir, a, _b| {
+                    let sign =
+                        ir.new_const(Type::I64, 0x8000_0000_8000_0000u64);
+                    let d = ir.new_temp(Type::I64);
+                    ir.gen_xor(Type::I64, d, a, sign);
+                    d
+                });
+                true
+            }
             // NEG .2S/.4S: U=1 size=10 opcode=01011
             (1, 0b10, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_neg32");
+                // Inline NEG using gen_neg per 32-bit lane
+                self.neon_binop_halves(ir, q, rd, rn, rn, |ir, a, _b| {
+                    neon_neg32_inline(ir, a)
+                });
                 true
             }
             // MVN/NOT .8B/.16B: U=1 size=00 opcode=00101
@@ -7709,12 +7893,18 @@ impl Aarch64DisasContext {
             }
             // NEG .8B/.16B: U=1 size=00 opcode=01011
             (1, 0b00, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_neg8");
+                // Inline NEG using gen_neg per 8-bit lane
+                self.neon_binop_halves(ir, q, rd, rn, rn, |ir, a, _b| {
+                    neon_neg8_inline(ir, a)
+                });
                 true
             }
             // NEG .4H/.8H: U=1 size=01 opcode=01011
             (1, 0b01, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_neg16");
+                // Inline NEG using gen_neg per 16-bit lane
+                self.neon_binop_halves(ir, q, rd, rn, rn, |ir, a, _b| {
+                    neon_neg16_inline(ir, a)
+                });
                 true
             }
             // NEG .2D: U=1 size=11 opcode=01011
