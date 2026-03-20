@@ -7,19 +7,11 @@ use tcg_core::context::Context;
 use tcg_core::tb::{EXCP_ECALL, EXCP_UNDEF};
 use tcg_core::TempIdx;
 use tcg_exec::exec_loop::{cpu_exec_loop, ExitReason};
-use tcg_exec::profile::{
-    ProfileData, ProfileEntry, DEFAULT_HOT_THRESHOLD,
-};
+use tcg_exec::profile::{ProfileData, ProfileEntry, DEFAULT_HOT_THRESHOLD};
 use tcg_exec::{AotTable, ExecEnv, GuestCpu};
-use tcg_frontend::aarch64::cpu::{
-    Aarch64Cpu, NUM_XREGS,
-};
-use tcg_frontend::aarch64::{
-    Aarch64DisasContext, Aarch64Translator,
-};
-use tcg_frontend::{
-    translator_loop, DisasJumpType, TranslatorOps,
-};
+use tcg_frontend::aarch64::cpu::{Aarch64Cpu, NUM_XREGS};
+use tcg_frontend::aarch64::{Aarch64DisasContext, Aarch64Translator};
+use tcg_frontend::{translator_loop, DisasJumpType, TranslatorOps};
 use tcg_linux_user::elf::EM_AARCH64;
 use tcg_linux_user::guest_space::GuestSpace;
 use tcg_linux_user::loader::{load_elf, ElfInfo};
@@ -91,12 +83,7 @@ impl GuestCpu for LinuxCpu {
         0
     }
 
-    fn gen_code(
-        &mut self,
-        ir: &mut Context,
-        pc: u64,
-        max_insns: u32,
-    ) -> u32 {
+    fn gen_code(&mut self, ir: &mut Context, pc: u64, max_insns: u32) -> u32 {
         // Long-TB correctness issues are currently narrowed to specific
         // perlbench paths. Keep the generic AArch64 default intact and rely on
         // targeted TCG_MAX_INSNS overrides from the submit wrapper where needed.
@@ -107,16 +94,12 @@ impl GuestCpu for LinuxCpu {
         );
         let base = self.cpu.guest_base as *const u8;
         if ir.nb_globals() == 0 {
-            let mut d =
-                Aarch64DisasContext::new(pc, base);
+            let mut d = Aarch64DisasContext::new(pc, base);
             d.base.max_insns = max_insns;
-            translator_loop::<Aarch64Translator>(
-                &mut d, ir,
-            );
+            translator_loop::<Aarch64Translator>(&mut d, ir);
             d.base.num_insns * 4
         } else {
-            let mut d =
-                Aarch64DisasContext::new(pc, base);
+            let mut d = Aarch64DisasContext::new(pc, base);
             d.base.max_insns = max_insns;
             d.env = TempIdx(0);
             for i in 0..NUM_XREGS {
@@ -130,20 +113,13 @@ impl GuestCpu for LinuxCpu {
             d.cc_result = TempIdx(6 + NUM_XREGS as u32);
             Aarch64Translator::tb_start(&mut d, ir);
             loop {
-                Aarch64Translator::insn_start(
-                    &mut d, ir,
-                );
-                Aarch64Translator::translate_insn(
-                    &mut d, ir,
-                );
-                if d.base.is_jmp != DisasJumpType::Next
-                {
+                Aarch64Translator::insn_start(&mut d, ir);
+                Aarch64Translator::translate_insn(&mut d, ir);
+                if d.base.is_jmp != DisasJumpType::Next {
                     break;
                 }
-                if d.base.num_insns >= d.base.max_insns
-                {
-                    d.base.is_jmp =
-                        DisasJumpType::TooMany;
+                if d.base.num_insns >= d.base.max_insns {
+                    d.base.is_jmp = DisasJumpType::TooMany;
                     break;
                 }
             }
@@ -302,7 +278,9 @@ fn interp_one(
         if let Some(mask) = decode_bitmask_64(insn) {
             let result = val & mask;
             *nzcv = if result == 0 { 0b0100 } else { 0 };
-            if result >> 63 != 0 { *nzcv |= 0b1000; }
+            if result >> 63 != 0 {
+                *nzcv |= 0b1000;
+            }
         }
         return true;
     }
@@ -315,9 +293,15 @@ fn interp_one(
         let a = regs[rn];
         let result = a.wrapping_sub(val);
         *nzcv = 0;
-        if result == 0 { *nzcv |= 0b0100; } // Z
-        if result >> 63 != 0 { *nzcv |= 0b1000; } // N
-        if a >= val { *nzcv |= 0b0010; } // C
+        if result == 0 {
+            *nzcv |= 0b0100;
+        } // Z
+        if result >> 63 != 0 {
+            *nzcv |= 0b1000;
+        } // N
+        if a >= val {
+            *nzcv |= 0b0010;
+        } // C
         return true;
     }
 
@@ -327,9 +311,15 @@ fn interp_one(
         let a = regs[rn] as u32;
         let result = a.wrapping_sub(imm12);
         *nzcv = 0;
-        if result == 0 { *nzcv |= 0b0100; }
-        if result >> 31 != 0 { *nzcv |= 0b1000; }
-        if a >= imm12 { *nzcv |= 0b0010; }
+        if result == 0 {
+            *nzcv |= 0b0100;
+        }
+        if result >> 31 != 0 {
+            *nzcv |= 0b1000;
+        }
+        if a >= imm12 {
+            *nzcv |= 0b0010;
+        }
         return true;
     }
 
@@ -337,7 +327,11 @@ fn interp_one(
     if insn & 0xffe0_0c00 == 0x9a80_0000 {
         let rm = ((insn >> 16) & 0x1f) as usize;
         let cond = (insn >> 12) & 0xf;
-        regs[rd] = if cond_holds(*nzcv, cond) { regs[rn] } else { regs[rm] };
+        regs[rd] = if cond_holds(*nzcv, cond) {
+            regs[rn]
+        } else {
+            regs[rm]
+        };
         return true;
     }
 
@@ -395,9 +389,15 @@ fn interp_one(
             let a = regs[rn];
             let result = a.wrapping_sub(imm5);
             *nzcv = 0;
-            if result == 0 { *nzcv |= 0b0100; }
-            if result >> 63 != 0 { *nzcv |= 0b1000; }
-            if a >= imm5 { *nzcv |= 0b0010; }
+            if result == 0 {
+                *nzcv |= 0b0100;
+            }
+            if result >> 63 != 0 {
+                *nzcv |= 0b1000;
+            }
+            if a >= imm5 {
+                *nzcv |= 0b0010;
+            }
         } else {
             *nzcv = alt_nzcv;
         }
@@ -418,25 +418,32 @@ fn cond_holds(nzcv: u32, cond: u32) -> bool {
     let c = (nzcv >> 1) & 1 != 0;
     let v = nzcv & 1 != 0;
     let base = match cond >> 1 {
-        0 => z,           // EQ/NE
-        1 => c,           // CS/CC (HS/LO)
-        2 => n,           // MI/PL
-        3 => v,           // VS/VC
-        4 => c && !z,     // HI/LS
-        5 => n == v,      // GE/LT
+        0 => z,            // EQ/NE
+        1 => c,            // CS/CC (HS/LO)
+        2 => n,            // MI/PL
+        3 => v,            // VS/VC
+        4 => c && !z,      // HI/LS
+        5 => n == v,       // GE/LT
         6 => n == v && !z, // GT/LE
-        7 => true,        // AL
+        7 => true,         // AL
         _ => unreachable!(),
     };
-    if cond & 1 != 0 && cond != 0xf { !base } else { base }
+    if cond & 1 != 0 && cond != 0xf {
+        !base
+    } else {
+        base
+    }
 }
 
 fn decode_bitmask_64(insn: u32) -> Option<u64> {
     let n = (insn >> 22) & 1;
     let immr = (insn >> 16) & 0x3f;
     let imms = (insn >> 10) & 0x3f;
-    let len = 63 - (((!((imms as u64) | (!n as u64) << 6)) << 57) >> 57).leading_zeros();
-    if len > 6 { return None; }
+    let len = 63
+        - (((!((imms as u64) | (!n as u64) << 6)) << 57) >> 57).leading_zeros();
+    if len > 6 {
+        return None;
+    }
     let size = 1u32 << len;
     let levels = size - 1;
     let s = imms & levels;
@@ -458,17 +465,15 @@ fn decode_bitmask_64(insn: u32) -> Option<u64> {
     } else {
         ((welem >> r) | (welem << (size - r))) & elem_mask
     };
-    let mask = (0..64).step_by(size as usize).fold(0u64, |acc, sh| {
-        acc | ((elem & elem_mask) << sh)
-    });
+    let mask = (0..64)
+        .step_by(size as usize)
+        .fold(0u64, |acc, sh| acc | ((elem & elem_mask) << sh));
     Some(mask)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        decode_bitmask_64, effective_max_insns,
-    };
+    use super::{decode_bitmask_64, effective_max_insns};
 
     #[test]
     fn decode_bitmask_full_width() {
@@ -484,34 +489,16 @@ mod tests {
 
     #[test]
     fn max_insns_uses_backend_default_without_override() {
-        assert_eq!(
-            effective_max_insns(false, 32, None),
-            32
-        );
-        assert_eq!(
-            effective_max_insns(false, 3, None),
-            3
-        );
+        assert_eq!(effective_max_insns(false, 32, None), 32);
+        assert_eq!(effective_max_insns(false, 3, None), 3);
     }
 
     #[test]
     fn max_insns_override_and_single_step() {
-        assert_eq!(
-            effective_max_insns(true, 32, None),
-            1
-        );
-        assert_eq!(
-            effective_max_insns(true, 32, Some(6)),
-            6
-        );
-        assert_eq!(
-            effective_max_insns(false, 32, Some(1)),
-            1
-        );
-        assert_eq!(
-            effective_max_insns(false, 32, Some(99)),
-            99
-        );
+        assert_eq!(effective_max_insns(true, 32, None), 1);
+        assert_eq!(effective_max_insns(true, 32, Some(6)), 6);
+        assert_eq!(effective_max_insns(false, 32, Some(1)), 1);
+        assert_eq!(effective_max_insns(false, 32, Some(99)), 99);
     }
 }
 
@@ -531,36 +518,31 @@ fn save_profile<B: tcg_backend::HostCodeGen>(
     let min_exec_count = mode.min_exec_count();
 
     // Load existing profile entries and accumulate
-    let mut accumulated: std::collections::HashMap<
-        u64,
-        ProfileEntry,
-    > = ProfileData::load(path)
-        .map(|existing| {
-            eprintln!(
-                "[tcg] accumulating with existing \
+    let mut accumulated: std::collections::HashMap<u64, ProfileEntry> =
+        ProfileData::load(path)
+            .map(|existing| {
+                eprintln!(
+                    "[tcg] accumulating with existing \
                  profile ({} entries)",
-                existing.entries.len()
-            );
-            existing
-                .entries
-                .into_iter()
-                .map(|e| (e.file_offset, e))
-                .collect()
-        })
-        .unwrap_or_default();
+                    existing.entries.len()
+                );
+                existing
+                    .entries
+                    .into_iter()
+                    .map(|e| (e.file_offset, e))
+                    .collect()
+            })
+            .unwrap_or_default();
 
     for tb_ptr in shared.tb_store.iter_all() {
         let tb = unsafe { &*tb_ptr };
-        let exec =
-            tb.exec_count.load(Ordering::Relaxed);
+        let exec = tb.exec_count.load(Ordering::Relaxed);
         let file_offset = tb.pc - load_vaddr;
-        let indirect =
-            tb.indirect_target.load(Ordering::Relaxed);
+        let indirect = tb.indirect_target.load(Ordering::Relaxed);
 
         if exec >= min_exec_count {
-            let entry = accumulated
-                .entry(file_offset)
-                .or_insert(ProfileEntry {
+            let entry =
+                accumulated.entry(file_offset).or_insert(ProfileEntry {
                     file_offset,
                     exec_count: exec,
                     indirect_target: indirect,
@@ -575,8 +557,7 @@ fn save_profile<B: tcg_backend::HostCodeGen>(
         }
     }
 
-    let entries: Vec<ProfileEntry> =
-        accumulated.into_values().collect();
+    let entries: Vec<ProfileEntry> = accumulated.into_values().collect();
     let data = ProfileData {
         threshold: min_exec_count as u32,
         entries,
@@ -601,11 +582,10 @@ fn main() {
         process::exit(1);
     }
 
-    let elf_path = std::fs::canonicalize(&args[1])
-        .expect("failed to resolve elf path");
+    let elf_path =
+        std::fs::canonicalize(&args[1]).expect("failed to resolve elf path");
     let elf_path = elf_path.to_str().unwrap();
-    let guest_argv: Vec<&str> =
-        args[1..].iter().map(|s| s.as_str()).collect();
+    let guest_argv: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
 
     // Pass host environment through to the guest, but keep tcg-rs-only
     // controls out of the guest process environment.
@@ -617,8 +597,7 @@ fn main() {
         guest_envp.iter().map(|s| s.as_str()).collect();
 
     // Load ELF
-    let mut space = GuestSpace::new()
-        .expect("failed to create guest space");
+    let mut space = GuestSpace::new().expect("failed to create guest space");
     let info: ElfInfo = load_elf(
         std::path::Path::new(elf_path),
         &mut space,
@@ -649,7 +628,8 @@ fn main() {
     }
 
     // Auto mmaps are allocated top-down below the guest stack area.
-    let mut mmap_next = tcg_linux_user::guest_space::GUEST_STACK_TOP - 0x1000_0000;
+    let mut mmap_next =
+        tcg_linux_user::guest_space::GUEST_STACK_TOP - 0x1000_0000;
 
     // Install SIGSEGV handler to dump guest state
     unsafe {
@@ -675,7 +655,9 @@ fn main() {
                 for i in 0..31usize {
                     let v = *rbp.add(i);
                     eprint!("x{}={:#018x} ", i, v);
-                    if (i + 1) % 4 == 0 { eprintln!(); }
+                    if (i + 1) % 4 == 0 {
+                        eprintln!();
+                    }
                 }
                 eprintln!();
                 let pc = *rbp.add(31);
@@ -700,24 +682,21 @@ fn main() {
             }
             libc::_exit(139);
         }
-        let mut sa: libc::sigaction =
-            std::mem::zeroed();
-        sa.sa_sigaction =
-            sigsegv_handler as unsafe extern "C" fn(i32, *mut libc::siginfo_t, *mut libc::c_void) as usize;
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigsegv_handler
+            as unsafe extern "C" fn(
+                i32,
+                *mut libc::siginfo_t,
+                *mut libc::c_void,
+            ) as usize;
         sa.sa_flags = libc::SA_SIGINFO;
-        libc::sigaction(
-            libc::SIGSEGV, &sa, std::ptr::null_mut(),
-        );
+        libc::sigaction(libc::SIGSEGV, &sa, std::ptr::null_mut());
     }
 
-    if env::var_os("TCG_ENABLE_DIRECT_CHAIN").is_none()
-        && env::var_os("TCG_DISABLE_DIRECT_CHAIN").is_none()
-        && env::var_os("TCG_DISABLE_CHAIN").is_none()
-    {
-        env::set_var("TCG_DISABLE_DIRECT_CHAIN", "1");
-        if tcg_info_logs() {
-            eprintln!("[tcg] direct chaining disabled by default on tcg-aarch64; set TCG_ENABLE_DIRECT_CHAIN=1 to override");
-        }
+    // Direct chaining is now enabled by default for better performance.
+    // Use TCG_DISABLE_DIRECT_CHAIN=1 to disable if needed.
+    if tcg_info_logs() && env::var_os("TCG_DISABLE_DIRECT_CHAIN").is_none() {
+        eprintln!("[tcg] direct chaining enabled by default; set TCG_DISABLE_DIRECT_CHAIN=1 to disable");
     }
 
     // Run
@@ -728,10 +707,7 @@ fn main() {
 
     // Load AOT if specified
     let aot = env::var("TCG_AOT").ok().and_then(|p| {
-        let t = AotTable::load(
-            std::path::Path::new(&p),
-            info.load_vaddr,
-        );
+        let t = AotTable::load(std::path::Path::new(&p), info.load_vaddr);
         if t.is_some() {
             if tcg_info_logs() {
                 eprintln!("[tcg] AOT loaded from {p}");
@@ -748,8 +724,7 @@ fn main() {
     let mut codegen = X86_64CodeGen::new();
     codegen.guest_base_offset =
         tcg_frontend::aarch64::cpu::GUEST_BASE_OFFSET as i32;
-    let env =
-        ExecEnv::new_with_opts(codegen, profiling, aot);
+    let env = ExecEnv::new_with_opts(codegen, profiling, aot);
     #[cfg(feature = "llvm")]
     if std::env::var("TCG_LLVM").is_ok() {
         if tcg_info_logs() {
@@ -774,7 +749,9 @@ fn main() {
     if env::var("TCG_NO_IFUNC").is_err() {
         for &(got_offset, resolver_addr) in &info.irelatives {
             let result = resolve_ifunc_static(&space, resolver_addr);
-            unsafe { space.write_u64(got_offset, result); }
+            unsafe {
+                space.write_u64(got_offset, result);
+            }
             if show_trace {
                 eprintln!(
                     "[ifunc] GOT[{:#x}] = {:#x} (resolver {:#x})",
@@ -793,18 +770,18 @@ fn main() {
             );
             icount += 1;
         }
-        let reason =
-            unsafe { cpu_exec_loop(&mut env, &mut lcpu) };
+        let reason = unsafe { cpu_exec_loop(&mut env, &mut lcpu) };
         match reason {
-            ExitReason::Exit(v)
-                if v == EXCP_ECALL as usize =>
-            {
+            ExitReason::Exit(v) if v == EXCP_ECALL as usize => {
                 // SVC (syscall)
                 if show_trace {
                     eprintln!(
                         "[syscall] nr={} pc={:#x} x0={:#x} x1={:#x} x2={:#x}",
-                        lcpu.cpu.xregs[8], lcpu.cpu.pc,
-                        lcpu.cpu.xregs[0], lcpu.cpu.xregs[1], lcpu.cpu.xregs[2],
+                        lcpu.cpu.xregs[8],
+                        lcpu.cpu.pc,
+                        lcpu.cpu.xregs[0],
+                        lcpu.cpu.xregs[1],
+                        lcpu.cpu.xregs[2],
                     );
                 }
                 match handle_syscall_aarch64(
@@ -820,35 +797,23 @@ fn main() {
                     }
                     SyscallResult::Exit(code) => {
                         if show_stats {
-                            eprint!(
-                                "{}",
-                                env.per_cpu.stats
-                            );
+                            eprint!("{}", env.per_cpu.stats);
                         }
                         if profiling {
-                            save_profile(
-                                &env,
-                                info.load_vaddr,
-                                profile_mode,
-                            );
+                            save_profile(&env, info.load_vaddr, profile_mode);
                         }
                         process::exit(code);
                     }
                 }
             }
-            ExitReason::Exit(v)
-                if v == EXCP_UNDEF as usize =>
-            {
+            ExitReason::Exit(v) if v == EXCP_UNDEF as usize => {
                 if show_stats {
                     eprint!("{}", env.per_cpu.stats);
                 }
                 if profiling {
                     save_profile(&env, info.load_vaddr, profile_mode);
                 }
-                eprintln!(
-                    "illegal instruction at pc={:#x}",
-                    lcpu.cpu.pc
-                );
+                eprintln!("illegal instruction at pc={:#x}", lcpu.cpu.pc);
                 process::exit(1);
             }
             ExitReason::Exit(v) => {
