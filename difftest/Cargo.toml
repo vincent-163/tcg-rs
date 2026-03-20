@@ -1,14 +1,13 @@
 [package]
-name = "tcg-tests"
+name = "tcg-difftest"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 tcg-core = { path = "../core" }
 tcg-backend = { path = "../backend" }
-tcg-frontend = { path = "../frontend" }
 tcg-exec = { path = "../exec" }
-decode = { path = "../decode" }
+tcg-frontend = { path = "../frontend" }
 tcg-linux-user = { path = "../linux-user" }
-tcg-difftest = { path = "../difftest" }
 libc = "0.2"
+rand = "0.8"

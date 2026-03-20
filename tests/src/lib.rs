@@ -5,6 +5,8 @@ mod core;
 #[cfg(test)]
 mod decode;
 #[cfg(test)]
+mod difftest;
+#[cfg(test)]
 mod exec;
 #[cfg(test)]
 mod frontend;

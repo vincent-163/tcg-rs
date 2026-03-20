@@ -8,6 +8,7 @@ members = [
     "exec",
     "linux-user",
     "tests",
+    "difftest",
     "tools/irdump",
     "tools/irbackend",
     "tools/aot",
