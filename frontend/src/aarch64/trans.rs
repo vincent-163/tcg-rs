@@ -6571,6 +6571,229 @@ fn neon_neg8_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
     result
 }
 
+/// Inline 32-bit vector absolute value without helper call.
+/// ABS(x) = max(x, -x) for signed values
+#[inline]
+fn neon_abs32_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // Extract low 32 bits
+    let a_lo = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(a_lo, a);
+    // Extract high 32 bits
+    let a_hi = ir.new_temp(Type::I32);
+    ir.gen_extrh_i64_i32(a_hi, a);
+    // Negate each lane
+    let neg_lo = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, neg_lo, a_lo);
+    let neg_hi = ir.new_temp(Type::I32);
+    ir.gen_neg(Type::I32, neg_hi, a_hi);
+    // max(a, -a) for each lane
+    let lo_res = ir.new_temp(Type::I32);
+    ir.gen_movcond(Type::I32, lo_res, a_lo, neg_lo, a_lo, neg_lo, Cond::Gt);
+    let hi_res = ir.new_temp(Type::I32);
+    ir.gen_movcond(Type::I32, hi_res, a_hi, neg_hi, a_hi, neg_hi, Cond::Gt);
+    // Combine results
+    let lo_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(lo_ext, lo_res);
+    let hi_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(hi_ext, hi_res);
+    let hi_shifted = ir.new_temp(Type::I64);
+    let shift = ir.new_const(Type::I64, 32);
+    ir.gen_shl(Type::I64, hi_shifted, hi_ext, shift);
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, lo_ext, hi_shifted);
+    result
+}
+
+/// Inline 32-bit vector compare equal to zero.
+/// Returns all-ones (0xffffffff) if equal to zero, else 0.
+#[inline]
+fn neon_cmeq32_zero_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // Extract low 32 bits
+    let a_lo = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(a_lo, a);
+    // Extract high 32 bits
+    let a_hi = ir.new_temp(Type::I32);
+    ir.gen_extrh_i64_i32(a_hi, a);
+    // Compare each lane with zero
+    let zero32 = ir.new_const(Type::I32, 0);
+    let zero64 = ir.new_const(Type::I64, 0);
+    let all_ones32 = ir.new_const(Type::I32, 0xffffffffu64);
+    let lo_res = ir.new_temp(Type::I32);
+    ir.gen_movcond(
+        Type::I32,
+        lo_res,
+        a_lo,
+        zero32,
+        all_ones32,
+        zero32,
+        Cond::Eq,
+    );
+    let hi_res = ir.new_temp(Type::I32);
+    ir.gen_movcond(
+        Type::I32,
+        hi_res,
+        a_hi,
+        zero32,
+        all_ones32,
+        zero32,
+        Cond::Eq,
+    );
+    // Combine results
+    let lo_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(lo_ext, lo_res);
+    let hi_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(hi_ext, hi_res);
+    let hi_shifted = ir.new_temp(Type::I64);
+    let shift = ir.new_const(Type::I64, 32);
+    ir.gen_shl(Type::I64, hi_shifted, hi_ext, shift);
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, lo_ext, hi_shifted);
+    result
+}
+
+/// Inline 16-bit vector compare equal to zero (4 lanes).
+#[inline]
+fn neon_cmeq16_zero_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    let mask16 = ir.new_const(Type::I64, 0xffff);
+    let zero16 = ir.new_const(Type::I32, 0);
+    let all_ones16 = ir.new_const(Type::I32, 0xffff);
+    let mut result = ir.new_const(Type::I64, 0);
+    for i in 0..4 {
+        let shift_amt = ir.new_const(Type::I64, i * 16);
+        // Extract 16-bit lane
+        let t_raw = ir.new_temp(Type::I64);
+        ir.gen_shr(Type::I64, t_raw, a, shift_amt);
+        let t = ir.new_temp(Type::I64);
+        ir.gen_and(Type::I64, t, t_raw, mask16);
+        let s = ir.new_temp(Type::I32);
+        ir.gen_extrl_i64_i32(s, t);
+        // Compare with zero
+        let res = ir.new_temp(Type::I32);
+        ir.gen_movcond(Type::I32, res, s, zero16, all_ones16, zero16, Cond::Eq);
+        // Extend and shift back
+        let res_64 = ir.new_temp(Type::I64);
+        ir.gen_ext_u32_i64(res_64, res);
+        let res_masked = ir.new_temp(Type::I64);
+        ir.gen_and(Type::I64, res_masked, res_64, mask16);
+        let r = ir.new_temp(Type::I64);
+        ir.gen_shl(Type::I64, r, res_masked, shift_amt);
+        // OR into result
+        let new_result = ir.new_temp(Type::I64);
+        ir.gen_or(Type::I64, new_result, result, r);
+        result = new_result;
+    }
+    result
+}
+
+/// Inline REV64 .4H/.8H: reverse order of 4x16-bit elements.
+#[inline]
+fn neon_rev64_16_inline(ir: &mut Context, a: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    let mask16 = ir.new_const(Type::I64, 0xffff);
+    // Extract h0 (bits 0-15)
+    let h0 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, h0, a, mask16);
+    // Extract h1 (bits 16-31)
+    let shift16 = ir.new_const(Type::I64, 16);
+    let h1_raw = ir.new_temp(Type::I64);
+    ir.gen_shr(Type::I64, h1_raw, a, shift16);
+    let h1 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, h1, h1_raw, mask16);
+    // Extract h2 (bits 32-47)
+    let shift32 = ir.new_const(Type::I64, 32);
+    let h2_raw = ir.new_temp(Type::I64);
+    ir.gen_shr(Type::I64, h2_raw, a, shift32);
+    let h2 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, h2, h2_raw, mask16);
+    // Extract h3 (bits 48-63)
+    let shift48 = ir.new_const(Type::I64, 48);
+    let h3_raw = ir.new_temp(Type::I64);
+    ir.gen_shr(Type::I64, h3_raw, a, shift48);
+    let h3 = ir.new_temp(Type::I64);
+    ir.gen_and(Type::I64, h3, h3_raw, mask16);
+    // Reassemble: h3 | (h2 << 16) | (h1 << 32) | (h0 << 48)
+    let h0_shifted = ir.new_temp(Type::I64);
+    let shift48_out = ir.new_const(Type::I64, 48);
+    ir.gen_shl(Type::I64, h0_shifted, h0, shift48_out);
+    let h1_shifted = ir.new_temp(Type::I64);
+    let shift32_out = ir.new_const(Type::I64, 32);
+    ir.gen_shl(Type::I64, h1_shifted, h1, shift32_out);
+    let h2_shifted = ir.new_temp(Type::I64);
+    ir.gen_shl(Type::I64, h2_shifted, h2, shift16);
+    let t01 = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, t01, h0_shifted, h1_shifted);
+    let t23 = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, t23, h2_shifted, h3);
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, t01, t23);
+    result
+}
+
+/// Inline 32-bit vector shift left.
+#[inline]
+fn neon_shl32_inline(ir: &mut Context, a: TempIdx, shift: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // Extract low 32 bits
+    let a_lo = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(a_lo, a);
+    // Extract high 32 bits
+    let a_hi = ir.new_temp(Type::I32);
+    ir.gen_extrh_i64_i32(a_hi, a);
+    // Truncate shift to 32 bits
+    let shift32 = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(shift32, shift);
+    // Shift each lane
+    let lo_res = ir.new_temp(Type::I32);
+    ir.gen_shl(Type::I32, lo_res, a_lo, shift32);
+    let hi_res = ir.new_temp(Type::I32);
+    ir.gen_shl(Type::I32, hi_res, a_hi, shift32);
+    // Combine results
+    let lo_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(lo_ext, lo_res);
+    let hi_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(hi_ext, hi_res);
+    let hi_shifted = ir.new_temp(Type::I64);
+    let shift32_const = ir.new_const(Type::I64, 32);
+    ir.gen_shl(Type::I64, hi_shifted, hi_ext, shift32_const);
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, lo_ext, hi_shifted);
+    result
+}
+
+/// Inline 32-bit vector logical shift right.
+#[inline]
+fn neon_ushr32_inline(ir: &mut Context, a: TempIdx, shift: TempIdx) -> TempIdx {
+    use tcg_core::Type;
+    // Extract low 32 bits
+    let a_lo = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(a_lo, a);
+    // Extract high 32 bits
+    let a_hi = ir.new_temp(Type::I32);
+    ir.gen_extrh_i64_i32(a_hi, a);
+    // Truncate shift to 32 bits
+    let shift32 = ir.new_temp(Type::I32);
+    ir.gen_extrl_i64_i32(shift32, shift);
+    // Shift each lane (logical right shift)
+    let lo_res = ir.new_temp(Type::I32);
+    ir.gen_shr(Type::I32, lo_res, a_lo, shift32);
+    let hi_res = ir.new_temp(Type::I32);
+    ir.gen_shr(Type::I32, hi_res, a_hi, shift32);
+    // Combine results
+    let lo_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(lo_ext, lo_res);
+    let hi_ext = ir.new_temp(Type::I64);
+    ir.gen_ext_u32_i64(hi_ext, hi_res);
+    let hi_shifted = ir.new_temp(Type::I64);
+    let shift32_const = ir.new_const(Type::I64, 32);
+    ir.gen_shl(Type::I64, hi_shifted, hi_ext, shift32_const);
+    let result = ir.new_temp(Type::I64);
+    ir.gen_or(Type::I64, result, lo_ext, hi_shifted);
+    result
+}
+
 impl Aarch64DisasContext {
     /// Helper: apply a per-u64-half operation on vector registers.
     fn neon_binop_halves(
@@ -6590,6 +6813,27 @@ impl Aarch64DisasContext {
             let bn = self.read_vreg_hi(ir, rn);
             let bm = self.read_vreg_hi(ir, rm);
             let hi = f(ir, bn, bm);
+            self.write_vreg_hi(ir, rd, hi);
+        } else {
+            self.clear_vreg_hi(ir, rd);
+        }
+    }
+
+    /// Helper: apply a unary per-u64-half operation on vector registers.
+    fn neon_unop_halves(
+        &mut self,
+        ir: &mut Context,
+        q: u32,
+        rd: usize,
+        rn: usize,
+        f: fn(&mut Context, TempIdx) -> TempIdx,
+    ) {
+        let an = self.read_vreg_lo(ir, rn);
+        let lo = f(ir, an);
+        self.write_vreg_lo(ir, rd, lo);
+        if q != 0 {
+            let bn = self.read_vreg_hi(ir, rn);
+            let hi = f(ir, bn);
             self.write_vreg_hi(ir, rd, hi);
         } else {
             self.clear_vreg_hi(ir, rd);
@@ -7693,17 +7937,26 @@ impl Aarch64DisasContext {
             }
             // ABS .4S/.2S: U=0 size=10 opcode=01011
             (0, 0b10, 0b01011) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_abs32");
+                // Inline ABS using max(x, -x)
+                self.neon_unop_halves(ir, q, rd, rn, |ir, a| {
+                    neon_abs32_inline(ir, a)
+                });
                 true
             }
             // CMEQ #0 .4S/.2S: U=0 size=10 opcode=01001
             (0, 0b10, 0b01001) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_cmeq32_zero");
+                // Inline CMEQ #0 using movcond
+                self.neon_unop_halves(ir, q, rd, rn, |ir, a| {
+                    neon_cmeq32_zero_inline(ir, a)
+                });
                 true
             }
             // CMEQ #0 .8H/.4H: U=0 size=01 opcode=01001
             (0, 0b01, 0b01001) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_cmeq16_zero");
+                // Inline CMEQ #0 for 16-bit lanes
+                self.neon_unop_halves(ir, q, rd, rn, |ir, a| {
+                    neon_cmeq16_zero_inline(ir, a)
+                });
                 true
             }
             // XTN .2S (64→32): U=0 size=10 opcode=10010
@@ -7718,7 +7971,10 @@ impl Aarch64DisasContext {
             }
             // REV64 .4H/.8H: U=0 size=01 opcode=00000
             (0, 0b01, 0b00000) => {
-                self.neon_call1_halves(ir, q, rd, rn, "helper_rev64_16");
+                // Inline REV64 for 16-bit elements
+                self.neon_unop_halves(ir, q, rd, rn, |ir, a| {
+                    neon_rev64_16_inline(ir, a)
+                });
                 true
             }
             // CMLT #0 .4S/.2S: U=0 size=10 opcode=01010
@@ -8102,12 +8358,14 @@ impl Aarch64DisasContext {
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
             let d_lo = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, d_lo, helper_shl32, [lo, sh]);
+            let shl_result = neon_shl32_inline(ir, lo, sh);
+            ir.gen_mov(Type::I64, d_lo, shl_result);
             self.write_vreg_lo(ir, rd, d_lo);
             if q != 0 {
                 let hi = self.read_vreg_hi(ir, rn);
                 let d_hi = ir.new_temp(Type::I64);
-                gen_helper_call!(ir, d_hi, helper_shl32, [hi, sh]);
+                let shl_result_hi = neon_shl32_inline(ir, hi, sh);
+                ir.gen_mov(Type::I64, d_hi, shl_result_hi);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
@@ -8140,12 +8398,14 @@ impl Aarch64DisasContext {
             let sh = ir.new_const(Type::I64, shift as u64);
             let lo = self.read_vreg_lo(ir, rn);
             let d_lo = ir.new_temp(Type::I64);
-            gen_helper_call!(ir, d_lo, helper_ushr32, [lo, sh]);
+            let ushr_result = neon_ushr32_inline(ir, lo, sh);
+            ir.gen_mov(Type::I64, d_lo, ushr_result);
             self.write_vreg_lo(ir, rd, d_lo);
             if q != 0 {
                 let hi = self.read_vreg_hi(ir, rn);
                 let d_hi = ir.new_temp(Type::I64);
-                gen_helper_call!(ir, d_hi, helper_ushr32, [hi, sh]);
+                let ushr_result_hi = neon_ushr32_inline(ir, hi, sh);
+                ir.gen_mov(Type::I64, d_hi, ushr_result_hi);
                 self.write_vreg_hi(ir, rd, d_hi);
             } else {
                 self.clear_vreg_hi(ir, rd);
