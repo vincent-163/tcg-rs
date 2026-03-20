@@ -341,6 +341,158 @@ impl TbTranslator {
         }
     }
 
+    /// Get binary operands with optimal type handling.
+    /// Returns (lhs, rhs, dst_type) where operands are loaded with matching types
+    /// to minimize conversions.
+    fn get_binary_operands(
+        &self,
+        ir: &Context,
+        op: &tcg_core::Op,
+    ) -> (LLVMValueRef, LLVMValueRef, Type) {
+        let b = self.builder;
+        let def = &OPCODE_DEFS[op.opc as usize];
+        let nb_o = def.nb_oargs as usize;
+        let nb_i = def.nb_iargs as usize;
+
+        macro_rules! iarg { ($n:expr) => { op.args[nb_o + $n] } }
+        macro_rules! oarg { ($n:expr) => { op.args[$n] } }
+
+        let dst_idx = oarg!(0);
+        let lhs_idx = iarg!(0);
+        let rhs_idx = iarg!(1);
+
+        let dst_ty = ir.temp(dst_idx).ty;
+        let lhs_ty = ir.temp(lhs_idx).ty;
+        let rhs_ty = ir.temp(rhs_idx).ty;
+
+        unsafe {
+            // Strategy: operate at the widest type among operands and destination
+            // This avoids unnecessary narrowing/widening
+            let op_ty = if dst_ty == Type::I64 || lhs_ty == Type::I64 || rhs_ty == Type::I64 {
+                Type::I64
+            } else {
+                Type::I32
+            };
+
+            let llvm_op_ty = self.llvm_ty(op_ty);
+
+            let load_operand = |tidx: TempIdx| -> LLVMValueRef {
+                let temp = ir.temp(tidx);
+                match temp.kind {
+                    TempKind::Const => {
+                        LLVMConstInt(llvm_op_ty, temp.val, 0)
+                    }
+                    TempKind::Fixed => {
+                        LLVMBuildPtrToInt(b, self.env, llvm_op_ty, E)
+                    }
+                    TempKind::Global => {
+                        // Load from local alloca
+                        let val = self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]);
+                        // Convert to operation type if needed
+                        if temp.ty == Type::I32 && op_ty == Type::I64 {
+                            LLVMBuildZExt(b, val, self.i64t, E)
+                        } else if temp.ty == Type::I64 && op_ty == Type::I32 {
+                            LLVMBuildTrunc(b, val, self.i32t, E)
+                        } else {
+                            val
+                        }
+                    }
+                    _ => {
+                        // Local temp - load from alloca
+                        let val = self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]);
+                        // Convert to operation type if needed
+                        if temp.ty == Type::I32 && op_ty == Type::I64 {
+                            LLVMBuildZExt(b, val, self.i64t, E)
+                        } else if temp.ty == Type::I64 && op_ty == Type::I32 {
+                            LLVMBuildTrunc(b, val, self.i32t, E)
+                        } else {
+                            val
+                        }
+                    }
+                }
+            };
+
+            let lhs = load_operand(lhs_idx);
+            let rhs = load_operand(rhs_idx);
+
+            (lhs, rhs, dst_ty)
+        }
+    }
+
+    /// Load a single operand with proper type conversion
+    fn load_operand(
+        &self,
+        b: LLVMBuilderRef,
+        ir: &Context,
+        tidx: TempIdx,
+        src_ty: Type,
+        dst_ty: Type,
+    ) -> LLVMValueRef {
+        unsafe {
+            let temp = ir.temp(tidx);
+            let val = match temp.kind {
+                TempKind::Const => LLVMConstInt(self.llvm_ty(src_ty), temp.val, 0),
+                TempKind::Fixed => LLVMBuildPtrToInt(b, self.env, self.llvm_ty(src_ty), E),
+                _ => self.build_load_typed(b, temp.ty, self.temps[tidx.0 as usize]),
+            };
+
+            // Adjust type if needed
+            let target_llvm_ty = self.llvm_ty(dst_ty);
+            let val_ty = LLVMTypeOf(val);
+            if val_ty == target_llvm_ty {
+                val
+            } else {
+                // Need conversion
+                let val_is_i32 = val_ty == self.i32t;
+                let target_is_i32 = target_llvm_ty == self.i32t;
+
+                if val_is_i32 && !target_is_i32 {
+                    LLVMBuildZExt(b, val, target_llvm_ty, E)
+                } else if !val_is_i32 && target_is_i32 {
+                    LLVMBuildTrunc(b, val, target_llvm_ty, E)
+                } else {
+                    val
+                }
+            }
+        }
+    }
+
+    /// Adjust result value to match destination type
+    fn adjust_result_type(
+        &self,
+        b: LLVMBuilderRef,
+        val: LLVMValueRef,
+        dst_ty: Type,
+        op_type: Type,
+    ) -> LLVMValueRef {
+        unsafe {
+            let val_ty = LLVMTypeOf(val);
+            let dst_llvm_ty = self.llvm_ty(dst_ty);
+
+            if val_ty == dst_llvm_ty {
+                return val;
+            }
+
+            // Check if we need to convert
+            let val_is_i32 = val_ty == self.i32t;
+            let dst_is_i32 = dst_llvm_ty == self.i32t;
+
+            if val_is_i32 && !dst_is_i32 {
+                // 32-bit result -> 64-bit destination: zero-extend
+                // This is critical for AArch64 semantics where 32-bit ops
+                // in W registers zero-extend to X registers
+                LLVMBuildZExt(b, val, dst_llvm_ty, E)
+            } else if !val_is_i32 && dst_is_i32 {
+                // 64-bit result -> 32-bit destination: truncate
+                LLVMBuildTrunc(b, val, dst_llvm_ty, E)
+            } else {
+                val
+            }
+        }
+    }
+
+
+
     /// Tag a load or store with TBAA metadata.
     fn set_tbaa(&self, inst: LLVMValueRef, tag: LLVMValueRef) {
         unsafe { LLVMSetMetadata(inst, self.tbaa_kind, tag); }
@@ -666,255 +818,160 @@ impl TbTranslator {
                 }
 
                 // -- Arithmetic --
-                Opcode::Add => { let v = LLVMBuildAdd(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Sub => { let v = LLVMBuildSub(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Mul => { let v = LLVMBuildMul(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::Neg => { let v = LLVMBuildNeg(b, ival!(0), E); store_out!(0, v); }
-                Opcode::DivS => { let v = LLVMBuildSDiv(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::DivU => { let v = LLVMBuildUDiv(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::RemS => { let v = LLVMBuildSRem(b, ival!(0), ival!(1), E); store_out!(0, v); }
-                Opcode::RemU => { let v = LLVMBuildURem(b, ival!(0), ival!(1), E); store_out!(0, v); }
+                // Optimized: use native operand types to avoid unnecessary conversions
+                Opcode::Add => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildAdd(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::Sub => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildSub(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::Mul => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildMul(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::Neg => {
+                    let src_ty = ir.temp(iarg!(0)).ty;
+                    let dst_ty = ir.temp(oarg!(0)).ty;
+                    let a = self.load_operand(b, ir, iarg!(0), src_ty, dst_ty);
+                    let v = LLVMBuildNeg(b, a, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::DivS => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildSDiv(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::DivU => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildUDiv(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::RemS => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildSRem(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
+                Opcode::RemU => {
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
+                    let v = LLVMBuildURem(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
+                    store_out!(0, v);
+                }
 
                 // -- Logic --
+                // Optimized: avoid redundant type conversions by operating at native type
                 Opcode::And => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let v = LLVMBuildAnd(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Or  => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let v = LLVMBuildOr(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Xor => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let v = LLVMBuildXor(b, a, bv, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Not => {
+                    let src_ty = ir.temp(iarg!(0)).ty;
                     let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
+                    let a = self.load_operand(b, ir, iarg!(0), src_ty, dst_ty);
                     let v = LLVMBuildNot(b, a, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
 
                 Opcode::AndC => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let nb = LLVMBuildNot(b, bv, E);
                     let v = LLVMBuildAnd(b, a, nb, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::OrC => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let nb = LLVMBuildNot(b, bv, E);
                     let v = LLVMBuildOr(b, a, nb, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Eqv => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let x = LLVMBuildXor(b, a, bv, E);
                     let v = LLVMBuildNot(b, x, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Nand => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let anded = LLVMBuildAnd(b, a, bv, E);
                     let v = LLVMBuildNot(b, anded, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Nor => {
-                    let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut bv = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_b_ty = ir.temp(iarg!(1)).ty;
-                    if src_b_ty.size_bits() < dst_ty.size_bits() {
-                        bv = LLVMBuildZExt(b, bv, ty, E);
-                    } else if src_b_ty.size_bits() > dst_ty.size_bits() {
-                        bv = LLVMBuildTrunc(b, bv, ty, E);
-                    }
+                    let (a, bv, dst_ty) = self.get_binary_operands(ir, op);
                     let ored = LLVMBuildOr(b, a, bv, E);
                     let v = LLVMBuildNot(b, ored, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
 
                 // -- Shifts --
+                // Optimized: shift amount can be any type, value determines operation width
                 Opcode::Shl => {
                     let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut sh = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_sh_ty = ir.temp(iarg!(1)).ty;
-                    if src_sh_ty.size_bits() < dst_ty.size_bits() {
-                        sh = LLVMBuildZExt(b, sh, ty, E);
-                    } else if src_sh_ty.size_bits() > dst_ty.size_bits() {
-                        sh = LLVMBuildTrunc(b, sh, ty, E);
-                    }
-                    let v = LLVMBuildShl(b, a, sh, E);
+                    let src_ty = ir.temp(iarg!(0)).ty;
+                    let shift_src_ty = ir.temp(iarg!(1)).ty;
+
+                    // Use source type for operation (preserves 32-bit ops when possible)
+                    let a = self.load_operand(b, ir, iarg!(0), src_ty, src_ty);
+                    let shift_val = self.load_operand(b, ir, iarg!(1), shift_src_ty, src_ty);
+
+                    let v = LLVMBuildShl(b, a, shift_val, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Shr => {
                     let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut sh = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_sh_ty = ir.temp(iarg!(1)).ty;
-                    if src_sh_ty.size_bits() < dst_ty.size_bits() {
-                        sh = LLVMBuildZExt(b, sh, ty, E);
-                    } else if src_sh_ty.size_bits() > dst_ty.size_bits() {
-                        sh = LLVMBuildTrunc(b, sh, ty, E);
-                    }
-                    let v = LLVMBuildLShr(b, a, sh, E);
+                    let src_ty = ir.temp(iarg!(0)).ty;
+                    let shift_src_ty = ir.temp(iarg!(1)).ty;
+
+                    let a = self.load_operand(b, ir, iarg!(0), src_ty, src_ty);
+                    let shift_val = self.load_operand(b, ir, iarg!(1), shift_src_ty, src_ty);
+
+                    let v = LLVMBuildLShr(b, a, shift_val, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
                 Opcode::Sar => {
                     let dst_ty = ir.temp(oarg!(0)).ty;
-                    let ty = self.llvm_ty(dst_ty);
-                    let mut a = ival!(0);
-                    let mut sh = ival!(1);
-                    let src_a_ty = ir.temp(iarg!(0)).ty;
-                    if src_a_ty.size_bits() < dst_ty.size_bits() {
-                        a = LLVMBuildZExt(b, a, ty, E);
-                    } else if src_a_ty.size_bits() > dst_ty.size_bits() {
-                        a = LLVMBuildTrunc(b, a, ty, E);
-                    }
-                    let src_sh_ty = ir.temp(iarg!(1)).ty;
-                    if src_sh_ty.size_bits() < dst_ty.size_bits() {
-                        sh = LLVMBuildZExt(b, sh, ty, E);
-                    } else if src_sh_ty.size_bits() > dst_ty.size_bits() {
-                        sh = LLVMBuildTrunc(b, sh, ty, E);
-                    }
-                    let v = LLVMBuildAShr(b, a, sh, E);
+                    let src_ty = ir.temp(iarg!(0)).ty;
+                    let shift_src_ty = ir.temp(iarg!(1)).ty;
+
+                    let a = self.load_operand(b, ir, iarg!(0), src_ty, src_ty);
+                    let shift_val = self.load_operand(b, ir, iarg!(1), shift_src_ty, src_ty);
+
+                    let v = LLVMBuildAShr(b, a, shift_val, E);
+                    let v = self.adjust_result_type(b, v, dst_ty, op.op_type);
                     store_out!(0, v);
                 }
 

@@ -1,0 +1,101 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 473.astar
+Compiling Binaries
+  Building 473.astar base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf astar
+rm -rf astar.exe
+rm -rf *.o  BigLakes1024.out rivers1.out
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-g++ -c -o CreateWay_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       CreateWay_.cpp
+aarch64-none-linux-gnu-g++ -c -o Places_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Places_.cpp
+aarch64-none-linux-gnu-g++ -c -o RegBounds_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       RegBounds_.cpp
+aarch64-none-linux-gnu-g++ -c -o RegMng_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       RegMng_.cpp
+aarch64-none-linux-gnu-g++ -c -o Way2_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Way2_.cpp
+aarch64-none-linux-gnu-g++ -c -o WayInit_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       WayInit_.cpp
+aarch64-none-linux-gnu-g++ -c -o Library.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Library.cpp
+aarch64-none-linux-gnu-g++ -c -o Random.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Random.cpp
+aarch64-none-linux-gnu-g++ -c -o Region_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Region_.cpp
+aarch64-none-linux-gnu-g++ -c -o RegWay_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       RegWay_.cpp
+aarch64-none-linux-gnu-g++ -c -o Way_.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Way_.cpp
+Library.cpp:80:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   80 |   printf("Ways quantity : %"PRId64"\n",wayqu);
+      |          ^
+Library.cpp:81:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   81 |   printf("Total way length : %"PRId64"\n",waylength);
+      |          ^
+Library.cpp:84:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   84 |   printf("Reg ways quantity : %"PRId64"\n",regwayqu);
+      |          ^
+Library.cpp:85:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   85 |   printf("Total reg way length : %"PRId64"\n",regwaylength);
+      |          ^
+Library.cpp:88:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   88 |   printf("River ways quantity : %"PRId64"\n",riverwayqu);
+      |          ^
+Library.cpp:89:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   89 |   printf("Total river way length : %"PRId64"\n",riverwaylength);
+      |          ^
+Library.cpp:91:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   91 |   printf("Land ways quantity : %"PRId64"\n",landwayqu);
+      |          ^
+Library.cpp:92:10: warning: invalid suffix on literal; C++11 requires a space between literal and string macro [-Wliteral-suffix]
+   92 |   printf("Total land way length : %"PRId64"\n",landwaylength);
+      |          ^
+aarch64-none-linux-gnu-g++   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        CreateWay_.o Places_.o RegBounds_.o RegMng_.o Way2_.o WayInit_.o Library.o Random.o Region_.o RegWay_.o Way_.o                     -o astar
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-g++ -c -o options.o -DSPEC_CPU -DNDEBUG -DSPEC_CPU_LITTLE_ENDIAN   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       <source>
+C: CXXC="aarch64-none-linux-gnu-g++"
+C: CXXOBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS="-DSPEC_CPU_LITTLE_ENDIAN"
+P: BENCH_CXXFLAGS=""
+O: OPTIMIZE=""
+O: CXXOPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CXXPORTABILITY=""
+O: EXTRA_CXXFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_CXXOPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CXXPORTABILITY=""
+LINK: aarch64-none-linux-gnu-g++   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>           -o options
+C: LD="aarch64-none-linux-gnu-g++"
+O: CXXOPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: LDOUT="-o options"
+
+Build successes: 473.astar(base)
+
+Setting Up Run Directories
+  Setting up 473.astar ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 473.astar ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/473.astar/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+473.astar: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+473.astar: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.690.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.690.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.690.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.690
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:08 2026; 2975 total seconds elapsed

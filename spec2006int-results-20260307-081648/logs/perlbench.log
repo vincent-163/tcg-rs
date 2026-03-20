@@ -1,0 +1,8 @@
+==> [400.perlbench] Starting AOT pipeline...
+  [1/3] Profiling...
+[tcg] guest_base=0x7f51df20a000
+[tcg] profiling enabled (mode=hot, min_exec_count=10)
+Can't locate Mail/SpamAssassin.pm in @INC (@INC contains: ./lib lib .) at checkspam.pl line 16.
+BEGIN failed--compilation aborted at checkspam.pl line 16.
+[tcg] profile saved to /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/profiles/perlbench.profile.bin (mode=hot, min_exec_count=10, 1394 TBs)
+ERROR: Profile run failed

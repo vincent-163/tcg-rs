@@ -1,0 +1,137 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 456.hmmer
+Compiling Binaries
+  Building 456.hmmer base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf hmmer
+rm -rf hmmer.exe
+rm -rf *.o  leng100.out
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o alphabet.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         alphabet.c
+aarch64-none-linux-gnu-gcc -c -o core_algorithms.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         core_algorithms.c
+aarch64-none-linux-gnu-gcc -c -o debug.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         debug.c
+aarch64-none-linux-gnu-gcc -c -o display.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         display.c
+aarch64-none-linux-gnu-gcc -c -o emit.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         emit.c
+aarch64-none-linux-gnu-gcc -c -o emulation.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         emulation.c
+aarch64-none-linux-gnu-gcc -c -o fast_algorithms.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         fast_algorithms.c
+aarch64-none-linux-gnu-gcc -c -o histogram.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         histogram.c
+aarch64-none-linux-gnu-gcc -c -o hmmio.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hmmio.c
+aarch64-none-linux-gnu-gcc -c -o hmmcalibrate.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hmmcalibrate.c
+aarch64-none-linux-gnu-gcc -c -o hmmsearch.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hmmsearch.c
+aarch64-none-linux-gnu-gcc -c -o mathsupport.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mathsupport.c
+aarch64-none-linux-gnu-gcc -c -o masks.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         masks.c
+aarch64-none-linux-gnu-gcc -c -o misc.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         misc.c
+aarch64-none-linux-gnu-gcc -c -o modelmakers.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         modelmakers.c
+aarch64-none-linux-gnu-gcc -c -o plan7.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         plan7.c
+aarch64-none-linux-gnu-gcc -c -o plan9.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         plan9.c
+aarch64-none-linux-gnu-gcc -c -o postprob.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         postprob.c
+aarch64-none-linux-gnu-gcc -c -o prior.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         prior.c
+aarch64-none-linux-gnu-gcc -c -o tophits.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         tophits.c
+aarch64-none-linux-gnu-gcc -c -o trace.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         trace.c
+aarch64-none-linux-gnu-gcc -c -o ucbqsort.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ucbqsort.c
+aarch64-none-linux-gnu-gcc -c -o a2m.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         a2m.c
+aarch64-none-linux-gnu-gcc -c -o aligneval.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         aligneval.c
+tophits.c: In function 'FullSortTophits':
+tophits.c:307:5: warning: implicit declaration of function 'specqsort' [-Wimplicit-function-declaration]
+  307 |     specqsort(h->hit, h->num, sizeof(struct hit_s *), hit_comparison);
+      |     ^~~~~~~~~
+aarch64-none-linux-gnu-gcc -c -o alignio.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         alignio.c
+aarch64-none-linux-gnu-gcc -c -o clustal.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         clustal.c
+aarch64-none-linux-gnu-gcc -c -o cluster.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cluster.c
+aarch64-none-linux-gnu-gcc -c -o dayhoff.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dayhoff.c
+aarch64-none-linux-gnu-gcc -c -o eps.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         eps.c
+aarch64-none-linux-gnu-gcc -c -o file.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         file.c
+aarch64-none-linux-gnu-gcc -c -o getopt.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         getopt.c
+aarch64-none-linux-gnu-gcc -c -o gki.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         gki.c
+aarch64-none-linux-gnu-gcc -c -o gsi.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         gsi.c
+aarch64-none-linux-gnu-gcc -c -o hsregex.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hsregex.c
+aarch64-none-linux-gnu-gcc -c -o iupac.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         iupac.c
+aarch64-none-linux-gnu-gcc -c -o msa.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         msa.c
+aarch64-none-linux-gnu-gcc -c -o msf.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         msf.c
+gsi.c: In function 'GSISortIndex':
+gsi.c:261:3: warning: implicit declaration of function 'specqsort' [-Wimplicit-function-declaration]
+  261 |   specqsort((void *) g->elems, g->nkeys, sizeof(struct gsikey_s), gsi_keysorter);
+      |   ^~~~~~~~~
+aarch64-none-linux-gnu-gcc -c -o phylip.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         phylip.c
+aarch64-none-linux-gnu-gcc -c -o revcomp.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         revcomp.c
+aarch64-none-linux-gnu-gcc -c -o rk.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rk.c
+aarch64-none-linux-gnu-gcc -c -o selex.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         selex.c
+aarch64-none-linux-gnu-gcc -c -o seqencode.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         seqencode.c
+aarch64-none-linux-gnu-gcc -c -o shuffle.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         shuffle.c
+aarch64-none-linux-gnu-gcc -c -o sqerror.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sqerror.c
+aarch64-none-linux-gnu-gcc -c -o sqio.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sqio.c
+aarch64-none-linux-gnu-gcc -c -o squidcore.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         squidcore.c
+aarch64-none-linux-gnu-gcc -c -o sre_ctype.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sre_ctype.c
+aarch64-none-linux-gnu-gcc -c -o sre_math.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sre_math.c
+aarch64-none-linux-gnu-gcc -c -o sre_random.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sre_random.c
+aarch64-none-linux-gnu-gcc -c -o sre_string.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sre_string.c
+aarch64-none-linux-gnu-gcc -c -o ssi.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ssi.c
+aarch64-none-linux-gnu-gcc -c -o stack.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         stack.c
+aarch64-none-linux-gnu-gcc -c -o stockholm.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         stockholm.c
+ssi.c: In function 'SSIWriteIndex':
+ssi.c:950:5: warning: implicit declaration of function 'specqsort'; did you mean 'skeysort'? [-Wimplicit-function-declaration]
+  950 |     specqsort((void *) g->pkeys, g->nprimary,   sizeof(struct ssipkey_s), pkeysort);
+      |     ^~~~~~~~~
+      |     skeysort
+aarch64-none-linux-gnu-gcc -c -o translate.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         translate.c
+aarch64-none-linux-gnu-gcc -c -o types.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         types.c
+aarch64-none-linux-gnu-gcc -c -o vectorops.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         vectorops.c
+aarch64-none-linux-gnu-gcc -c -o weight.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         weight.c
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        alphabet.o core_algorithms.o debug.o display.o emit.o emulation.o fast_algorithms.o histogram.o hmmio.o hmmcalibrate.o hmmsearch.o mathsupport.o masks.o misc.o modelmakers.o plan7.o plan9.o postprob.o prior.o tophits.o trace.o ucbqsort.o a2m.o aligneval.o alignio.o clustal.o cluster.o dayhoff.o eps.o file.o getopt.o gki.o gsi.o hsregex.o iupac.o msa.o msf.o phylip.o revcomp.o rk.o selex.o seqencode.o shuffle.o sqerror.o sqio.o squidcore.o sre_ctype.o sre_math.o sre_random.o sre_string.o ssi.o stack.o stockholm.o translate.o types.o vectorops.o weight.o             -lm        -o hmmer
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS=""
+P: BENCH_CFLAGS=""
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY=""
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>   -lm        -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: MATH_LIBS="-lm"
+C: LDOUT="-o options"
+
+Build successes: 456.hmmer(base)
+
+Setting Up Run Directories
+  Setting up 456.hmmer ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 456.hmmer ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/456.hmmer/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+456.hmmer: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+456.hmmer: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.685.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.685.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.685.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.685
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:08 2026; 2975 total seconds elapsed

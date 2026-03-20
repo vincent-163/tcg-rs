@@ -1,0 +1,1719 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 471.omnetpp
+Compiling Binaries
+  Building 471.omnetpp base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf omnetpp
+rm -rf omnetpp.exe
+rm -rf *.o  omnetpp.log omnetpp.sca
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-g++ -c -o EtherAppCli.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherAppCli.cc
+aarch64-none-linux-gnu-g++ -c -o EtherAppCli_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherAppCli_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherAppSrv.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherAppSrv.cc
+aarch64-none-linux-gnu-g++ -c -o EtherAppSrv_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherAppSrv_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherApp_m.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherApp_m.cc
+aarch64-none-linux-gnu-g++ -c -o EtherBus.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherBus.cc
+aarch64-none-linux-gnu-g++ -c -o EtherBus_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherBus_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherCtrl_m.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherCtrl_m.cc
+aarch64-none-linux-gnu-g++ -c -o EtherEncap.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherEncap.cc
+aarch64-none-linux-gnu-g++ -c -o EtherEncap_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherEncap_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherFrame_m.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherFrame_m.cc
+aarch64-none-linux-gnu-g++ -c -o EtherHost_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherHost_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherHub.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherHub.cc
+aarch64-none-linux-gnu-g++ -c -o EtherHub_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherHub_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherLLC.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherLLC.cc
+aarch64-none-linux-gnu-g++ -c -o EtherLLC_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherLLC_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherMAC.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherMAC.cc
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherEncap_n.cc:16:
+EtherEncap_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherEncap_n.cc:89:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherEncap_n.cc:89:34: note: in expansion of macro 'ParType_Bool'
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherEncap_n.cc:90:43: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Gate( upperLayerIn, GateDir_Input )
+      |                                           ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherEncap_n.cc:91:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Gate( upperLayerOut, GateDir_Output )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherEncap_n.cc:92:43: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Gate( lowerLayerIn, GateDir_Input )
+      |                                           ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherEncap_n.cc:93:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Gate( lowerLayerOut, GateDir_Output )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherAppCli_n.cc:16:
+EtherAppCli_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherAppCli_n.cc:89:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( destStation, ParType_String )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppCli_n.cc:89:33: note: in expansion of macro 'ParType_String'
+   89 |         Parameter( destStation, ParType_String )
+      |                                 ^~~~~~~~~~~~~~
+EtherAppCli_n.cc:90:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Parameter( destAddress, ParType_String )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppCli_n.cc:90:33: note: in expansion of macro 'ParType_String'
+   90 |         Parameter( destAddress, ParType_String )
+      |                                 ^~~~~~~~~~~~~~
+EtherAppCli_n.cc:91:46: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Parameter( waitTime, ParType_Numeric )
+      |                                              ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppCli_n.cc:91:30: note: in expansion of macro 'ParType_Numeric'
+   91 |         Parameter( waitTime, ParType_Numeric )
+      |                              ^~~~~~~~~~~~~~~
+EtherAppCli_n.cc:92:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Parameter( reqLength, ParType_Numeric )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppCli_n.cc:92:31: note: in expansion of macro 'ParType_Numeric'
+   92 |         Parameter( reqLength, ParType_Numeric )
+      |                               ^~~~~~~~~~~~~~~
+EtherAppCli_n.cc:93:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Parameter( respLength, ParType_Numeric )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppCli_n.cc:93:32: note: in expansion of macro 'ParType_Numeric'
+   93 |         Parameter( respLength, ParType_Numeric )
+      |                                ^~~~~~~~~~~~~~~
+EtherAppCli_n.cc:94:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   94 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppCli_n.cc:94:34: note: in expansion of macro 'ParType_Bool'
+   94 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherAppCli_n.cc:95:33: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   95 |         Gate( in, GateDir_Input )
+      |                                 ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherAppCli_n.cc:96:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   96 |         Gate( out, GateDir_Output )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherBus_n.cc:16:
+EtherBus_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherBus_n.cc:89:46: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( positions, ParType_String )
+      |                                              ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherBus_n.cc:89:31: note: in expansion of macro 'ParType_String'
+   89 |         Parameter( positions, ParType_String )
+      |                               ^~~~~~~~~~~~~~
+EtherBus_n.cc:90:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Parameter( propagationSpeed, ParType_Numeric )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherBus_n.cc:90:38: note: in expansion of macro 'ParType_Numeric'
+   90 |         Parameter( propagationSpeed, ParType_Numeric )
+      |                                      ^~~~~~~~~~~~~~~
+EtherBus_n.cc:91:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherBus_n.cc:91:34: note: in expansion of macro 'ParType_Bool'
+   91 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherBus_n.cc:92:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Gate( in[], GateDir_Input )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherBus_n.cc:93:37: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Gate( out[], GateDir_Output )
+      |                                     ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherLLC_n.cc:16:
+EtherLLC_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherLLC_n.cc:89:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherLLC_n.cc:89:34: note: in expansion of macro 'ParType_Bool'
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherLLC_n.cc:90:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Gate( upperLayerIn[], GateDir_Input )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherLLC_n.cc:91:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Gate( upperLayerOut[], GateDir_Output )
+      |                                               ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherLLC_n.cc:92:43: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Gate( lowerLayerIn, GateDir_Input )
+      |                                           ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherLLC_n.cc:93:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Gate( lowerLayerOut, GateDir_Output )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherHub_n.cc:16:
+EtherHub_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherHub_n.cc:89:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherHub_n.cc:89:34: note: in expansion of macro 'ParType_Bool'
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherHub_n.cc:90:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Gate( in[], GateDir_Input )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherHub_n.cc:91:37: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Gate( out[], GateDir_Output )
+      |                                     ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherHost_n.cc:16:
+EtherHost_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherHost_n.cc:89:33: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Gate( in, GateDir_Input )
+      |                                 ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherHost_n.cc:90:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Gate( out, GateDir_Output )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherAppSrv_n.cc:16:
+EtherAppSrv_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherAppSrv_n.cc:89:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherAppSrv_n.cc:89:34: note: in expansion of macro 'ParType_Bool'
+   89 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherAppSrv_n.cc:90:33: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Gate( in, GateDir_Input )
+      |                                 ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherAppSrv_n.cc:91:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Gate( out, GateDir_Output )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+aarch64-none-linux-gnu-g++ -c -o EtherMAC_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherMAC_n.cc
+aarch64-none-linux-gnu-g++ -c -o EtherSwitch_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       EtherSwitch_n.cc
+aarch64-none-linux-gnu-g++ -c -o LargeNet_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       LargeNet_n.cc
+aarch64-none-linux-gnu-g++ -c -o MACAddress.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACAddress.cc
+aarch64-none-linux-gnu-g++ -c -o MACAddress_m.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACAddress_m.cc
+aarch64-none-linux-gnu-g++ -c -o MACRelayUnitBase.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACRelayUnitBase.cc
+aarch64-none-linux-gnu-g++ -c -o MACRelayUnitNP.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACRelayUnitNP.cc
+aarch64-none-linux-gnu-g++ -c -o MACRelayUnitNP_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACRelayUnitNP_n.cc
+aarch64-none-linux-gnu-g++ -c -o MACRelayUnitPP.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACRelayUnitPP.cc
+aarch64-none-linux-gnu-g++ -c -o MACRelayUnitPP_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACRelayUnitPP_n.cc
+aarch64-none-linux-gnu-g++ -c -o MACRelayUnit_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       MACRelayUnit_n.cc
+aarch64-none-linux-gnu-g++ -c -o Networks_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       Networks_n.cc
+aarch64-none-linux-gnu-g++ -c -o eth-index_n.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       eth-index_n.cc
+aarch64-none-linux-gnu-g++ -c -o utils.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       utils.cc
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherSwitch_n.cc:16:
+EtherSwitch_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherSwitch_n.cc:89:50: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( relayUnitType, ParType_String )
+      |                                                  ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherSwitch_n.cc:89:35: note: in expansion of macro 'ParType_String'
+   89 |         Parameter( relayUnitType, ParType_String )
+      |                                   ^~~~~~~~~~~~~~
+EtherSwitch_n.cc:90:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Gate( in[], GateDir_Input )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherSwitch_n.cc:91:37: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Gate( out[], GateDir_Output )
+      |                                     ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from EtherMAC_n.cc:16:
+EtherMAC_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+EtherMAC_n.cc:89:46: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( promiscuous, ParType_Bool )
+      |                                              ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherMAC_n.cc:89:33: note: in expansion of macro 'ParType_Bool'
+   89 |         Parameter( promiscuous, ParType_Bool )
+      |                                 ^~~~~~~~~~~~
+EtherMAC_n.cc:90:44: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Parameter( address, ParType_String )
+      |                                            ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherMAC_n.cc:90:29: note: in expansion of macro 'ParType_String'
+   90 |         Parameter( address, ParType_String )
+      |                             ^~~~~~~~~~~~~~
+EtherMAC_n.cc:91:44: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Parameter( txrate, ParType_Numeric )
+      |                                            ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherMAC_n.cc:91:28: note: in expansion of macro 'ParType_Numeric'
+   91 |         Parameter( txrate, ParType_Numeric )
+      |                            ^~~~~~~~~~~~~~~
+EtherMAC_n.cc:92:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Parameter( duplexEnabled, ParType_Bool )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherMAC_n.cc:92:35: note: in expansion of macro 'ParType_Bool'
+   92 |         Parameter( duplexEnabled, ParType_Bool )
+      |                                   ^~~~~~~~~~~~
+EtherMAC_n.cc:93:50: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Parameter( maxQueueSize, ParType_Numeric )
+      |                                                  ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherMAC_n.cc:93:34: note: in expansion of macro 'ParType_Numeric'
+   93 |         Parameter( maxQueueSize, ParType_Numeric )
+      |                                  ^~~~~~~~~~~~~~~
+EtherMAC_n.cc:94:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   94 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+EtherMAC_n.cc:94:34: note: in expansion of macro 'ParType_Bool'
+   94 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+EtherMAC_n.cc:95:41: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   95 |         Gate( physicalIn, GateDir_Input )
+      |                                         ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherMAC_n.cc:96:43: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   96 |         Gate( physicalOut, GateDir_Output )
+      |                                           ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherMAC_n.cc:97:43: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   97 |         Gate( upperLayerIn, GateDir_Input )
+      |                                           ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+EtherMAC_n.cc:98:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   98 |         Gate( upperLayerOut, GateDir_Output )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from LargeNet_n.cc:16:
+LargeNet_n.cc:111:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  111 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+LargeNet_n.cc:112:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  112 |         Parameter( h, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:112:23: note: in expansion of macro 'ParType_Numeric'
+  112 |         Parameter( h, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:113:33: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  113 |         Gate( in, GateDir_Input )
+      |                                 ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+LargeNet_n.cc:114:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  114 |         Gate( out, GateDir_Output )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+LargeNet_n.cc:349:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  349 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+LargeNet_n.cc:350:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  350 |         Parameter( n, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:350:23: note: in expansion of macro 'ParType_Numeric'
+  350 |         Parameter( n, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:351:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  351 |         Parameter( h, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:351:23: note: in expansion of macro 'ParType_Numeric'
+  351 |         Parameter( h, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:352:33: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  352 |         Gate( in, GateDir_Input )
+      |                                 ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+LargeNet_n.cc:353:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  353 |         Gate( out, GateDir_Output )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+LargeNet_n.cc:794:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  794 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+LargeNet_n.cc:795:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  795 |         Parameter( n, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:795:23: note: in expansion of macro 'ParType_Numeric'
+  795 |         Parameter( n, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:796:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  796 |         Parameter( h, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:796:23: note: in expansion of macro 'ParType_Numeric'
+  796 |         Parameter( h, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:797:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  797 |         Parameter( b, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:797:23: note: in expansion of macro 'ParType_Numeric'
+  797 |         Parameter( b, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:798:33: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  798 |         Gate( in, GateDir_Input )
+      |                                 ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+LargeNet_n.cc:799:35: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  799 |         Gate( out, GateDir_Output )
+      |                                   ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+LargeNet_n.cc:1451:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1451 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+LargeNet_n.cc:1452:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1452 |         Parameter( n, ParType_Numeric ParType_Const )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1452:23: note: in expansion of macro 'ParType_Numeric'
+ 1452 |         Parameter( n, ParType_Numeric ParType_Const )
+      |                       ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1453:41: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1453 |         Parameter( bbs, ParType_Numeric )
+      |                                         ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1453:25: note: in expansion of macro 'ParType_Numeric'
+ 1453 |         Parameter( bbs, ParType_Numeric )
+      |                         ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1454:41: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1454 |         Parameter( bbm, ParType_Numeric )
+      |                                         ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1454:25: note: in expansion of macro 'ParType_Numeric'
+ 1454 |         Parameter( bbm, ParType_Numeric )
+      |                         ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1455:55: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1455 |         Parameter( bbl, ParType_Numeric ParType_Const )
+      |                                                       ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1455:25: note: in expansion of macro 'ParType_Numeric'
+ 1455 |         Parameter( bbl, ParType_Numeric ParType_Const )
+      |                         ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1456:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1456 |         Parameter( as, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1456:24: note: in expansion of macro 'ParType_Numeric'
+ 1456 |         Parameter( as, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1457:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1457 |         Parameter( am, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1457:24: note: in expansion of macro 'ParType_Numeric'
+ 1457 |         Parameter( am, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1458:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1458 |         Parameter( al, ParType_Numeric ParType_Const )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1458:24: note: in expansion of macro 'ParType_Numeric'
+ 1458 |         Parameter( al, ParType_Numeric ParType_Const )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1459:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1459 |         Parameter( bs, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1459:24: note: in expansion of macro 'ParType_Numeric'
+ 1459 |         Parameter( bs, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1460:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1460 |         Parameter( bm, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1460:24: note: in expansion of macro 'ParType_Numeric'
+ 1460 |         Parameter( bm, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1461:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1461 |         Parameter( bl, ParType_Numeric ParType_Const )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1461:24: note: in expansion of macro 'ParType_Numeric'
+ 1461 |         Parameter( bl, ParType_Numeric ParType_Const )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1462:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1462 |         Parameter( cs, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1462:24: note: in expansion of macro 'ParType_Numeric'
+ 1462 |         Parameter( cs, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1463:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1463 |         Parameter( cm, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1463:24: note: in expansion of macro 'ParType_Numeric'
+ 1463 |         Parameter( cm, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1464:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1464 |         Parameter( cl, ParType_Numeric ParType_Const )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1464:24: note: in expansion of macro 'ParType_Numeric'
+ 1464 |         Parameter( cl, ParType_Numeric ParType_Const )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1465:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1465 |         Parameter( ds, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1465:24: note: in expansion of macro 'ParType_Numeric'
+ 1465 |         Parameter( ds, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1466:40: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1466 |         Parameter( dm, ParType_Numeric )
+      |                                        ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1466:24: note: in expansion of macro 'ParType_Numeric'
+ 1466 |         Parameter( dm, ParType_Numeric )
+      |                        ^~~~~~~~~~~~~~~
+LargeNet_n.cc:1467:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1467 |         Parameter( dl, ParType_Numeric ParType_Const )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+LargeNet_n.cc:1467:24: note: in expansion of macro 'ParType_Numeric'
+ 1467 |         Parameter( dl, ParType_Numeric ParType_Const )
+      |                        ^~~~~~~~~~~~~~~
+aarch64-none-linux-gnu-g++ -c -o libs/cmdenv/cmdenv.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/cmdenv/cmdenv.cc
+In file included from omnet_include/omnetpp.h:28,
+                 from MACRelayUnitNP_n.cc:16:
+MACRelayUnitNP_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+MACRelayUnitNP_n.cc:89:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( addressTableFile, ParType_String )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:89:38: note: in expansion of macro 'ParType_String'
+   89 |         Parameter( addressTableFile, ParType_String )
+      |                                      ^~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:90:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Parameter( addressTableSize, ParType_Numeric )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:90:38: note: in expansion of macro 'ParType_Numeric'
+   90 |         Parameter( addressTableSize, ParType_Numeric )
+      |                                      ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:91:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Parameter( agingTime, ParType_Numeric )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:91:31: note: in expansion of macro 'ParType_Numeric'
+   91 |         Parameter( agingTime, ParType_Numeric )
+      |                               ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:92:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Parameter( numCPUs, ParType_Numeric )
+      |                                             ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:92:29: note: in expansion of macro 'ParType_Numeric'
+   92 |         Parameter( numCPUs, ParType_Numeric )
+      |                             ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:93:52: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Parameter( processingTime, ParType_Numeric )
+      |                                                    ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:93:36: note: in expansion of macro 'ParType_Numeric'
+   93 |         Parameter( processingTime, ParType_Numeric )
+      |                                    ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:94:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   94 |         Parameter( bufferSize, ParType_Numeric )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:94:32: note: in expansion of macro 'ParType_Numeric'
+   94 |         Parameter( bufferSize, ParType_Numeric )
+      |                                ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:95:51: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   95 |         Parameter( highWatermark, ParType_Numeric )
+      |                                                   ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:95:35: note: in expansion of macro 'ParType_Numeric'
+   95 |         Parameter( highWatermark, ParType_Numeric )
+      |                                   ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:96:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   96 |         Parameter( pauseUnits, ParType_Numeric )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:96:32: note: in expansion of macro 'ParType_Numeric'
+   96 |         Parameter( pauseUnits, ParType_Numeric )
+      |                                ^~~~~~~~~~~~~~~
+MACRelayUnitNP_n.cc:97:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   97 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitNP_n.cc:97:34: note: in expansion of macro 'ParType_Bool'
+   97 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+MACRelayUnitNP_n.cc:98:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   98 |         Gate( lowerLayerIn[], GateDir_Input )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+MACRelayUnitNP_n.cc:99:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   99 |         Gate( lowerLayerOut[], GateDir_Output )
+      |                                               ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+aarch64-none-linux-gnu-g++ -c -o libs/cmdenv/enumstr.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/cmdenv/enumstr.cc
+aarch64-none-linux-gnu-g++ -c -o libs/cmdenv/heap.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/cmdenv/heap.cc
+In file included from omnet_include/omnetpp.h:28,
+                 from MACRelayUnit_n.cc:16:
+MACRelayUnit_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+MACRelayUnit_n.cc:89:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( addressTableFile, ParType_String )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnit_n.cc:89:38: note: in expansion of macro 'ParType_String'
+   89 |         Parameter( addressTableFile, ParType_String )
+      |                                      ^~~~~~~~~~~~~~
+MACRelayUnit_n.cc:90:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Parameter( addressTableSize, ParType_Numeric )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnit_n.cc:90:38: note: in expansion of macro 'ParType_Numeric'
+   90 |         Parameter( addressTableSize, ParType_Numeric )
+      |                                      ^~~~~~~~~~~~~~~
+MACRelayUnit_n.cc:91:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Parameter( agingTime, ParType_Numeric )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnit_n.cc:91:31: note: in expansion of macro 'ParType_Numeric'
+   91 |         Parameter( agingTime, ParType_Numeric )
+      |                               ^~~~~~~~~~~~~~~
+MACRelayUnit_n.cc:92:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Gate( lowerLayerIn[], GateDir_Input )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+MACRelayUnit_n.cc:93:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Gate( lowerLayerOut[], GateDir_Output )
+      |                                               ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+In file included from omnet_include/omnetpp.h:28,
+                 from MACRelayUnitPP_n.cc:16:
+MACRelayUnitPP_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+MACRelayUnitPP_n.cc:89:53: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   89 |         Parameter( addressTableFile, ParType_String )
+      |                                                     ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:192:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  192 | #define ParType_String     "S"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:89:38: note: in expansion of macro 'ParType_String'
+   89 |         Parameter( addressTableFile, ParType_String )
+      |                                      ^~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:90:54: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   90 |         Parameter( addressTableSize, ParType_Numeric )
+      |                                                      ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:90:38: note: in expansion of macro 'ParType_Numeric'
+   90 |         Parameter( addressTableSize, ParType_Numeric )
+      |                                      ^~~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:91:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   91 |         Parameter( agingTime, ParType_Numeric )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:91:31: note: in expansion of macro 'ParType_Numeric'
+   91 |         Parameter( agingTime, ParType_Numeric )
+      |                               ^~~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:92:52: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   92 |         Parameter( processingTime, ParType_Numeric )
+      |                                                    ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:92:36: note: in expansion of macro 'ParType_Numeric'
+   92 |         Parameter( processingTime, ParType_Numeric )
+      |                                    ^~~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:93:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   93 |         Parameter( bufferSize, ParType_Numeric )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:93:32: note: in expansion of macro 'ParType_Numeric'
+   93 |         Parameter( bufferSize, ParType_Numeric )
+      |                                ^~~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:94:51: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   94 |         Parameter( highWatermark, ParType_Numeric )
+      |                                                   ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:94:35: note: in expansion of macro 'ParType_Numeric'
+   94 |         Parameter( highWatermark, ParType_Numeric )
+      |                                   ^~~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:95:48: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   95 |         Parameter( pauseUnits, ParType_Numeric )
+      |                                                ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:190:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  190 | #define ParType_Numeric    "LDXFT"
+      |                            ^~~~~~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:95:32: note: in expansion of macro 'ParType_Numeric'
+   95 |         Parameter( pauseUnits, ParType_Numeric )
+      |                                ^~~~~~~~~~~~~~~
+MACRelayUnitPP_n.cc:96:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   96 |         Parameter( writeScalars, ParType_Bool )
+      |                                               ^
+omnet_include/macros.h:175:40: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                        ^~~~
+omnet_include/macros.h:191:28: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  191 | #define ParType_Bool       "B"
+      |                            ^~~
+omnet_include/macros.h:175:46: note: in definition of macro 'Parameter'
+  175 | #define Parameter(NAME,TYPES)   {'P', #NAME, TYPES, 0   },
+      |                                              ^~~~~
+MACRelayUnitPP_n.cc:96:34: note: in expansion of macro 'ParType_Bool'
+   96 |         Parameter( writeScalars, ParType_Bool )
+      |                                  ^~~~~~~~~~~~
+MACRelayUnitPP_n.cc:97:45: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   97 |         Gate( lowerLayerIn[], GateDir_Input )
+      |                                             ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+MACRelayUnitPP_n.cc:98:47: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   98 |         Gate( lowerLayerOut[], GateDir_Output )
+      |                                               ^
+omnet_include/macros.h:174:40: note: in definition of macro 'Gate'
+  174 | #define Gate(NAME,TYPE)         {'G', #NAME, NULL,  TYPE},
+      |                                        ^~~~
+aarch64-none-linux-gnu-g++ -c -o libs/envir/akoutvectormgr.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/akoutvectormgr.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/args.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/args.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/cenvir.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/cenvir.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/cinifile.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/cinifile.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/filemgrs.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/filemgrs.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/main.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/main.cc
+In file included from omnet_include/omnetpp.h:28,
+                 from Networks_n.cc:16:
+Networks_n.cc:88:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   88 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+Networks_n.cc:1102:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1102 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+Networks_n.cc:1246:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1246 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+Networks_n.cc:1611:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1611 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+aarch64-none-linux-gnu-g++ -c -o libs/envir/omnetapp.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/omnetapp.cc
+Networks_n.cc:1976:26: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+ 1976 |         Machine( default )
+      |                          ^
+omnet_include/macros.h:176:40: note: in definition of macro 'Machine'
+  176 | #define Machine(NAME)           {'M', #NAME, NULL,  0   },
+      |                                        ^~~~
+aarch64-none-linux-gnu-g++ -c -o libs/envir/patmatch.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/patmatch.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/platdep.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/platdep.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/seeds.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/seeds.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/slaveapp.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/slaveapp.cc
+aarch64-none-linux-gnu-g++ -c -o libs/envir/speedmtr.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/envir/speedmtr.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/carray.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/carray.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cexception.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cexception.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cmessage.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cmessage.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cpar.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cpar.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/ctypes.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/ctypes.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/task.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/task.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cchannel.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cchannel.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cfsm.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cfsm.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cmodule.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cmodule.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cpsquare.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cpsquare.cc
+libs/sim/cpar.cc:64:29: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   64 | char *cPar::possibletypes = "SBLDFIXCTP";
+      |                             ^~~~~~~~~~~~
+libs/sim/cpar.cc: In member function 'virtual void cPar::info(char*)':
+libs/sim/cpar.cc:168:31: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  168 |                   if (!s) s = "";
+      |                               ^~
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cvarhist.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cvarhist.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/util.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/util.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/ccoroutine.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/ccoroutine.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cgate.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cgate.cc
+libs/sim/ctypes.cc: In member function 'void cModuleInterface::check_consistency()':
+libs/sim/ctypes.cc:304:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  304 |           {what="number of gates";goto error1;}
+      |                 ^~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:306:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  306 |           {what="number of parameters";goto error1;}
+      |                 ^~~~~~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:308:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  308 |           {what="number of machine pars";goto error1;}
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:314:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  314 |           {what="names for machine par";id=i;which=machinev[i].name;goto error2;}
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:319:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  319 |           {what="names for parameter";id=i;which=paramv[i].name;goto error2;}
+      |                 ^~~~~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:326:21: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  326 |               {what="allowed types for parameter";id=i;which=paramv[i].name;goto error2;}
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:331:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  331 |           {what="names for gate #";id=i;which=gatev[i].name;goto error2;}
+      |                 ^~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:333:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  333 |           {what="direction (in/out) for gate";id=i;which=gatev[i].name;goto error2;}
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/ctypes.cc:335:17: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  335 |           {what="vector/scalar type for gate";id=i;which=gatev[i].name;goto error2;}
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cmsgheap.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cmsgheap.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cqueue.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cqueue.cc
+In constructor 'cArray::cArray(const char*, int, int)',
+    inlined from 'void* cArray__create()' at libs/sim/carray.cc:31:1:
+libs/sim/carray.cc:236:39: warning: 'void* __builtin_memset(void*, int, long unsigned int)' writing between 8 and 17179869176 bytes into a region of size 0 overflows the destination [-Wstringop-overflow=]
+  236 |     for (int i=0; i<size; i++) vect[i]=NULL;
+      |                                       ^
+libs/sim/carray.cc:235:30: note: destination object of size 0 allocated by 'operator new []'
+  235 |     vect = new cObject *[size];
+      |                              ^
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cwatch.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cwatch.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cdensity.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cdensity.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/chead.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/chead.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cnetmod.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cnetmod.cc
+libs/sim/cgate.cc: In member function 'virtual void cGate::info(char*)':
+libs/sim/cgate.cc:183:18: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  183 |         {arrow = "--> "; g = togatep; conng = this;}
+      |                  ^~~~~~
+libs/sim/cgate.cc:185:18: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  185 |         {arrow = "<-- "; g = fromgatep; conng = fromgatep;}
+      |                  ^~~~~~
+aarch64-none-linux-gnu-g++ -c -o libs/sim/csimul.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/csimul.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/distrib.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/distrib.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cdetect.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cdetect.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/chist.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/chist.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cobject.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cobject.cc
+libs/sim/cdensity.cc: In member function 'virtual void cDensityEstBase::writeContents(std::ostream&)':
+libs/sim/cdensity.cc:259:25: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  259 |             plotline(os,"< ", basepoint(k), cell(k), a);
+      |                         ^~~~
+libs/sim/cdensity.cc:260:21: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+  260 |         plotline(os,">=",basepoint(nc),0,a);
+      |                     ^~~~
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cstat.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cstat.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/errmsg.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/errmsg.cc
+libs/sim/errmsg.cc:30:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   30 |   "No error -- everything's fine",                       // eOK
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:31:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   31 |   "Cannot cast from type `%c' to `%c'",                  // eBADCAST
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:32:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   32 |   "Indirection would create circular reference",         // eCIRCREF
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:33:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   33 |   "Bad number of arguments, %d expected",                // eNUMARGS
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:34:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   34 |   "Cannot find module interface `%s' needed to create module of type `%s'", // eNOMODIF
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:35:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   35 |   "Error during starting up user interface",             // eUISTARTUP
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:36:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   36 |   "Simulation stopped by segment on host `%s'",          // eSTOPSIMRCVD
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:37:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   37 |   "No such module or module finished already",           // eNOMOD
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:38:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   38 |   "Module has no gate %d",                               // eNOGATE
+      |   ^~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:39:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   39 |   "send(): Gate `%s' is an input gate",                  // eINGATE
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:40:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   40 |   "No module parameter called `%s'",                     // eNOPARAM
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:41:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   41 |   "Not enough memory on heap",                           // eNOMEM
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:42:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   42 |   "Incausality during simulation",                       // eINCAUSAL
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:43:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   43 |   "Message sent to already terminated module `%s'",      // eMODFIN
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:44:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   44 |   "Transfer to nonexistent, finished or compound module",// eBADTRANSF
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:45:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   45 |   "setValue(): Type `%c' does not suit arg types",       // eBADINIT
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:46:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   46 |   "Something unexpected happened (internal error)",      // eUNEXP
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:47:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   47 |   "Cannot use receive..() or wait() with handleMessage()", // eNORECV
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:48:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   48 |   "",                                                    // eSTKLOW
+      |   ^~
+libs/sim/errmsg.cc:49:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   49 |   "No more events -- simulation ended",                  // eENDEDOK
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:50:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   50 |   "Module initialization error",                         // eMODINI
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:51:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   51 |   "Object #%d not found",                                // eNULLPTR
+      |   ^~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:52:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |   "Object #%d not found",                                // eNULLREF
+      |   ^~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:53:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |   "Cannot write output vector file",                     // eOUTVECT
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:54:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   54 |   "Cannot write parameter change file",                  // ePARCHF
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:55:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   55 |   "wait(): negative delay",                              // eNEGTIME
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:56:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   56 |   "",                                                    // eMATH
+      |   ^~
+libs/sim/errmsg.cc:57:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   57 |   "Floating point exception",                            // eFPERR
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:58:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   58 |   "receive()/receiveNew(): negative timeout",            // eNEGTOUT
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:59:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   59 |   "Message cannot be delivered",                         // eNODEL
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:60:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   60 |   "Simulation cancelled",                                // eCANCEL
+      |   ^~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:61:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   61 |   "Network definition not found",                        // eNONET
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:62:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   62 |   "Badly formed Reverse Polish expression",              // eBADEXP
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:63:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   63 |   "All finish() functions called, simulation ended",     // eFINISH
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:64:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   64 |   "Simulation stopped with endSimulation()",             // eENDSIM
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:65:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   65 |   "CPU time limit reached -- simulation stopped",        // eREALTIME
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:66:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   66 |   "Simulation time limit reached -- simulation stopped", // eSIMTIME
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:67:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   67 |   "This object cannot DUP itself",                       // eCANTDUP
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:68:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   68 |   "FSM: infinite loop of transient states (now in state %s)", // eINFLOOP
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:69:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   69 |   "FSM: state changed during state entry code (now in state %s)", // eSTATECHG
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:70:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   70 |   "assignment, copying, dup() not supported by this class", // eCANTCOPY
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:71:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   71 |   "Badly connected gate",                                // eBADGATE
+      |   ^~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:72:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   72 |   "Gate not connected to anything",                      // eNOTCONN
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:73:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   73 |   "",                                                    // eBADKEY
+      |   ^~
+libs/sim/errmsg.cc:74:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   74 |   "",                                                    // eNOMODDEF
+      |   ^~
+libs/sim/errmsg.cc:75:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   75 |   "",                                                    // eNOCHANDEF
+      |   ^~
+libs/sim/errmsg.cc:76:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   76 |   "",                                                    // eNOSUCHNET
+      |   ^~
+libs/sim/errmsg.cc:77:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   77 |   "PVM: function call error in %s",                      // ePVM
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:78:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   78 |   "Bad command line argument",                           // eBADARGS
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:79:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   79 |   "Cannot schedule a message to the past",               // eBACKSCHED
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:80:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   80 |   "receiveOn(): gate %d is output gate",                 // eOUTGATE
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:81:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   81 |   "Channel error out of range [0..1]",                   // NL eCHERROR
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:82:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   82 |   "Delay time less than zero",                           // NL eCHDELAY
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:83:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   83 |   "Array index out of boundaries",                       // NL eARRAY
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:84:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   84 |   "",  /* this msg is never printed */                   // eCUSTOM
+      |   ^~
+libs/sim/errmsg.cc:85:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   85 |   "Not enough memory on heap for module %s",             // eNOMEM2
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:86:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   86 |   "User error: %s",                                      // eUSER
+      |   ^~~~~~~~~~~~~~~~
+libs/sim/errmsg.cc:87:3: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   87 |   ""
+      |   ^~
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cdispstr.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cdispstr.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cksplit.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cksplit.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/coutvect.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/coutvect.cc
+libs/sim/csimul.cc: In function 'std::ostream& operator<<(std::ostream&, tm)':
+libs/sim/csimul.cc:52:9: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |        {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      |         ^~~~~
+libs/sim/csimul.cc:52:16: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |        {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      |                ^~~~~
+libs/sim/csimul.cc:52:23: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |        {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      |                       ^~~~~
+libs/sim/csimul.cc:52:30: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |        {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      |                              ^~~~~
+libs/sim/csimul.cc:52:37: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |        {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      |                                     ^~~~~
+libs/sim/csimul.cc:52:44: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   52 |        {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      |                                            ^~~~~
+libs/sim/csimul.cc:53:9: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+      |         ^~~~~
+libs/sim/csimul.cc:53:16: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+      |                ^~~~~
+libs/sim/csimul.cc:53:23: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+      |                       ^~~~~
+libs/sim/csimul.cc:53:30: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+      |                              ^~~~~
+libs/sim/csimul.cc:53:37: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+      |                                     ^~~~~
+libs/sim/csimul.cc:53:44: warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
+   53 |         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+      |                                            ^~~~~
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cstruct.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cstruct.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/onstartup.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/onstartup.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cenum.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cenum.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cllist.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cllist.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/cpacket.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/cpacket.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/ctopo.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/ctopo.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/random.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/random.cc
+aarch64-none-linux-gnu-g++ -c -o libs/sim/std/netpack.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/sim/std/netpack.cc
+aarch64-none-linux-gnu-g++ -c -o libs/spec/spec_qsort.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       libs/spec/spec_qsort.cc
+aarch64-none-linux-gnu-g++   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        EtherAppCli.o EtherAppCli_n.o EtherAppSrv.o EtherAppSrv_n.o EtherApp_m.o EtherBus.o EtherBus_n.o EtherCtrl_m.o EtherEncap.o EtherEncap_n.o EtherFrame_m.o EtherHost_n.o EtherHub.o EtherHub_n.o EtherLLC.o EtherLLC_n.o EtherMAC.o EtherMAC_n.o EtherSwitch_n.o LargeNet_n.o MACAddress.o MACAddress_m.o MACRelayUnitBase.o MACRelayUnitNP.o MACRelayUnitNP_n.o MACRelayUnitPP.o MACRelayUnitPP_n.o MACRelayUnit_n.o Networks_n.o eth-index_n.o utils.o libs/cmdenv/cmdenv.o libs/cmdenv/enumstr.o libs/cmdenv/heap.o libs/envir/akoutvectormgr.o libs/envir/args.o libs/envir/cenvir.o libs/envir/cinifile.o libs/envir/filemgrs.o libs/envir/main.o libs/envir/omnetapp.o libs/envir/patmatch.o libs/envir/platdep.o libs/envir/seeds.o libs/envir/slaveapp.o libs/envir/speedmtr.o libs/sim/carray.o libs/sim/cexception.o libs/sim/cmessage.o libs/sim/cpar.o libs/sim/ctypes.o libs/sim/task.o libs/sim/cchannel.o libs/sim/cfsm.o libs/sim/cmodule.o libs/sim/cpsquare.o libs/sim/cvarhist.o libs/sim/util.o libs/sim/ccoroutine.o libs/sim/cgate.o libs/sim/cmsgheap.o libs/sim/cqueue.o libs/sim/cwatch.o libs/sim/cdensity.o libs/sim/chead.o libs/sim/cnetmod.o libs/sim/csimul.o libs/sim/distrib.o libs/sim/cdetect.o libs/sim/chist.o libs/sim/cobject.o libs/sim/cstat.o libs/sim/errmsg.o libs/sim/cdispstr.o libs/sim/cksplit.o libs/sim/coutvect.o libs/sim/cstruct.o libs/sim/onstartup.o libs/sim/cenum.o libs/sim/cllist.o libs/sim/cpacket.o libs/sim/ctopo.o libs/sim/random.o libs/sim/std/netpack.o libs/spec/spec_qsort.o                     -o omnetpp
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-g++ -c -o options.o -DSPEC_CPU -DNDEBUG -I. -Iomnet_include -Ilibs/envir   -Ofast -static -fsigned-char   -DSPEC_CPU_LP64       <source>
+C: CXXC="aarch64-none-linux-gnu-g++"
+C: CXXOBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS="-I. -Iomnet_include -Ilibs/envir"
+P: BENCH_CXXFLAGS=""
+O: OPTIMIZE=""
+O: CXXOPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CXXPORTABILITY=""
+O: EXTRA_CXXFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_CXXOPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CXXPORTABILITY=""
+LINK: aarch64-none-linux-gnu-g++   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>           -o options
+C: LD="aarch64-none-linux-gnu-g++"
+O: CXXOPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: LDOUT="-o options"
+
+Build successes: 471.omnetpp(base)
+
+Setting Up Run Directories
+  Setting up 471.omnetpp ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 471.omnetpp ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/471.omnetpp/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+471.omnetpp: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+471.omnetpp: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.681.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.681.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.681.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.681
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:08 2026; 2975 total seconds elapsed

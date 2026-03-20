@@ -1,0 +1,137 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 401.bzip2
+Compiling Binaries
+  Building 401.bzip2 base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf bzip2
+rm -rf bzip2.exe
+rm -rf *.o  byoudoin.jpg.out input.combined.out input.program.out
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o spec.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         spec.c
+aarch64-none-linux-gnu-gcc -c -o blocksort.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         blocksort.c
+aarch64-none-linux-gnu-gcc -c -o bzip2.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         bzip2.c
+aarch64-none-linux-gnu-gcc -c -o bzlib.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         bzlib.c
+aarch64-none-linux-gnu-gcc -c -o compress.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         compress.c
+aarch64-none-linux-gnu-gcc -c -o crctable.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         crctable.c
+aarch64-none-linux-gnu-gcc -c -o decompress.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         decompress.c
+aarch64-none-linux-gnu-gcc -c -o huffman.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         huffman.c
+aarch64-none-linux-gnu-gcc -c -o randtable.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         randtable.c
+In file included from bzlib_private.h:73,
+                 from bzlib.c:77:
+bzlib.c: In function 'BZ2_bzWriteOpen':
+bzlib.h:80:28: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+   80 |    #  define SPEC_NULLCAST (int)
+      |                            ^
+bzlib.c:996:13: note: in expansion of macro 'SPEC_NULLCAST'
+  996 |    if (f == SPEC_NULLCAST NULL ||
+      |             ^~~~~~~~~~~~~
+bzlib.c: In function 'BZ2_bzReadOpen':
+bzlib.h:80:28: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+   80 |    #  define SPEC_NULLCAST (int)
+      |                            ^
+bzlib.c:1172:13: note: in expansion of macro 'SPEC_NULLCAST'
+ 1172 |    if (f == SPEC_NULLCAST NULL ||
+      |             ^~~~~~~~~~~~~
+bzlib.c: In function 'bzopen_or_bzdopen':
+bzlib.h:80:28: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+   80 |    #  define SPEC_NULLCAST (int)
+      |                            ^
+bzlib.c:1512:12: note: in expansion of macro 'SPEC_NULLCAST'
+ 1512 |       fp = SPEC_NULLCAST NULL;
+      |            ^~~~~~~~~~~~~
+bzlib.h:80:28: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+   80 |    #  define SPEC_NULLCAST (int)
+      |                            ^
+bzlib.c:1521:14: note: in expansion of macro 'SPEC_NULLCAST'
+ 1521 |    if (fp == SPEC_NULLCAST NULL) return NULL;
+      |              ^~~~~~~~~~~~~
+In file included from bzip2.c:155:
+bzip2.c: In function 'compressStream':
+bzlib.h:80:28: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+   80 |    #  define SPEC_NULLCAST (int)
+      |                            ^
+bzip2.c:484:32: note: in expansion of macro 'SPEC_NULLCAST'
+  484 |       outputHandleJustInCase = SPEC_NULLCAST NULL;
+      |                                ^~~~~~~~~~~~~
+bzip2.c:487:27: warning: assignment to 'int' from 'void *' makes integer from pointer without a cast [-Wint-conversion]
+  487 |    outputHandleJustInCase = NULL;
+      |                           ^
+bzip2.c: In function 'uncompressStream':
+bzlib.h:80:28: warning: cast from pointer to integer of different size [-Wpointer-to-int-cast]
+   80 |    #  define SPEC_NULLCAST (int)
+      |                            ^
+bzip2.c:611:32: note: in expansion of macro 'SPEC_NULLCAST'
+  611 |       outputHandleJustInCase = SPEC_NULLCAST NULL;
+      |                                ^~~~~~~~~~~~~
+bzip2.c:614:27: warning: assignment to 'int' from 'void *' makes integer from pointer without a cast [-Wint-conversion]
+  614 |    outputHandleJustInCase = NULL;
+      |                           ^
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        spec.o blocksort.o bzip2.o bzlib.o compress.o crctable.o decompress.o huffman.o randtable.o                     -o bzip2
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS=""
+P: BENCH_CFLAGS=""
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY=""
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>           -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: LDOUT="-o options"
+
+Build successes: 401.bzip2(base)
+
+Setting Up Run Directories
+  Setting up 401.bzip2 ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 401.bzip2 ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/401.bzip2/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+401.bzip2: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+401.bzip2: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+401.bzip2: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+401.bzip2: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+401.bzip2: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+401.bzip2: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.680.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.680.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.680.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.680
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:09 2026; 2976 total seconds elapsed

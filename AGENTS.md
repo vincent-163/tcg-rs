@@ -58,3 +58,92 @@ Signed-off-by: Name <email>
 ## 文档与参考
 - 行为变化需同步更新 docs/。
 - 对齐 QEMU 行为时，注明对应源码位置与约束来源。
+
+## SPEC2006 测试指南
+
+### 测试前准备
+运行 SPEC2006 测试前必须完成以下步骤：
+
+1. **提交所有工作区更改**
+   ```bash
+   git add -A
+   git commit -m "pre-spec2006: save current work"
+   ```
+
+2. **记录当前 commit hash**
+   ```bash
+   git rev-parse HEAD
+   ```
+
+3. **重新构建 release 版本**
+   ```bash
+   cargo build --release --features llvm --bin tcg-aarch64
+   ```
+
+### 运行 SPEC2006 INT JIT 测试
+
+```bash
+# 并行运行所有 INT 测试（推荐，带 profiling）
+./run-spec2006int-jit.sh parallel
+
+# 串行运行所有 INT 测试
+./run-spec2006int-jit.sh serial
+```
+
+**JIT 测试特性：**
+- 自动启用 profiling (`TCG_PROFILE=1`)
+- 收集 profile 到 `cache/profiles/` 目录
+- 每个 testcase 完成后立即在日志中记录结果
+- Profile 文件可用于后续的 AOT 编译
+
+### 运行 SPEC2006 INT AOT 测试
+
+```bash
+# 并行运行所有 INT 测试
+./run-spec2006int-aot.sh parallel
+
+# 串行运行
+./run-spec2006int-aot.sh serial
+```
+
+### 日志记录要求
+
+每次完整运行 SPEC2006 测试后，必须将结果记录到 `SPEC2006LOG.md`：
+
+1. **脚本会自动记录以下内容到 SPEC2006LOG.md**：
+   - 运行日期和时间
+   - 当前 git commit hash
+   - 通过的测试列表
+   - 失败的测试列表
+   - 结果目录路径
+
+2. **如果手动运行，使用以下命令追加日志**：
+   ```bash
+   cat >> SPEC2006LOG.md << 'EOF'
+   ## YYYY-MM-DD HH:MM:SS
+   - Commit: <commit-hash>
+   - Mode: JIT/AOT
+   - Passed: <count>
+   - Failed: <count>
+   - Failed tests: <list>
+   - Results: <path-to-results>
+   EOF
+   ```
+
+3. **日志原则**：
+   - 所有测试输出必须写入日志文件，不要直接打印到控制台
+   - 日志文件位置：`spec2006int-*-results-<timestamp>/logs/`
+   - 汇总文件：`spec2006int-*-results-<timestamp>/summary.txt`
+
+### 查看测试结果
+
+```bash
+# 查看特定 tag 的状态
+./tools/spec/specint-status.sh <tag>
+
+# 实时监控队列
+./tools/spec/watch-specint.sh <tag>
+
+# 重新运行 compare 阶段
+./tools/spec/rerun-compare.sh <run-dir>
+```

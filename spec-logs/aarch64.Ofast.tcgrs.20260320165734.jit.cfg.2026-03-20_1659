@@ -1,0 +1,416 @@
+####################################################################
+# aarch64.Ofast.tcgrs.cfg
+# AArch64 cross-compiled benchmarks run through tcg-rs binary translator
+#####################################################################
+
+tune          = base
+output_format = all,screen
+reportable    = 0
+teeout        = yes
+teerunout     = yes
+hw_avail      = Feb-2026
+sw_avail      = Feb-2026
+sw_other      = None
+sw_base_ptrsize = 64-bit
+license_num   = 999
+
+## HW config
+hw_cpu_name  = 12700k
+hw_model     = 12700k desktop
+hw_cpu_mhz   = 50000
+hw_nchips    = 1
+hw_ncores    = 8
+hw_ncoresperchip= 8
+hw_nthreads  = 1
+hw_nthreadspercore = 1
+hw_ocache    = None
+hw_ncpuorder = 1 chips
+hw_parallel  = no
+hw_pcache    = None
+hw_scache    = None
+hw_tcache    = None
+hw_memory    = 16 GB
+
+## SW config
+sw_os        = Ubuntu 20.04
+sw_file      = ext4
+sw_state     = runlevel 3
+sw_compiler  = gcc , g++ & gfortran
+
+makeflags    = -j16
+ext           = aarch64.Ofast.tcgrs.20260320165734.jit
+
+use_submit_for_speed = 1
+SPEC = $SPEC
+submit = TCG_RS=/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/target/release/tcg-aarch64 /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/tools/spec/submit-tcgrs-mode.sh -- $command
+
+#####################################################################
+# Compiler selection
+#####################################################################
+CC           = aarch64-none-linux-gnu-gcc
+CXX          = aarch64-none-linux-gnu-g++
+FC           = aarch64-none-linux-gnu-gfortran
+
+#####################################################################
+# Optimization
+#####################################################################
+default=peak=default=default:
+
+default=base=default=default:
+COPTIMIZE    = -Ofast -static -fsigned-char
+CXXOPTIMIZE  = -Ofast -static -fsigned-char
+FOPTIMIZE    = -Ofast -static -fallow-argument-mismatch -fno-stack-arrays
+
+#####################################################################
+# 32/64 bit Portability Flags
+#####################################################################
+
+default=base=default=default:
+PORTABILITY = -DSPEC_CPU_LP64
+
+450.soplex:
+srcalt = getline_test
+CXXPORTABILITY = -DSPEC_GETLINE_TEST
+
+#####################################################################
+# Portability Flags - INT
+#####################################################################
+
+400.perlbench=default=default=default:
+CPORTABILITY= -DSPEC_CPU_LINUX_X64 -fgnu89-inline
+
+462.libquantum=default=default=default:
+CPORTABILITY= -DSPEC_CPU_LINUX
+
+447.dealII=default=default=default:
+CXXPORTABILITY= -DSPEC_CPU_LINUX_X64 -include cstdlib -include cstring -include cstddef -DBOOST_NO_AUTO_PTR -fpermissive
+
+483.xalancbmk=default=default=default:
+CXXPORTABILITY= -DSPEC_CPU_LINUX -include cstdlib -include cstring
+
+416.gamess=default=default=default:
+FPORTABILITY = -std=legacy
+srcalt=common
+
+481.wrf=default=default=default:
+CPORTABILITY = -DSPEC_CPU_CASE_FLAG -DSPEC_CPU_LINUX
+
+__MD5__
+999.specrand=base=aarch64.Ofast.cogbt=default:
+# Last updated Sat Feb 28 17:48:56 2026
+optmd5=090f68f3e1baf34f5890c7a330d4e104
+baggage=
+compile_options=\
+@eNqtkMFPwyAYxe/8FYQ7JibLDs26ZKVzqXaFuPaglwYZ7dAJBqjR/15as3TGrF584UDC9z3e+xVG\
+41f+Iht1lNC8eWW0i4DzVglf207vla3fpVXNZ4yuESB0yyLIuRWH+QxroyU+Kt194FZ3uBUC4nDM\
+yejKQJzu2JrUhFXhWqTrpNrAIEwb7jzEznOvwkrjVKvlHosDt/Bb42ads/kMnrRwprNCLgGJICEx\
+uhwGDSM0uaWsjNGPZAiEGsH6Jl9tduHtd0oEaL/MymybPa7DyETiwY3R+3KVZHlWPpwbDuERyLPi\
+bhLcX0wu4FiYp2cpvFvCUWPNHkCeTjP615rDf7TqcZ+x/gKxfriL
+exemd5=2c2ebd03d0b9c78ea2c07746ba1be9fc
+
+401.bzip2=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 05:54:30 2026
+optmd5=090f68f3e1baf34f5890c7a330d4e104
+baggage=
+compile_options=\
+@eNqtkMFPwyAYxe/8FYQ7JibLDs26ZKVzqXaFuPaglwYZ7dAJBqjR/15as3TGrF584UDC9z3e+xVG\
+41f+Iht1lNC8eWW0i4DzVglf207vla3fpVXNZ4yuESB0yyLIuRWH+QxroyU+Kt194FZ3uBUC4nDM\
+yejKQJzu2JrUhFXhWqTrpNrAIEwb7jzEznOvwkrjVKvlHosDt/Bb42ads/kMnrRwprNCLgGJICEx\
+uhwGDSM0uaWsjNGPZAiEGsH6Jl9tduHtd0oEaL/MymybPa7DyETiwY3R+3KVZHlWPpwbDuERyLPi\
+bhLcX0wu4FiYp2cpvFvCUWPNHkCeTjP615rDf7TqcZ+x/gKxfriL
+exemd5=2f6b8d2b92a6cd366584f1b60b659fe1
+
+462.libquantum=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:01:33 2026
+optmd5=eff28dc5d5ae3a407bf047675b822813
+baggage=
+compile_options=\
+@eNq9UV1LwzAUfe+vCHmPIIw9lHXQL2e1W4JrQX0pNUu7aJtIkor+e9NuYxuy6pMhkFxy7sk5566k\
+QG35xireMCDfDZdCu442ilNTqE5suCo+mOLVlwevoRPiJXFBWSq6nU6QkIKhhovuE9WiQzWlANkt\
+D0RXEqBoTeKwCElur6soDvIFsAvhqtQGIG1Kw21LpXkt2AbRbanAbh07i5RMJ2d1ssof9zAw07JT\
+lM2d0AVh6MHL4uAAwcEdJpkHz5RCx9qy1Depv1jbt5+qoYP7ZpIly+Q5tpARBwMbwQ+ZHyRpkj2d\
+Eg5m9t9dQvT2oGOP+9Gsf4vxjwnO5Msro0bPe8KmPeR6DKePLY3Gk/3vcKykpZ/d2jLo59W0cKcS\
+5/1oT+b6DTG121A=
+exemd5=da337616cae810cabe485edf4aafa7b9
+
+403.gcc=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:36:37 2026
+optmd5=8f347b29c5f4c8992c8e41f8b2afb77d
+baggage=
+compile_options=\
+@eNqtUV1rwjAUfe+vCHmPMBAfRAWbdpqtNmG2D9tL6WJas9VkJOnY/v3SSlEZupdd8hDux7nnnJtq\
+hQ7lu6hkI4D+cFIrOw2sM5K7wrRqJ03xKYysvufwDgaYbtgUlKXh+8kYKa0EaqRqv1CtWlRzDpB/\
+egAaaYCiLYtxgVnuv2kUh/kKIDICACBaldYBZF3ppJ+qrKyV2CG+Lw04xmm4SNhkDIaYWd0aLhYB\
+ngKM5/A6H9i30PCBsmwOL8jBwCvx0PfJcrX1td9E+44wTvG6GJrICAa0Q2QZ2ZCX2KduyOgBGH3K\
+liFJSPZ8vqVXBIOEpI83Df3LqCsezfTrm+DOLjqA5jCkT/I7Y5Lotnf/qtTv2yyzdZGQsHOyOcAj\
+BZp3lzk7yw/es8Qb
+exemd5=75e5f95c3be03b9925332c9caa711e44
+
+429.mcf=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:36:39 2026
+optmd5=105a1733e4ae1756d1e967f9e782dcc0
+baggage=
+compile_options=\
+@eNqtUdFOwjAUfd9XNH2viQnhYQGSrZswHWsDJUZfmlk2qI7WtJ3Rv7cbQVADvnjTh5vbk3PPObfQ\
+Cu3Kl6qWTQX0q5Na2TCwzkjhuGnVWhr+VhlZf4zhNQwwmdMQlKUR2+EAKa0q1EjVvqONatFGCID8\
+0weiKw1QsqQp5piufFskabyaAt/dRwXjS5ZgTheEET8idWkdQNaVTnqO2sqNqtZIbEsD9nWk4jkd\
+DsChRla3RlSTAIcA4zE8rw72EBLfEsrG8JtUGHhfnvomj6ZL//dbdo+I0wLPOP5C/fABA9ItoCyb\
+Z4+pB1xw1fNRsmBRnOUZezhd2huEQZ4VdxfT/iu3M5GN9NNzJZyddATN7jA+ptHllCeXo/xXp37f\
+PGIznmdxl2uzg3sJZNUd6uRKnx2MzWw=
+exemd5=7a5093cfea5334fb570d393ce349a4e7
+
+445.gobmk=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:36:54 2026
+optmd5=bca4cecf4af1b4f37178b12c3a16c183
+baggage=
+compile_options=\
+@eNqtUV1rwyAUfc+vEN/tGJQ+lLaQ2LRxS6Os6WB7kcya1i3VocnY/v1MSj/GWMdgF5WrXs6559zM\
+aLQrXmSpKgnMa62MdsPA1VaJmttGr5Xlb9Kq8mMMr2GA6YINQVFYsR30kTZaokrp5h1tdIM2QgDk\
+lzkA9QxA0yWLMcds5dNsGkeruU+S8D7mmGYzMucJQKTX7v1xpbSomrVsL8ccAETLwtUAubqoleco\
+ndpouUZiW1iwjxMVT9mgDw4xcqaxQk4CPAQYj+HP3cOuhEY3lOVj+EUKDLxuDz1Lw/nS/32X1VVE\
+cYYTfiz6o04Y0Jaf5WRBHmMPcEF0R8foXR5GJCX5w3lPnX4YpCS7vTis32z9wdGReXqWonaTFqDa\
+HZ5PZrU2ptPLTv+rUs+3CPOEpyRqfa92cN8CXbVzPBviJ15w3pk=
+exemd5=37f9f5d103d349fa9829e65d348075e8
+
+456.hmmer=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:37:00 2026
+optmd5=e5b03092978fb7c9e12b6913216bf02c
+baggage=
+compile_options=\
+@eNqtUV1PgzAUfedXNH2vicmyBzKW8OVEgTYOHvSFYFdYFVrTFqP/3rKFbIsZvnjSh6a999xzzs2l\
+QH39zhreMSA/DJdCu442ilNTqUHsuKo+meLNtwdvoRPijLigrhXdLxdISMFQx8XwhVoxoJZSgOyR\
+E9GNBCjakjisQlLaax7FQbkBFgg3tTYAaVMbblsazVvBdojuawWOOHVWKVkuwISVloOibO2ELghD\
+D14XAw8lOHjApPDghTLoWBuW+i71N1v791sldPDYTIokS15iWzKj+MBG8FPhB0maFM/nhAfx0EmT\
+/HE2uL8yuRLHSr6+MWr0eiTo+un55HTMII3mY/pXp3Ze5hf3VZoEY7JdD48ScDku4WwDP9tYvnI=
+exemd5=c52efa0dbd723f363075056a78890592
+
+458.sjeng=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:37:05 2026
+optmd5=090f68f3e1baf34f5890c7a330d4e104
+baggage=
+compile_options=\
+@eNqtkMFPwyAYxe/8FYQ7JibLDs26ZKVzqXaFuPaglwYZ7dAJBqjR/15as3TGrF584UDC9z3e+xVG\
+41f+Iht1lNC8eWW0i4DzVglf207vla3fpVXNZ4yuESB0yyLIuRWH+QxroyU+Kt194FZ3uBUC4nDM\
+yejKQJzu2JrUhFXhWqTrpNrAIEwb7jzEznOvwkrjVKvlHosDt/Bb42ads/kMnrRwprNCLgGJICEx\
+uhwGDSM0uaWsjNGPZAiEGsH6Jl9tduHtd0oEaL/MymybPa7DyETiwY3R+3KVZHlWPpwbDuERyLPi\
+bhLcX0wu4FiYp2cpvFvCUWPNHkCeTjP615rDf7TqcZ+x/gKxfriL
+exemd5=0347d32f360dad6a12d897e28f307286
+
+464.h264ref=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:37:30 2026
+optmd5=e5b03092978fb7c9e12b6913216bf02c
+baggage=
+compile_options=\
+@eNqtUV1PgzAUfedXNH2vicmyBzKW8OVEgTYOHvSFYFdYFVrTFqP/3rKFbIsZvnjSh6a999xzzs2l\
+QH39zhreMSA/DJdCu442ilNTqUHsuKo+meLNtwdvoRPijLigrhXdLxdISMFQx8XwhVoxoJZSgOyR\
+E9GNBCjakjisQlLaax7FQbkBFgg3tTYAaVMbblsazVvBdojuawWOOHVWKVkuwISVloOibO2ELghD\
+D14XAw8lOHjApPDghTLoWBuW+i71N1v791sldPDYTIokS15iWzKj+MBG8FPhB0maFM/nhAfx0EmT\
+/HE2uL8yuRLHSr6+MWr0eiTo+un55HTMII3mY/pXp3Ze5hf3VZoEY7JdD48ScDku4WwDP9tYvnI=
+exemd5=340dad168231e0c18962bc33e2e9f343
+
+471.omnetpp=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:37:55 2026
+optmd5=9f4fc1827ca7616db71cb8d2de5483aa
+baggage=
+compile_options=\
+@eNqtUdFOwjAUfd9X3PSVFGNCeCBAwsbE6Vgb2RL0ZRmlg+poTdsR/XvLEMGo8OJNmrS5p+eec26i\
+JN4UL7wUFQf1aoWSpucZqwWzua7lUuh8y7Uo3wfoGnkBmdIeFIVm624HSyU5roSs3/BK1njVagFm\
+gNWBqK0Aj2c0DPKAZu6ajEM/mwCO2u6ojeQ2F5JV9ZK7dyUW5orLrdAAgElZGAvY2MIKR1kasZJ8\
+idm6aNpfrHlMux3YV9+oWjM+9IIeBPP5AP2tE31iiH9HaDpA32Qjz3l03DfxaDJzvZ8WGoQfJsFt\
+fgBd8IQ8sh9I02gaPYXuxxmLDT8lD+nIj+IofTwV0ThGXhwl92c3cSnE3zOEvlo8c2bNEI51jGYX\
+Wzw+n+w/G20mkmy3pJMNfQCLl9NP
+exemd5=ae8fa86a416d95b49d5220f9d93836b6
+
+473.astar=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:37:59 2026
+optmd5=6d3eae06875ffeff04e5d80e9fb01e4a
+baggage=
+compile_options=\
+@eNqtUctOwzAQvOcrVr5WRkKqeojaSs2DEkhjiyZS4RKF1EkNxUa2g+DvcVNQExXChT2tvOPZmdlE\
+CvxSPLOK7xnIV8Ol0K6jjeKlyVUjtlzlb0zx6mOGLpHjkxV1oShUuZuMsZCC4T0XzTuuRYPr0Qhw\
+CVh+E11IwMGahn7u08y2SRB62bLzlsdRmsZhHiZBtEgAAJOq0AawNoXhlqrSvBZsi8tdoQ7jzk86\
+GcOxplo2qmRzx3fB32xm6Hd96AtDvBtC0xnqyUWO9Wa5r+LFcm1n59JbhBcm/nV+Bup7QQ45LqJp\
+tIoeQoscsNbyUnKXLrzI0tz3ea1T5MRRcjuY/F/h/ZwdTOXjEyuNnsOpTpEc4oqD4UT/2Wi7kWSH\
+43Qu8wmOAssl
+exemd5=d3f5b341313579beb9d57f7297e802e1
+
+483.xalancbmk=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  1 06:39:50 2026
+optmd5=fa785d438833099e4ca538a49af4ac52
+baggage=
+compile_options=\
+@eNrtlF1vmzAUhu/5FRa3lRttinoRNZUc8FI6wBYfFduN5RqSeiN2haFq/30dEhKyqdkuNmkXs4R0\
+zvGLMe957FgruOHfq5WsK6CfWqmVmTmmbaRoWdOpUjbsuWrk6nXufnAdj0R0BjhvxOPVFCqtKlhL\
+1b3Aterg+uICQAGgHha61AD6KcUe82huw9jHi3wJbIQoZTFh2W2CkZ/aQoFCFLMgjnDEonTJQoJ8\
+nAAYXNrnpWpEZcQxmpR6c5pN5OapHpUMfxllXSvrSWTWoeZl1ZhJoKJqo5vXHyVZw5UReqcRWj1v\
+BbzmSkykEnVXVnarNCF3rIhCipJ0u8VDIc+CcEh3k+mQpqiYeqPk4xD7JBrCexQGPspI/5ZdjuUp\
+ZjHKgnvMsgTFqUd6Sw5ze7dwmqIl3hsGIFlx0wJoWt5Ka9nKyLWqSigeeQPAqB8spFfTkzyI8wLA\
+4UeFactaPpwUGqnWoB/XRnfWuBvHmwGvKObu+0y4ew1Z3BGazd0TRFzH8mS//ilEy9TO/YxLr1jg\
+2LtldpGD7j9Bf4cg1yG7btEsiIKv2Hp9hqi+OZQkGVoEYZB9GXewB2zX36J4V/N70LmOFX4+e/P8\
+Cv0/RT641g/fKtGaG3AcR6C3sIf++fPwbzrcb5zk2xM6Op5vbX3qGQ==
+exemd5=3686f982a0af4a49fc6c2a2ca4ccf763
+
+400.perlbench=base=aarch64.Ofast.cogbt=default:
+# Last updated Sun Mar  8 01:10:15 2026
+optmd5=94030a38e822d7548a131a442774513e
+baggage=
+compile_options=\
+@eNrNUl1rwjAUfe+vCHnPYCCyiQo2dtqtNkFb0L2ULqaarSYjScf275fWb4YO9rSQhyT33HvPuSex\
+kmiTv/FClByodyuUNB3PWC2YzXQll0JnH1yL4qsHb6GHyYR2QJ5rtm63kFSSo1LI6hOtZIVWjAHk\
+ttoXulEADWc0wBmmqTvGw8BPR+5Ag2mUYTINAACIFLmxABmbW+GyCyNWki8RW+cabNexSBbRduvs\
+HsbpPJvXj4XjcHePhHSM+C4TdI2qNON9D3cAxj14mTpsIMR/JDTpwTMd0HOiXbeHaDCaudhPTQ3C\
+D2I8zg6gg0jokboyTcJJ+By40BXFTSFKpsnAD6MwWZx2a8TvuFxCXBgH9Fzk6apzvznxdxO66uWV\
+M2v6dY9ys7fmON968tHwujn/YISO5WSQjB3Crw0uN3BLnKT1hzn5Ld8Vbf71
+exemd5=46c59793e17ce000f6978cf0f8fbed7d
+
+999.specrand=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:57:40 2026
+optmd5=090f68f3e1baf34f5890c7a330d4e104
+baggage=
+compile_options=\
+@eNqtkMFPwyAYxe/8FYQ7JibLDs26ZKVzqXaFuPaglwYZ7dAJBqjR/15as3TGrF584UDC9z3e+xVG\
+41f+Iht1lNC8eWW0i4DzVglf207vla3fpVXNZ4yuESB0yyLIuRWH+QxroyU+Kt194FZ3uBUC4nDM\
+yejKQJzu2JrUhFXhWqTrpNrAIEwb7jzEznOvwkrjVKvlHosDt/Bb42ads/kMnrRwprNCLgGJICEx\
+uhwGDSM0uaWsjNGPZAiEGsH6Jl9tduHtd0oEaL/MymybPa7DyETiwY3R+3KVZHlWPpwbDuERyLPi\
+bhLcX0wu4FiYp2cpvFvCUWPNHkCeTjP615rDf7TqcZ+x/gKxfriL
+exemd5=2c2ebd03d0b9c78ea2c07746ba1be9fc
+
+429.mcf=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:57:40 2026
+optmd5=105a1733e4ae1756d1e967f9e782dcc0
+baggage=
+compile_options=\
+@eNqtUdFOwjAUfd9XNH2viQnhYQGSrZswHWsDJUZfmlk2qI7WtJ3Rv7cbQVADvnjTh5vbk3PPObfQ\
+Cu3Kl6qWTQX0q5Na2TCwzkjhuGnVWhr+VhlZf4zhNQwwmdMQlKUR2+EAKa0q1EjVvqONatFGCID8\
+0weiKw1QsqQp5piufFskabyaAt/dRwXjS5ZgTheEET8idWkdQNaVTnqO2sqNqtZIbEsD9nWk4jkd\
+DsChRla3RlSTAIcA4zE8rw72EBLfEsrG8JtUGHhfnvomj6ZL//dbdo+I0wLPOP5C/fABA9ItoCyb\
+Z4+pB1xw1fNRsmBRnOUZezhd2huEQZ4VdxfT/iu3M5GN9NNzJZyddATN7jA+ptHllCeXo/xXp37f\
+PGIznmdxl2uzg3sJZNUd6uRKnx2MzWw=
+exemd5=7a5093cfea5334fb570d393ce349a4e7
+
+462.libquantum=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:57:44 2026
+optmd5=eff28dc5d5ae3a407bf047675b822813
+baggage=
+compile_options=\
+@eNq9UV1LwzAUfe+vCHmPIIw9lHXQL2e1W4JrQX0pNUu7aJtIkor+e9NuYxuy6pMhkFxy7sk5566k\
+QG35xireMCDfDZdCu442ilNTqE5suCo+mOLVlwevoRPiJXFBWSq6nU6QkIKhhovuE9WiQzWlANkt\
+D0RXEqBoTeKwCElur6soDvIFsAvhqtQGIG1Kw21LpXkt2AbRbanAbh07i5RMJ2d1ssof9zAw07JT\
+lM2d0AVh6MHL4uAAwcEdJpkHz5RCx9qy1Depv1jbt5+qoYP7ZpIly+Q5tpARBwMbwQ+ZHyRpkj2d\
+Eg5m9t9dQvT2oGOP+9Gsf4vxjwnO5Msro0bPe8KmPeR6DKePLY3Gk/3vcKykpZ/d2jLo59W0cKcS\
+5/1oT+b6DTG121A=
+exemd5=da337616cae810cabe485edf4aafa7b9
+
+473.astar=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:57:46 2026
+optmd5=6d3eae06875ffeff04e5d80e9fb01e4a
+baggage=
+compile_options=\
+@eNqtUctOwzAQvOcrVr5WRkKqeojaSs2DEkhjiyZS4RKF1EkNxUa2g+DvcVNQExXChT2tvOPZmdlE\
+CvxSPLOK7xnIV8Ol0K6jjeKlyVUjtlzlb0zx6mOGLpHjkxV1oShUuZuMsZCC4T0XzTuuRYPr0Qhw\
+CVh+E11IwMGahn7u08y2SRB62bLzlsdRmsZhHiZBtEgAAJOq0AawNoXhlqrSvBZsi8tdoQ7jzk86\
+GcOxplo2qmRzx3fB32xm6Hd96AtDvBtC0xnqyUWO9Wa5r+LFcm1n59JbhBcm/nV+Bup7QQ45LqJp\
+tIoeQoscsNbyUnKXLrzI0tz3ea1T5MRRcjuY/F/h/ZwdTOXjEyuNnsOpTpEc4oqD4UT/2Wi7kWSH\
+43Qu8wmOAssl
+exemd5=d3f5b341313579beb9d57f7297e802e1
+
+458.sjeng=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:57:53 2026
+optmd5=090f68f3e1baf34f5890c7a330d4e104
+baggage=
+compile_options=\
+@eNqtkMFPwyAYxe/8FYQ7JibLDs26ZKVzqXaFuPaglwYZ7dAJBqjR/15as3TGrF584UDC9z3e+xVG\
+41f+Iht1lNC8eWW0i4DzVglf207vla3fpVXNZ4yuESB0yyLIuRWH+QxroyU+Kt194FZ3uBUC4nDM\
+yejKQJzu2JrUhFXhWqTrpNrAIEwb7jzEznOvwkrjVKvlHosDt/Bb42ads/kMnrRwprNCLgGJICEx\
+uhwGDSM0uaWsjNGPZAiEGsH6Jl9tduHtd0oEaL/MymybPa7DyETiwY3R+3KVZHlWPpwbDuERyLPi\
+bhLcX0wu4FiYp2cpvFvCUWPNHkCeTjP615rDf7TqcZ+x/gKxfriL
+exemd5=0347d32f360dad6a12d897e28f307286
+
+456.hmmer=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:57:53 2026
+optmd5=e5b03092978fb7c9e12b6913216bf02c
+baggage=
+compile_options=\
+@eNqtUV1PgzAUfedXNH2vicmyBzKW8OVEgTYOHvSFYFdYFVrTFqP/3rKFbIsZvnjSh6a999xzzs2l\
+QH39zhreMSA/DJdCu442ilNTqUHsuKo+meLNtwdvoRPijLigrhXdLxdISMFQx8XwhVoxoJZSgOyR\
+E9GNBCjakjisQlLaax7FQbkBFgg3tTYAaVMbblsazVvBdojuawWOOHVWKVkuwISVloOibO2ELghD\
+D14XAw8lOHjApPDghTLoWBuW+i71N1v791sldPDYTIokS15iWzKj+MBG8FPhB0maFM/nhAfx0EmT\
+/HE2uL8yuRLHSr6+MWr0eiTo+un55HTMII3mY/pXp3Ze5hf3VZoEY7JdD48ScDku4WwDP9tYvnI=
+exemd5=c52efa0dbd723f363075056a78890592
+
+401.bzip2=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:58:00 2026
+optmd5=090f68f3e1baf34f5890c7a330d4e104
+baggage=
+compile_options=\
+@eNqtkMFPwyAYxe/8FYQ7JibLDs26ZKVzqXaFuPaglwYZ7dAJBqjR/15as3TGrF584UDC9z3e+xVG\
+41f+Iht1lNC8eWW0i4DzVglf207vla3fpVXNZ4yuESB0yyLIuRWH+QxroyU+Kt194FZ3uBUC4nDM\
+yejKQJzu2JrUhFXhWqTrpNrAIEwb7jzEznOvwkrjVKvlHosDt/Bb42ads/kMnrRwprNCLgGJICEx\
+uhwGDSM0uaWsjNGPZAiEGsH6Jl9tduHtd0oEaL/MymybPa7DyETiwY3R+3KVZHlWPpwbDuERyLPi\
+bhLcX0wu4FiYp2cpvFvCUWPNHkCeTjP615rDf7TqcZ+x/gKxfriL
+exemd5=2f6b8d2b92a6cd366584f1b60b659fe1
+
+445.gobmk=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:58:12 2026
+optmd5=bca4cecf4af1b4f37178b12c3a16c183
+baggage=
+compile_options=\
+@eNqtUV1rwyAUfc+vEN/tGJQ+lLaQ2LRxS6Os6WB7kcya1i3VocnY/v1MSj/GWMdgF5WrXs6559zM\
+aLQrXmSpKgnMa62MdsPA1VaJmttGr5Xlb9Kq8mMMr2GA6YINQVFYsR30kTZaokrp5h1tdIM2QgDk\
+lzkA9QxA0yWLMcds5dNsGkeruU+S8D7mmGYzMucJQKTX7v1xpbSomrVsL8ccAETLwtUAubqoleco\
+ndpouUZiW1iwjxMVT9mgDw4xcqaxQk4CPAQYj+HP3cOuhEY3lOVj+EUKDLxuDz1Lw/nS/32X1VVE\
+cYYTfiz6o04Y0Jaf5WRBHmMPcEF0R8foXR5GJCX5w3lPnX4YpCS7vTis32z9wdGReXqWonaTFqDa\
+HZ5PZrU2ptPLTv+rUs+3CPOEpyRqfa92cN8CXbVzPBviJ15w3pk=
+exemd5=37f9f5d103d349fa9829e65d348075e8
+
+400.perlbench=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:58:21 2026
+optmd5=94030a38e822d7548a131a442774513e
+baggage=
+compile_options=\
+@eNrNUl1rwjAUfe+vCHnPYCCyiQo2dtqtNkFb0L2ULqaarSYjScf275fWb4YO9rSQhyT33HvPuSex\
+kmiTv/FClByodyuUNB3PWC2YzXQll0JnH1yL4qsHb6GHyYR2QJ5rtm63kFSSo1LI6hOtZIVWjAHk\
+ttoXulEADWc0wBmmqTvGw8BPR+5Ag2mUYTINAACIFLmxABmbW+GyCyNWki8RW+cabNexSBbRduvs\
+HsbpPJvXj4XjcHePhHSM+C4TdI2qNON9D3cAxj14mTpsIMR/JDTpwTMd0HOiXbeHaDCaudhPTQ3C\
+D2I8zg6gg0jokboyTcJJ+By40BXFTSFKpsnAD6MwWZx2a8TvuFxCXBgH9Fzk6apzvznxdxO66uWV\
+M2v6dY9ys7fmON968tHwujn/YISO5WSQjB3Crw0uN3BLnKT1hzn5Ld8Vbf71
+exemd5=93d3202e958eed9e06fa258aab455ef7
+
+471.omnetpp=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:58:25 2026
+optmd5=9f4fc1827ca7616db71cb8d2de5483aa
+baggage=
+compile_options=\
+@eNqtUdFOwjAUfd9X3PSVFGNCeCBAwsbE6Vgb2RL0ZRmlg+poTdsR/XvLEMGo8OJNmrS5p+eec26i\
+JN4UL7wUFQf1aoWSpucZqwWzua7lUuh8y7Uo3wfoGnkBmdIeFIVm624HSyU5roSs3/BK1njVagFm\
+gNWBqK0Aj2c0DPKAZu6ajEM/mwCO2u6ojeQ2F5JV9ZK7dyUW5orLrdAAgElZGAvY2MIKR1kasZJ8\
+idm6aNpfrHlMux3YV9+oWjM+9IIeBPP5AP2tE31iiH9HaDpA32Qjz3l03DfxaDJzvZ8WGoQfJsFt\
+fgBd8IQ8sh9I02gaPYXuxxmLDT8lD+nIj+IofTwV0ThGXhwl92c3cSnE3zOEvlo8c2bNEI51jGYX\
+Wzw+n+w/G20mkmy3pJMNfQCLl9NP
+exemd5=ae8fa86a416d95b49d5220f9d93836b6
+
+464.h264ref=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:58:35 2026
+optmd5=e5b03092978fb7c9e12b6913216bf02c
+baggage=
+compile_options=\
+@eNqtUV1PgzAUfedXNH2vicmyBzKW8OVEgTYOHvSFYFdYFVrTFqP/3rKFbIsZvnjSh6a999xzzs2l\
+QH39zhreMSA/DJdCu442ilNTqUHsuKo+meLNtwdvoRPijLigrhXdLxdISMFQx8XwhVoxoJZSgOyR\
+E9GNBCjakjisQlLaax7FQbkBFgg3tTYAaVMbblsazVvBdojuawWOOHVWKVkuwISVloOibO2ELghD\
+D14XAw8lOHjApPDghTLoWBuW+i71N1v791sldPDYTIokS15iWzKj+MBG8FPhB0maFM/nhAfx0EmT\
+/HE2uL8yuRLHSr6+MWr0eiTo+un55HTMII3mY/pXp3Ze5hf3VZoEY7JdD48ScDku4WwDP9tYvnI=
+exemd5=340dad168231e0c18962bc33e2e9f343
+
+403.gcc=base=aarch64.Ofast.tcgrs.20260320165734.jit=default:
+# Last updated Fri Mar 20 16:58:48 2026
+optmd5=8f347b29c5f4c8992c8e41f8b2afb77d
+baggage=
+compile_options=\
+@eNqtUV1rwjAUfe+vCHmPMBAfRAWbdpqtNmG2D9tL6WJas9VkJOnY/v3SSlEZupdd8hDux7nnnJtq\
+hQ7lu6hkI4D+cFIrOw2sM5K7wrRqJ03xKYysvufwDgaYbtgUlKXh+8kYKa0EaqRqv1CtWlRzDpB/\
+egAaaYCiLYtxgVnuv2kUh/kKIDICACBaldYBZF3ppJ+qrKyV2CG+Lw04xmm4SNhkDIaYWd0aLhYB\
+ngKM5/A6H9i30PCBsmwOL8jBwCvx0PfJcrX1td9E+44wTvG6GJrICAa0Q2QZ2ZCX2KduyOgBGH3K\
+liFJSPZ8vqVXBIOEpI83Df3LqCsezfTrm+DOLjqA5jCkT/I7Y5Lotnf/qtTv2yyzdZGQsHOyOcAj\
+BZp3lzk7yw/es8Qb
+exemd5=75e5f95c3be03b9925332c9caa711e44
+

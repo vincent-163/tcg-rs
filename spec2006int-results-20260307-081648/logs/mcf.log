@@ -1,0 +1,77 @@
+==> [429.mcf] Starting AOT pipeline...
+  [1/3] Profiling...
+[tcg] guest_base=0x7f6f2ea49000
+[tcg] profiling enabled (mode=hot, min_exec_count=10)
+
+MCF SPEC CPU2006 version 1.10
+Copyright (c) 1998-2000 Zuse Institut Berlin (ZIB)
+Copyright (c) 2000-2002 Andreas Loebel & ZIB
+Copyright (c) 2003-2005 Andreas Loebel
+
+nodes                      : 25137
+active arcs                : 260767
+simplex iterations         : 226605
+objective value            : 15887540369
+new implicit arcs          : 27067745
+active arcs                : 27328512
+simplex iterations         : 2591718
+objective value            : 12129093300
+erased arcs                : 27045002
+new implicit arcs          : 27045002
+active arcs                : 27328512
+simplex iterations         : 4853421
+objective value            : 11109478016
+erased arcs                : 27032013
+new implicit arcs          : 27032013
+active arcs                : 27328512
+simplex iterations         : 6008461
+objective value            : 11006050760
+erased arcs                : 27028145
+new implicit arcs          : 27028145
+active arcs                : 27328512
+simplex iterations         : 6751264
+objective value            : 10912231340
+erased arcs                : 27022372
+new implicit arcs          : 27022372
+active arcs                : 27328512
+simplex iterations         : 7224533
+objective value            : 10860742840
+checksum                   : 900463229
+done
+[tcg] profile saved to /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/profiles/mcf.profile.bin (mode=hot, min_exec_count=10, 1161 TBs)
+  Profile time: 1814s
+  [2/3] AOT compiling...
+[aot] applying default min_exec_count floor for Aarch64: profile=10 -> default=64
+[aot] profile mode (Aarch64): 1161 entries, min_exec_count=64, load vaddr=0x400000 file_offset=0x0
+[aot] keeping 899 entries with exec_count > 64 (dropped 262)
+[aot] 58 exported, 841 internal
+[aot] target machine: triple=x86_64-pc-linux-gnu, cpu=znver3, features=+prfchw,-cldemote,+avx,+aes,+sahf,+pclmul,-xop,+crc32,-amx-fp8,+xsaves,-avx512fp16,-usermsr,-sm4,-egpr,+sse4.1,-avx512ifma,+xsave,+sse4.2,-tsxldtrk,-sm3,-ptwrite,-widekl,-movrs,+invpcid,+64bit,+xsavec,-avx10.1-512,-avx512vpopcntdq,+cmov,-avx512vp2intersect,-avx512cd,+movbe,-avxvnniint8,-ccmp,-amx-int8,-kl,-avx10.1-256,-sha512,-avxvnni,-rtm,+adx,+avx2,-hreset,-movdiri,-serialize,+vpclmulqdq,-avx512vl,-uintr,-cf,+clflushopt,-raoint,-cmpccxadd,+bmi,-amx-tile,+sse,-avx10.2-256,-gfni,-avxvnniint16,-amx-fp16,-zu,-ndd,+xsaveopt,+rdrnd,-avx512f,-amx-bf16,-avx512bf16,-avx512vnni,-push2pop2,+cx8,-avx512bw,+sse3,+pku,-nf,-amx-tf32,-amx-avx512,+fsgsbase,+clzero,+mwaitx,-lwp,+lzcnt,+sha,-movdir64b,-ppx,+wbnoinvd,-enqcmd,-amx-transpose,-avx10.2-512,-avxneconvert,-tbm,-pconfig,-amx-complex,+ssse3,+cx16,+bmi2,+fma,+popcnt,-avxifma,+f16c,-avx512bitalg,+rdpru,+clwb,+mmx,+sse2,+rdseed,-avx512vbmi2,-prefetchi,-amx-movrs,+rdpid,-fma4,-avx512vbmi,+shstk,+vaes,-waitpkg,-sgx,+fxsr,-avx512dq,+sse4a
+[aot] found 6 unique helper functions
+[aot] linking embedded helper bitcode (5760 bytes)
+warning: Linking two modules of different target triples: 'helpers' is 'x86_64-unknown-linux-gnu' whereas 'tcg_aot' is 'x86_64-pc-linux-gnu'
+
+[aot] successfully linked helper bitcode
+[aot] translated 899 TBs
+[aot] emitted aot_dispatch with 58 cases
+[aot] running O3 optimization...
+[aot] emitting /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/aot/mcf.aot.o...
+[aot] done: /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/aot/mcf.aot.o
+[aot] link with: cc -shared -o aot.so /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/aot/mcf.aot.o
+  AOT compile time: 26s
+  [3/3] Running with AOT...
+[tcg] guest_base=0x7fdcd537a000
+[aot] loaded 58 functions from /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/aot/mcf.aot.so
+[tcg] AOT loaded from /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/aot/mcf.aot.so
+=== SIGSEGV ===
+RIP=0x7fdcd4385143 RBP=0x7ffe2a76d588 RSP=0x7ffe2a769080 fault_addr=0x0
+x0=0x00000000000001d8 x1=0x000000000047a338 x2=0x00000000000001ef x3=0x00000000004a2150 
+x4=0x0000000000000006 x5=0x0000000000000003 x6=0x000000002e706e69 x7=0x00000000006e692e 
+x8=0x0101010101010101 x9=0x0000000000000001 x10=0x0000000000000000 x11=0x00000000bffef9f0 
+x12=0x0000000000001030 x13=0x0000000000000000 x14=0x0000000000000000 x15=0x0000000000000000 
+x16=0x00000000004a0018 x17=0x000000000041fe00 x18=0x0000000000000000 x19=0x00000000000001e0 
+x20=0x4550532046434d0a x21=0x4550532046434d3a x22=0x00000000000001d8 x23=0x00000000004a1f20 
+x24=0x00000000004a9000 x25=0x0000000000000003 x26=0x0000000000400258 x27=0x00000000004a1f20 
+x28=0x00000000004a0030 x29=0x00000000bffef7f0 x30=0x000000000040fab8 
+pc=0x000000000041b8e4 sp=0x00000000bffef7f0 gb=0x00007fdcd537a000 lb=0x0000000000400000 nzcv=0x0000000000000002
+fpcr=0x0000000000000004 fpsr=0x0000000000000006 tpidr_el0=0x0000000000000003
+ERROR: AOT run failed

@@ -1,0 +1,312 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 403.gcc
+Compiling Binaries
+  Building 403.gcc base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf gcc
+rm -rf gcc.exe
+rm -rf *.o  integrate.s
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o alloca.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         alloca.c
+aarch64-none-linux-gnu-gcc -c -o asprintf.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         asprintf.c
+aarch64-none-linux-gnu-gcc -c -o vasprintf.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         vasprintf.c
+aarch64-none-linux-gnu-gcc -c -o c-parse.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-parse.c
+aarch64-none-linux-gnu-gcc -c -o c-lang.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-lang.c
+aarch64-none-linux-gnu-gcc -c -o attribs.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         attribs.c
+aarch64-none-linux-gnu-gcc -c -o c-errors.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-errors.c
+aarch64-none-linux-gnu-gcc -c -o c-lex.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-lex.c
+aarch64-none-linux-gnu-gcc -c -o c-pragma.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-pragma.c
+aarch64-none-linux-gnu-gcc -c -o c-decl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-decl.c
+aarch64-none-linux-gnu-gcc -c -o c-typeck.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-typeck.c
+aarch64-none-linux-gnu-gcc -c -o c-convert.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-convert.c
+aarch64-none-linux-gnu-gcc -c -o c-aux-info.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-aux-info.c
+aarch64-none-linux-gnu-gcc -c -o c-common.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-common.c
+aarch64-none-linux-gnu-gcc -c -o c-format.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-format.c
+aarch64-none-linux-gnu-gcc -c -o c-semantics.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-semantics.c
+aarch64-none-linux-gnu-gcc -c -o c-objc-common.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         c-objc-common.c
+vasprintf.c:155:6: warning: 'format' attribute cannot be applied to a function that does not take variable arguments [-Wattributes]
+  155 |      char **result;
+      |      ^~~~
+aarch64-none-linux-gnu-gcc -c -o main.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         main.c
+aarch64-none-linux-gnu-gcc -c -o cpplib.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cpplib.c
+aarch64-none-linux-gnu-gcc -c -o cpplex.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cpplex.c
+aarch64-none-linux-gnu-gcc -c -o cppmacro.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cppmacro.c
+cpplib.c:202:18: warning: initialization of 'const U_CHAR *' {aka 'const unsigned char *'} from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+  202 |   do_linemarker, U"#", 1, KANDR, IN_I
+      |                  ^~~~
+cpplib.c:202:18: note: (near initialization for 'linemarker_dir.name')
+cpplib.c: In function 'parse_include':
+cpplib.c:564:9: warning: assignment to 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+  564 |     dir = U"pragma dependency";
+      |         ^
+aarch64-none-linux-gnu-gcc -c -o cppexp.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cppexp.c
+aarch64-none-linux-gnu-gcc -c -o cppfiles.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cppfiles.c
+cpplex.c:59:3: warning: initialization of 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+   59 | { U"%:", U"%:%:", U"<:", U":>", U"<%", U"%>" };
+      |   ^~~~~
+cpplex.c:59:3: note: (near initialization for 'digraph_spellings[0]')
+cpplex.c:59:10: warning: initialization of 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+   59 | { U"%:", U"%:%:", U"<:", U":>", U"<%", U"%>" };
+      |          ^~~~~~~
+cpplex.c:59:10: note: (near initialization for 'digraph_spellings[1]')
+cpplex.c:59:19: warning: initialization of 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+   59 | { U"%:", U"%:%:", U"<:", U":>", U"<%", U"%>" };
+      |                   ^~~~~
+cpplex.c:59:19: note: (near initialization for 'digraph_spellings[2]')
+cpplex.c:59:26: warning: initialization of 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+   59 | { U"%:", U"%:%:", U"<:", U":>", U"<%", U"%>" };
+      |                          ^~~~~
+cpplex.c:59:26: note: (near initialization for 'digraph_spellings[3]')
+cpplex.c:59:33: warning: initialization of 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+   59 | { U"%:", U"%:%:", U"<:", U":>", U"<%", U"%>" };
+      |                                 ^~~~~
+cpplex.c:59:33: note: (near initialization for 'digraph_spellings[4]')
+cpplex.c:59:40: warning: initialization of 'const unsigned char *' from incompatible pointer type 'unsigned int *' [-Wincompatible-pointer-types]
+   59 | { U"%:", U"%:%:", U"<:", U":>", U"<%", U"%>" };
+      |                                        ^~~~~
+cpplex.c:59:40: note: (near initialization for 'digraph_spellings[5]')
+aarch64-none-linux-gnu-gcc -c -o cpphash.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cpphash.c
+aarch64-none-linux-gnu-gcc -c -o cpperror.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cpperror.c
+aarch64-none-linux-gnu-gcc -c -o cppinit.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cppinit.c
+aarch64-none-linux-gnu-gcc -c -o cppdefault.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cppdefault.c
+aarch64-none-linux-gnu-gcc -c -o line-map.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         line-map.c
+aarch64-none-linux-gnu-gcc -c -o mkdeps.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mkdeps.c
+aarch64-none-linux-gnu-gcc -c -o prefix.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         prefix.c
+aarch64-none-linux-gnu-gcc -c -o version.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         version.c
+aarch64-none-linux-gnu-gcc -c -o mbchar.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mbchar.c
+aarch64-none-linux-gnu-gcc -c -o alias.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         alias.c
+aarch64-none-linux-gnu-gcc -c -o bb-reorder.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         bb-reorder.c
+aarch64-none-linux-gnu-gcc -c -o bitmap.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         bitmap.c
+aarch64-none-linux-gnu-gcc -c -o builtins.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         builtins.c
+aarch64-none-linux-gnu-gcc -c -o caller-save.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         caller-save.c
+aarch64-none-linux-gnu-gcc -c -o calls.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         calls.c
+aarch64-none-linux-gnu-gcc -c -o cfg.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfg.c
+aarch64-none-linux-gnu-gcc -c -o cfganal.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfganal.c
+aarch64-none-linux-gnu-gcc -c -o cfgbuild.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfgbuild.c
+aarch64-none-linux-gnu-gcc -c -o cfgcleanup.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfgcleanup.c
+aarch64-none-linux-gnu-gcc -c -o cfglayout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfglayout.c
+aarch64-none-linux-gnu-gcc -c -o cfgloop.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfgloop.c
+aarch64-none-linux-gnu-gcc -c -o cfgrtl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cfgrtl.c
+aarch64-none-linux-gnu-gcc -c -o combine.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         combine.c
+aarch64-none-linux-gnu-gcc -c -o conflict.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         conflict.c
+aarch64-none-linux-gnu-gcc -c -o convert.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         convert.c
+aarch64-none-linux-gnu-gcc -c -o cse.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cse.c
+aarch64-none-linux-gnu-gcc -c -o cselib.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cselib.c
+aarch64-none-linux-gnu-gcc -c -o dbxout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dbxout.c
+aarch64-none-linux-gnu-gcc -c -o debug.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         debug.c
+aarch64-none-linux-gnu-gcc -c -o dependence.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dependence.c
+aarch64-none-linux-gnu-gcc -c -o df.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         df.c
+aarch64-none-linux-gnu-gcc -c -o diagnostic.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         diagnostic.c
+In function 'end_alias_analysis',
+    inlined from 'mark_constant_function' at alias.c:2423:3:
+alias.c:2688:3: warning: 'free' called on pointer 'reg_known_value' with nonzero offset 424 [-Wfree-nonheap-object]
+ 2688 |   free (reg_known_value + FIRST_PSEUDO_REGISTER);
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+alias.c: In function 'mark_constant_function':
+alias.c:170:6: note: declared here
+  170 | rtx *reg_known_value;
+      |      ^~~~~~~~~~~~~~~
+In function 'end_alias_analysis',
+    inlined from 'mark_constant_function' at alias.c:2423:3:
+alias.c:2691:3: warning: 'free' called on pointer 'reg_known_equiv_p' with nonzero offset 53 [-Wfree-nonheap-object]
+ 2691 |   free (reg_known_equiv_p + FIRST_PSEUDO_REGISTER);
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+alias.c: In function 'mark_constant_function':
+alias.c:187:7: note: declared here
+  187 | char *reg_known_equiv_p;
+      |       ^~~~~~~~~~~~~~~~~
+alias.c: In function 'end_alias_analysis':
+alias.c:2688:3: warning: 'free' called on pointer 'reg_known_value' with nonzero offset 424 [-Wfree-nonheap-object]
+ 2688 |   free (reg_known_value + FIRST_PSEUDO_REGISTER);
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+alias.c:170:6: note: declared here
+  170 | rtx *reg_known_value;
+      |      ^~~~~~~~~~~~~~~
+alias.c:2691:3: warning: 'free' called on pointer 'reg_known_equiv_p' with nonzero offset 53 [-Wfree-nonheap-object]
+ 2691 |   free (reg_known_equiv_p + FIRST_PSEUDO_REGISTER);
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+alias.c:187:7: note: declared here
+  187 | char *reg_known_equiv_p;
+      |       ^~~~~~~~~~~~~~~~~
+aarch64-none-linux-gnu-gcc -c -o doloop.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         doloop.c
+diagnostic.c:745:6: warning: 'format' attribute cannot be applied to a function that does not take variable arguments [-Wattributes]
+  745 |      const char *msg;
+      |      ^~~~~
+diagnostic.c:810:6: warning: 'format' attribute cannot be applied to a function that does not take variable arguments [-Wattributes]
+  810 |      output_buffer *buffer;
+      |      ^~~~~~~~~~~~~
+aarch64-none-linux-gnu-gcc -c -o dominance.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dominance.c
+aarch64-none-linux-gnu-gcc -c -o dwarf2asm.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dwarf2asm.c
+aarch64-none-linux-gnu-gcc -c -o dwarf2out.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dwarf2out.c
+aarch64-none-linux-gnu-gcc -c -o dwarfout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         dwarfout.c
+aarch64-none-linux-gnu-gcc -c -o emit-rtl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         emit-rtl.c
+aarch64-none-linux-gnu-gcc -c -o except.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         except.c
+aarch64-none-linux-gnu-gcc -c -o explow.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         explow.c
+aarch64-none-linux-gnu-gcc -c -o expmed.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         expmed.c
+aarch64-none-linux-gnu-gcc -c -o expr.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         expr.c
+aarch64-none-linux-gnu-gcc -c -o final.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         final.c
+aarch64-none-linux-gnu-gcc -c -o flow.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         flow.c
+aarch64-none-linux-gnu-gcc -c -o fold-const.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         fold-const.c
+aarch64-none-linux-gnu-gcc -c -o function.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         function.c
+aarch64-none-linux-gnu-gcc -c -o gcse.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         gcse.c
+aarch64-none-linux-gnu-gcc -c -o genrtl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         genrtl.c
+aarch64-none-linux-gnu-gcc -c -o ggc-common.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ggc-common.c
+aarch64-none-linux-gnu-gcc -c -o global.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         global.c
+aarch64-none-linux-gnu-gcc -c -o graph.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         graph.c
+aarch64-none-linux-gnu-gcc -c -o haifa-sched.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         haifa-sched.c
+aarch64-none-linux-gnu-gcc -c -o hash.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hash.c
+aarch64-none-linux-gnu-gcc -c -o hashtable.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hashtable.c
+aarch64-none-linux-gnu-gcc -c -o hooks.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hooks.c
+aarch64-none-linux-gnu-gcc -c -o ifcvt.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ifcvt.c
+aarch64-none-linux-gnu-gcc -c -o insn-attrtab.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-attrtab.c
+aarch64-none-linux-gnu-gcc -c -o insn-emit.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-emit.c
+aarch64-none-linux-gnu-gcc -c -o insn-extract.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-extract.c
+aarch64-none-linux-gnu-gcc -c -o insn-opinit.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-opinit.c
+aarch64-none-linux-gnu-gcc -c -o insn-output.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-output.c
+aarch64-none-linux-gnu-gcc -c -o insn-peep.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-peep.c
+aarch64-none-linux-gnu-gcc -c -o insn-recog.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         insn-recog.c
+aarch64-none-linux-gnu-gcc -c -o integrate.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         integrate.c
+aarch64-none-linux-gnu-gcc -c -o intl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         intl.c
+aarch64-none-linux-gnu-gcc -c -o jump.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         jump.c
+aarch64-none-linux-gnu-gcc -c -o langhooks.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         langhooks.c
+aarch64-none-linux-gnu-gcc -c -o lcm.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         lcm.c
+aarch64-none-linux-gnu-gcc -c -o lists.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         lists.c
+aarch64-none-linux-gnu-gcc -c -o local-alloc.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         local-alloc.c
+aarch64-none-linux-gnu-gcc -c -o loop.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         loop.c
+aarch64-none-linux-gnu-gcc -c -o obstack.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         obstack.c
+aarch64-none-linux-gnu-gcc -c -o optabs.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         optabs.c
+aarch64-none-linux-gnu-gcc -c -o params.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         params.c
+aarch64-none-linux-gnu-gcc -c -o predict.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         predict.c
+aarch64-none-linux-gnu-gcc -c -o print-rtl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         print-rtl.c
+aarch64-none-linux-gnu-gcc -c -o print-tree.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         print-tree.c
+aarch64-none-linux-gnu-gcc -c -o profile.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         profile.c
+aarch64-none-linux-gnu-gcc -c -o real.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         real.c
+aarch64-none-linux-gnu-gcc -c -o recog.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         recog.c
+aarch64-none-linux-gnu-gcc -c -o reg-stack.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         reg-stack.c
+aarch64-none-linux-gnu-gcc -c -o regclass.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         regclass.c
+aarch64-none-linux-gnu-gcc -c -o regmove.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         regmove.c
+aarch64-none-linux-gnu-gcc -c -o regrename.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         regrename.c
+aarch64-none-linux-gnu-gcc -c -o reload.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         reload.c
+aarch64-none-linux-gnu-gcc -c -o reload1.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         reload1.c
+aarch64-none-linux-gnu-gcc -c -o reorg.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         reorg.c
+aarch64-none-linux-gnu-gcc -c -o resource.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         resource.c
+aarch64-none-linux-gnu-gcc -c -o rtl.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rtl.c
+aarch64-none-linux-gnu-gcc -c -o rtlanal.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rtlanal.c
+aarch64-none-linux-gnu-gcc -c -o rtl-error.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rtl-error.c
+aarch64-none-linux-gnu-gcc -c -o sbitmap.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sbitmap.c
+aarch64-none-linux-gnu-gcc -c -o sched-deps.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sched-deps.c
+aarch64-none-linux-gnu-gcc -c -o sched-ebb.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sched-ebb.c
+aarch64-none-linux-gnu-gcc -c -o sched-rgn.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sched-rgn.c
+aarch64-none-linux-gnu-gcc -c -o sched-vis.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sched-vis.c
+aarch64-none-linux-gnu-gcc -c -o sdbout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sdbout.c
+aarch64-none-linux-gnu-gcc -c -o sibcall.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sibcall.c
+aarch64-none-linux-gnu-gcc -c -o simplify-rtx.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         simplify-rtx.c
+aarch64-none-linux-gnu-gcc -c -o ssa.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ssa.c
+aarch64-none-linux-gnu-gcc -c -o ssa-ccp.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ssa-ccp.c
+aarch64-none-linux-gnu-gcc -c -o ssa-dce.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ssa-dce.c
+aarch64-none-linux-gnu-gcc -c -o stmt.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         stmt.c
+aarch64-none-linux-gnu-gcc -c -o stor-layout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         stor-layout.c
+aarch64-none-linux-gnu-gcc -c -o stringpool.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         stringpool.c
+aarch64-none-linux-gnu-gcc -c -o timevar.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         timevar.c
+aarch64-none-linux-gnu-gcc -c -o toplev.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         toplev.c
+aarch64-none-linux-gnu-gcc -c -o tree.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         tree.c
+aarch64-none-linux-gnu-gcc -c -o tree-dump.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         tree-dump.c
+aarch64-none-linux-gnu-gcc -c -o tree-inline.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         tree-inline.c
+aarch64-none-linux-gnu-gcc -c -o unroll.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         unroll.c
+aarch64-none-linux-gnu-gcc -c -o varasm.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         varasm.c
+aarch64-none-linux-gnu-gcc -c -o varray.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         varray.c
+aarch64-none-linux-gnu-gcc -c -o vmsdbgout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         vmsdbgout.c
+aarch64-none-linux-gnu-gcc -c -o xcoffout.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         xcoffout.c
+aarch64-none-linux-gnu-gcc -c -o ggc-page.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ggc-page.c
+aarch64-none-linux-gnu-gcc -c -o i386.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         i386.c
+aarch64-none-linux-gnu-gcc -c -o xmalloc.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         xmalloc.c
+aarch64-none-linux-gnu-gcc -c -o xexit.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         xexit.c
+aarch64-none-linux-gnu-gcc -c -o hashtab.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hashtab.c
+aarch64-none-linux-gnu-gcc -c -o safe-ctype.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         safe-ctype.c
+aarch64-none-linux-gnu-gcc -c -o splay-tree.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         splay-tree.c
+aarch64-none-linux-gnu-gcc -c -o xstrdup.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         xstrdup.c
+aarch64-none-linux-gnu-gcc -c -o md5.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         md5.c
+aarch64-none-linux-gnu-gcc -c -o fibheap.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         fibheap.c
+aarch64-none-linux-gnu-gcc -c -o xstrerror.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         xstrerror.c
+aarch64-none-linux-gnu-gcc -c -o concat.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         concat.c
+aarch64-none-linux-gnu-gcc -c -o partition.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         partition.c
+aarch64-none-linux-gnu-gcc -c -o hex.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         hex.c
+aarch64-none-linux-gnu-gcc -c -o lbasename.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         lbasename.c
+aarch64-none-linux-gnu-gcc -c -o getpwd.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         getpwd.c
+aarch64-none-linux-gnu-gcc -c -o ucbqsort.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ucbqsort.c
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        alloca.o asprintf.o vasprintf.o c-parse.o c-lang.o attribs.o c-errors.o c-lex.o c-pragma.o c-decl.o c-typeck.o c-convert.o c-aux-info.o c-common.o c-format.o c-semantics.o c-objc-common.o main.o cpplib.o cpplex.o cppmacro.o cppexp.o cppfiles.o cpphash.o cpperror.o cppinit.o cppdefault.o line-map.o mkdeps.o prefix.o version.o mbchar.o alias.o bb-reorder.o bitmap.o builtins.o caller-save.o calls.o cfg.o cfganal.o cfgbuild.o cfgcleanup.o cfglayout.o cfgloop.o cfgrtl.o combine.o conflict.o convert.o cse.o cselib.o dbxout.o debug.o dependence.o df.o diagnostic.o doloop.o dominance.o dwarf2asm.o dwarf2out.o dwarfout.o emit-rtl.o except.o explow.o expmed.o expr.o final.o flow.o fold-const.o function.o gcse.o genrtl.o ggc-common.o global.o graph.o haifa-sched.o hash.o hashtable.o hooks.o ifcvt.o insn-attrtab.o insn-emit.o insn-extract.o insn-opinit.o insn-output.o insn-peep.o insn-recog.o integrate.o intl.o jump.o langhooks.o lcm.o lists.o local-alloc.o loop.o obstack.o optabs.o params.o predict.o print-rtl.o print-tree.o profile.o real.o recog.o reg-stack.o regclass.o regmove.o regrename.o reload.o reload1.o reorg.o resource.o rtl.o rtlanal.o rtl-error.o sbitmap.o sched-deps.o sched-ebb.o sched-rgn.o sched-vis.o sdbout.o sibcall.o simplify-rtx.o ssa.o ssa-ccp.o ssa-dce.o stmt.o stor-layout.o stringpool.o timevar.o toplev.o tree.o tree-dump.o tree-inline.o unroll.o varasm.o varray.o vmsdbgout.o xcoffout.o ggc-page.o i386.o xmalloc.o xexit.o hashtab.o safe-ctype.o splay-tree.o xstrdup.o md5.o fibheap.o xstrerror.o concat.o partition.o hex.o lbasename.o getpwd.o ucbqsort.o             -lm        -o gcc
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG -I.   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS="-I."
+P: BENCH_CFLAGS=""
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY=""
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>   -lm        -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: MATH_LIBS="-lm"
+C: LDOUT="-o options"
+
+Build successes: 403.gcc(base)
+
+Setting Up Run Directories
+  Setting up 403.gcc ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 403.gcc ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/403.gcc/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+403.gcc: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.691.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.691.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.691.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.691
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:09 2026; 2976 total seconds elapsed

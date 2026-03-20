@@ -1,0 +1,130 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 464.h264ref
+Compiling Binaries
+  Building 464.h264ref base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf h264ref
+rm -rf h264ref.exe
+rm -rf *.o  foreman_train_baseline_encodelog.out foreman_train_baseline_leakybucketparam.cfg
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o annexb.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         annexb.c
+aarch64-none-linux-gnu-gcc -c -o biariencode.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         biariencode.c
+aarch64-none-linux-gnu-gcc -c -o block.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         block.c
+aarch64-none-linux-gnu-gcc -c -o cabac.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         cabac.c
+aarch64-none-linux-gnu-gcc -c -o configfile.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         configfile.c
+aarch64-none-linux-gnu-gcc -c -o context_ini.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         context_ini.c
+aarch64-none-linux-gnu-gcc -c -o decoder.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         decoder.c
+aarch64-none-linux-gnu-gcc -c -o explicit_gop.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         explicit_gop.c
+aarch64-none-linux-gnu-gcc -c -o fast_me.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         fast_me.c
+aarch64-none-linux-gnu-gcc -c -o filehandle.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         filehandle.c
+aarch64-none-linux-gnu-gcc -c -o fmo.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         fmo.c
+aarch64-none-linux-gnu-gcc -c -o header.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         header.c
+aarch64-none-linux-gnu-gcc -c -o image.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         image.c
+aarch64-none-linux-gnu-gcc -c -o intrarefresh.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         intrarefresh.c
+aarch64-none-linux-gnu-gcc -c -o leaky_bucket.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         leaky_bucket.c
+aarch64-none-linux-gnu-gcc -c -o lencod.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         lencod.c
+aarch64-none-linux-gnu-gcc -c -o loopFilter.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         loopFilter.c
+aarch64-none-linux-gnu-gcc -c -o macroblock.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         macroblock.c
+aarch64-none-linux-gnu-gcc -c -o mb_access.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mb_access.c
+aarch64-none-linux-gnu-gcc -c -o mbuffer.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mbuffer.c
+aarch64-none-linux-gnu-gcc -c -o memalloc.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         memalloc.c
+aarch64-none-linux-gnu-gcc -c -o mv-search.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mv-search.c
+aarch64-none-linux-gnu-gcc -c -o nal.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         nal.c
+aarch64-none-linux-gnu-gcc -c -o nalu.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         nalu.c
+aarch64-none-linux-gnu-gcc -c -o nalucommon.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         nalucommon.c
+aarch64-none-linux-gnu-gcc -c -o output.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         output.c
+aarch64-none-linux-gnu-gcc -c -o parset.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         parset.c
+aarch64-none-linux-gnu-gcc -c -o parsetcommon.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         parsetcommon.c
+aarch64-none-linux-gnu-gcc -c -o q_matrix.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         q_matrix.c
+q_matrix.c: In function 'Init_QMatrix':
+q_matrix.c:377:15: warning: comparison between pointer and zero character constant [-Wpointer-compare]
+  377 |     if(content!='\0')
+      |               ^~
+q_matrix.c:377:8: note: did you mean to dereference the pointer?
+  377 |     if(content!='\0')
+      |        ^
+aarch64-none-linux-gnu-gcc -c -o q_offsets.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         q_offsets.c
+mv-search.c: In function 'SATD':
+mv-search.c:1093:29: warning: iteration 15 invokes undefined behavior [-Waggressive-loop-optimizations]
+ 1093 |     for (dd=d[k=0]; k<16; dd=d[++k])
+      |                           ~~^~~~~~~
+mv-search.c:1093:22: note: within this loop
+ 1093 |     for (dd=d[k=0]; k<16; dd=d[++k])
+      |                     ~^~~
+q_offsets.c: In function 'Init_QOffsetMatrix':
+q_offsets.c:302:15: warning: comparison between pointer and zero character constant [-Wpointer-compare]
+  302 |     if(content!='\0')
+      |               ^~
+q_offsets.c:302:8: note: did you mean to dereference the pointer?
+  302 |     if(content!='\0')
+      |        ^
+aarch64-none-linux-gnu-gcc -c -o ratectl.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         ratectl.c
+aarch64-none-linux-gnu-gcc -c -o rdopt.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rdopt.c
+aarch64-none-linux-gnu-gcc -c -o rdopt_coding_state.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rdopt_coding_state.c
+aarch64-none-linux-gnu-gcc -c -o rdpicdecision.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rdpicdecision.c
+aarch64-none-linux-gnu-gcc -c -o refbuf.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         refbuf.c
+aarch64-none-linux-gnu-gcc -c -o rtp.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         rtp.c
+aarch64-none-linux-gnu-gcc -c -o sei.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         sei.c
+aarch64-none-linux-gnu-gcc -c -o slice.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         slice.c
+aarch64-none-linux-gnu-gcc -c -o transform8x8.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         transform8x8.c
+aarch64-none-linux-gnu-gcc -c -o vlc.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         vlc.c
+aarch64-none-linux-gnu-gcc -c -o weighted_prediction.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         weighted_prediction.c
+aarch64-none-linux-gnu-gcc -c -o specrand.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         specrand.c
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        annexb.o biariencode.o block.o cabac.o configfile.o context_ini.o decoder.o explicit_gop.o fast_me.o filehandle.o fmo.o header.o image.o intrarefresh.o leaky_bucket.o lencod.o loopFilter.o macroblock.o mb_access.o mbuffer.o memalloc.o mv-search.o nal.o nalu.o nalucommon.o output.o parset.o parsetcommon.o q_matrix.o q_offsets.o ratectl.o rdopt.o rdopt_coding_state.o rdpicdecision.o refbuf.o rtp.o sei.o slice.o transform8x8.o vlc.o weighted_prediction.o specrand.o             -lm        -o h264ref
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS=""
+P: BENCH_CFLAGS=""
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY=""
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>   -lm        -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: MATH_LIBS="-lm"
+C: LDOUT="-o options"
+
+Build successes: 464.h264ref(base)
+
+Setting Up Run Directories
+  Setting up 464.h264ref ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 464.h264ref ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/464.h264ref/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+464.h264ref: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+464.h264ref: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.692.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.692.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.692.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.692
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:08 2026; 2975 total seconds elapsed

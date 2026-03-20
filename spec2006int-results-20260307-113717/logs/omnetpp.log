@@ -1,0 +1,57 @@
+==> [471.omnetpp] Starting AOT pipeline...
+  [1/3] Profiling...
+[tcg] guest_base=0x7efe3cd7b000
+[tcg] LLVM JIT backend enabled
+[tcg] profiling enabled (mode=hot, min_exec_count=10)
+LLVM verify warning for tb_1843: Call parameter type does not match function signature!
+  %338 = load i32, ptr %82, align 4
+ i64  %340 = call i64 inttoptr (i64 93877375068864 to ptr)(i32 %338, i32 %339, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_1906: Call parameter type does not match function signature!
+  %220 = load i32, ptr %45, align 4
+ i64  %222 = call i64 inttoptr (i64 93877375068864 to ptr)(i32 %220, i32 %221, i64 0, i64 0, i64 0, i64 0)
+
+See the license for distribution terms and warranty disclaimer
+Setting up Cmdenv (command-line user interface)...
+
+End run of OMNeT++
+[tcg] profile saved to /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/profiles/omnetpp.profile.bin (mode=hot, min_exec_count=10, 649 TBs)
+  Profile time: 122s
+  [2/3] AOT compiling...
+[aot] applying default min_exec_count floor for Aarch64: profile=10 -> default=64
+[aot] profile mode (Aarch64): 649 entries, min_exec_count=64, load vaddr=0x400000 file_offset=0x0
+[aot] keeping 302 entries with exec_count > 64 (dropped 347)
+[aot] 302 exported, 0 internal
+[aot] target machine: triple=x86_64-pc-linux-gnu, cpu=znver3, features=+prfchw,-cldemote,+avx,+aes,+sahf,+pclmul,-xop,+crc32,-amx-fp8,+xsaves,-avx512fp16,-usermsr,-sm4,-egpr,+sse4.1,-avx512ifma,+xsave,+sse4.2,-tsxldtrk,-sm3,-ptwrite,-widekl,-movrs,+invpcid,+64bit,+xsavec,-avx10.1-512,-avx512vpopcntdq,+cmov,-avx512vp2intersect,-avx512cd,+movbe,-avxvnniint8,-ccmp,-amx-int8,-kl,-avx10.1-256,-sha512,-avxvnni,-rtm,+adx,+avx2,-hreset,-movdiri,-serialize,+vpclmulqdq,-avx512vl,-uintr,-cf,+clflushopt,-raoint,-cmpccxadd,+bmi,-amx-tile,+sse,-avx10.2-256,-gfni,-avxvnniint16,-amx-fp16,-zu,-ndd,+xsaveopt,+rdrnd,-avx512f,-amx-bf16,-avx512bf16,-avx512vnni,-push2pop2,+cx8,-avx512bw,+sse3,+pku,-nf,-amx-tf32,-amx-avx512,+fsgsbase,+clzero,+mwaitx,-lwp,+lzcnt,+sha,-movdir64b,-ppx,+wbnoinvd,-enqcmd,-amx-transpose,-avx10.2-512,-avxneconvert,-tbm,-pconfig,-amx-complex,+ssse3,+cx16,+bmi2,+fma,+popcnt,-avxifma,+f16c,-avx512bitalg,+rdpru,+clwb,+mmx,+sse2,+rdseed,-avx512vbmi2,-prefetchi,-amx-movrs,+rdpid,-fma4,-avx512vbmi,+shstk,+vaes,-waitpkg,-sgx,+fxsr,-avx512dq,+sse4a
+[aot] found 4 unique helper functions
+[aot] linking embedded helper bitcode (5760 bytes)
+warning: Linking two modules of different target triples: 'helpers' is 'x86_64-unknown-linux-gnu' whereas 'tcg_aot' is 'x86_64-pc-linux-gnu'
+
+[aot] successfully linked helper bitcode
+[aot] translated 302 TBs
+[aot] emitted aot_dispatch with 302 cases
+[aot] running O3 optimization...
+[aot] emitting /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/aot/omnetpp.aot.o...
+[aot] done: /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/aot/omnetpp.aot.o
+[aot] link with: cc -shared -o aot.so /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/aot/omnetpp.aot.o
+  AOT compile time: 6s
+  [3/3] Running with AOT...
+[tcg] guest_base=0x7f1f50e96000
+[aot] loaded 302 functions from /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/aot/omnetpp.aot.so
+[tcg] AOT loaded from /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/aot/omnetpp.aot.so
+[tcg] LLVM JIT backend enabled
+LLVM verify warning for tb_1668: Call parameter type does not match function signature!
+  %338 = load i32, ptr %82, align 4
+ i64  %340 = call i64 inttoptr (i64 94451701717696 to ptr)(i32 %338, i32 %339, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_1704: Call parameter type does not match function signature!
+  %220 = load i32, ptr %45, align 4
+ i64  %222 = call i64 inttoptr (i64 94451701717696 to ptr)(i32 %220, i32 %221, i64 0, i64 0, i64 0, i64 0)
+
+See the license for distribution terms and warranty disclaimer
+Setting up Cmdenv (command-line user interface)...
+
+End run of OMNeT++
+  AOT run time: 90s
+  Total time: 218s
+==> [471.omnetpp] Completed successfully!

@@ -1,0 +1,91 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 429.mcf
+Compiling Binaries
+  Building 429.mcf base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/429.mcf/src/.ccls-cache/@@home@lxy@SPEC@SPEC2006@lxy@spec2006_x64_avx2@benchspec@CPU2006@429.mcf@src/@usr@include@x86_64-linux-gnu@asm@errno.h.blob has no stored checksum!
+
+ Since this run is not reportable, you may avoid this error in the future
+ by setting
+   strict_rundir_verify = 0
+ in your config file.
+
+
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/429.mcf/src/.ccls-cache/@home@lxy@SPEC@SPEC2006@lxy@spec2006_x64_avx2@benchspec@CPU2006@429.mcf@src/treeup.h has no stored checksum!
+
+ Since this run is not reportable, you may avoid this error in the future
+ by setting
+   strict_rundir_verify = 0
+ in your config file.
+
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf mcf
+rm -rf mcf.exe
+rm -rf *.o  inp.out mcf.out
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o mcf.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mcf.c
+aarch64-none-linux-gnu-gcc -c -o mcfutil.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         mcfutil.c
+aarch64-none-linux-gnu-gcc -c -o readmin.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         readmin.c
+aarch64-none-linux-gnu-gcc -c -o implicit.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         implicit.c
+aarch64-none-linux-gnu-gcc -c -o pstart.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         pstart.c
+aarch64-none-linux-gnu-gcc -c -o output.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         output.c
+aarch64-none-linux-gnu-gcc -c -o treeup.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         treeup.c
+aarch64-none-linux-gnu-gcc -c -o pbla.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         pbla.c
+aarch64-none-linux-gnu-gcc -c -o pflowup.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         pflowup.c
+aarch64-none-linux-gnu-gcc -c -o psimplex.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         psimplex.c
+aarch64-none-linux-gnu-gcc -c -o pbeampp.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         pbeampp.c
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        mcf.o mcfutil.o readmin.o implicit.o pstart.o output.o treeup.o pbla.o pflowup.o psimplex.o pbeampp.o             -lm        -o mcf
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG  -DWANT_STDC_PROTO  -Ofast -static -fsigned-char       -DSPEC_CPU_LP64         <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS=""
+P: BENCH_CFLAGS="-DWANT_STDC_PROTO"
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY=""
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64        <objects>   -lm        -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+C: MATH_LIBS="-lm"
+C: LDOUT="-o options"
+
+Build successes: 429.mcf(base)
+
+Setting Up Run Directories
+  Setting up 429.mcf ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 429.mcf ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/429.mcf/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+429.mcf: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.684.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.684.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.684.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.684
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:02 2026; 2969 total seconds elapsed

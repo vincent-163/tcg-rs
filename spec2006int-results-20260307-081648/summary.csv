@@ -1,0 +1,13 @@
+Benchmark,Status,Message,Profile Time,AOT Time,Run Time,Total Time
+483.xalancbmk,ERROR,Executable not found
+464.h264ref,FAIL,Profile failed,0s
+445.gobmk,FAIL,Profile failed,0s
+400.perlbench,FAIL,Profile failed,0s
+456.hmmer,FAIL,Profile failed,0s
+462.libquantum,FAIL,Profile failed,4s
+401.bzip2,FAIL,Profile failed,4s
+999.specrand,PASS,Success,3s,10s,1s,14s
+403.gcc,FAIL,Profile failed,18s
+473.astar,FAIL,Profile failed,31s
+429.mcf,FAIL,AOT run failed,1814s,26s,0s
+471.omnetpp,FAIL,AOT run failed,3011s,1885s,0s

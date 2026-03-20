@@ -1,0 +1,52 @@
+==> [403.gcc] Starting AOT pipeline...
+  [1/3] Profiling...
+[tcg] guest_base=0x7f192d6c9000
+[tcg] LLVM JIT backend enabled
+[tcg] profiling enabled (mode=hot, min_exec_count=10)
+LLVM verify warning for tb_2355: Call parameter type does not match function signature!
+  %222 = load i32, ptr %45, align 4
+ i64  %224 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %222, i32 %223, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2397: Call parameter type does not match function signature!
+  %222 = load i32, ptr %45, align 4
+ i64  %224 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %222, i32 %223, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2614: Call parameter type does not match function signature!
+  %227 = load i32, ptr %49, align 4
+ i64  %229 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %227, i32 %228, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2760: Call parameter type does not match function signature!
+  %201 = load i32, ptr %41, align 4
+ i64  %203 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %201, i32 %202, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2764: Call parameter type does not match function signature!
+  %396 = load i32, ptr %56, align 4
+ i64  %398 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %396, i32 %397, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2863: Call parameter type does not match function signature!
+  %232 = load i32, ptr %49, align 4
+ i64  %234 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %232, i32 %233, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2899: Call parameter type does not match function signature!
+  %232 = load i32, ptr %49, align 4
+ i64  %234 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %232, i32 %233, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2914: Call parameter type does not match function signature!
+  %232 = load i32, ptr %49, align 4
+ i64  %234 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %232, i32 %233, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2931: Call parameter type does not match function signature!
+  %232 = load i32, ptr %49, align 4
+ i64  %234 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %232, i32 %233, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_2942: Call parameter type does not match function signature!
+  %396 = load i32, ptr %56, align 4
+ i64  %398 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %396, i32 %397, i64 0, i64 0, i64 0, i64 0)
+
+LLVM verify warning for tb_4500: Call parameter type does not match function signature!
+  %214 = load i32, ptr %45, align 4
+ i64  %216 = call i64 inttoptr (i64 94136877242176 to ptr)(i32 %214, i32 %215, i64 0, i64 0, i64 0, i64 0)
+
+Fatal glibc error: malloc.c:4269 (_int_malloc): assertion failed: bit != 0
+[tcg] profile saved to /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-113717/profiles/gcc.profile.bin (mode=hot, min_exec_count=10, 1760 TBs)
+ERROR: Profile run failed

@@ -1,0 +1,7 @@
+==> [462.libquantum] Starting AOT pipeline...
+  [1/3] Profiling...
+[tcg] guest_base=0x7f02a2c66000
+[tcg] profiling enabled (mode=hot, min_exec_count=10)
+munmap_chunk(): invalid pointer
+[tcg] profile saved to /data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec2006int-results-20260307-081648/profiles/libquantum.profile.bin (mode=hot, min_exec_count=10, 384 TBs)
+ERROR: Profile run failed

@@ -1,0 +1,81 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 462.libquantum
+Compiling Binaries
+  Building 462.libquantum base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf libquantum
+rm -rf libquantum.exe
+rm -rf *.o  train.out
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o classic.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        classic.c
+aarch64-none-linux-gnu-gcc -c -o complex.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        complex.c
+aarch64-none-linux-gnu-gcc -c -o decoherence.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        decoherence.c
+aarch64-none-linux-gnu-gcc -c -o expn.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        expn.c
+aarch64-none-linux-gnu-gcc -c -o gates.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        gates.c
+aarch64-none-linux-gnu-gcc -c -o matrix.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        matrix.c
+aarch64-none-linux-gnu-gcc -c -o measure.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        measure.c
+aarch64-none-linux-gnu-gcc -c -o oaddn.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        oaddn.c
+aarch64-none-linux-gnu-gcc -c -o objcode.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        objcode.c
+aarch64-none-linux-gnu-gcc -c -o omuln.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        omuln.c
+aarch64-none-linux-gnu-gcc -c -o qec.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        qec.c
+aarch64-none-linux-gnu-gcc -c -o qft.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        qft.c
+aarch64-none-linux-gnu-gcc -c -o qureg.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        qureg.c
+aarch64-none-linux-gnu-gcc -c -o shor.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        shor.c
+aarch64-none-linux-gnu-gcc -c -o version.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        version.c
+aarch64-none-linux-gnu-gcc -c -o specrand.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        specrand.c
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX       classic.o complex.o decoherence.o expn.o gates.o matrix.o measure.o oaddn.o objcode.o omuln.o qec.o qft.o qureg.o shor.o version.o specrand.o             -lm        -o libquantum
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG    -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX        <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS=""
+P: BENCH_CFLAGS=""
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY="-DSPEC_CPU_LINUX"
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX       <objects>   -lm        -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY="-DSPEC_CPU_LINUX"
+C: MATH_LIBS="-lm"
+C: LDOUT="-o options"
+
+Build successes: 462.libquantum(base)
+
+Setting Up Run Directories
+  Setting up 462.libquantum ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 462.libquantum ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/462.libquantum/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+462.libquantum: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.687.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.687.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.687.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.687
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:02 2026; 2969 total seconds elapsed

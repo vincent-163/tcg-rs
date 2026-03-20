@@ -1,0 +1,777 @@
+runspec v6152 - Copyright 1999-2008 Standard Performance Evaluation Corporation
+Using 'linux-suse101-AMD64' tools
+Reading MANIFEST... 17642 files
+Loading runspec modules................
+Locating benchmarks...found 31 benchmarks and 2 src.alts in 6 benchsets.
+Reading config file '/data/Sync/all/projects/2026-02-11-cc-work/2026-03-tcg-rs/spec-logs/aarch64.Ofast.tcgrs.20260320165734.jit.cfg'
+Benchmarks selected: 400.perlbench
+Compiling Binaries
+  Building 400.perlbench base aarch64.Ofast.tcgrs.20260320165734.jit default: (build_base_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+specmake -j16 clean 2> make.clean.err | tee make.clean.out
+rm -rf perlbench
+rm -rf perlbench.exe
+rm -rf *.o  diffmail.2.550.15.24.23.100.out perfect.b.3.out scrabbl.out splitmail.535.13.25.24.1091.out suns.out validate
+find . \( -name \*.o -o -name '*.fppized.f*' \) -print | xargs rm -rf
+rm -rf core
+rm -rf 
+specmake -j16 build 2> make.err | tee make.out
+aarch64-none-linux-gnu-gcc -c -o av.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        av.c
+aarch64-none-linux-gnu-gcc -c -o deb.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        deb.c
+aarch64-none-linux-gnu-gcc -c -o doio.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        doio.c
+aarch64-none-linux-gnu-gcc -c -o doop.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        doop.c
+aarch64-none-linux-gnu-gcc -c -o dump.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        dump.c
+aarch64-none-linux-gnu-gcc -c -o globals.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        globals.c
+aarch64-none-linux-gnu-gcc -c -o gv.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        gv.c
+aarch64-none-linux-gnu-gcc -c -o hv.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        hv.c
+aarch64-none-linux-gnu-gcc -c -o locale.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        locale.c
+aarch64-none-linux-gnu-gcc -c -o mg.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        mg.c
+aarch64-none-linux-gnu-gcc -c -o numeric.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        numeric.c
+aarch64-none-linux-gnu-gcc -c -o op.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        op.c
+aarch64-none-linux-gnu-gcc -c -o pad.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pad.c
+aarch64-none-linux-gnu-gcc -c -o perl.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        perl.c
+aarch64-none-linux-gnu-gcc -c -o perlapi.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        perlapi.c
+aarch64-none-linux-gnu-gcc -c -o perlio.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        perlio.c
+aarch64-none-linux-gnu-gcc -c -o perlmain.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        perlmain.c
+aarch64-none-linux-gnu-gcc -c -o perly.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        perly.c
+aarch64-none-linux-gnu-gcc -c -o pp.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pp.c
+aarch64-none-linux-gnu-gcc -c -o pp_ctl.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pp_ctl.c
+aarch64-none-linux-gnu-gcc -c -o pp_hot.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pp_hot.c
+aarch64-none-linux-gnu-gcc -c -o pp_pack.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pp_pack.c
+aarch64-none-linux-gnu-gcc -c -o pp_sort.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pp_sort.c
+aarch64-none-linux-gnu-gcc -c -o pp_sys.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        pp_sys.c
+aarch64-none-linux-gnu-gcc -c -o regcomp.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        regcomp.c
+aarch64-none-linux-gnu-gcc -c -o regexec.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        regexec.c
+aarch64-none-linux-gnu-gcc -c -o run.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        run.c
+aarch64-none-linux-gnu-gcc -c -o scope.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        scope.c
+aarch64-none-linux-gnu-gcc -c -o sv.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        sv.c
+aarch64-none-linux-gnu-gcc -c -o taint.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        taint.c
+aarch64-none-linux-gnu-gcc -c -o toke.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        toke.c
+aarch64-none-linux-gnu-gcc -c -o universal.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        universal.c
+aarch64-none-linux-gnu-gcc -c -o utf8.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        utf8.c
+aarch64-none-linux-gnu-gcc -c -o util.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        util.c
+aarch64-none-linux-gnu-gcc -c -o xsutils.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        xsutils.c
+aarch64-none-linux-gnu-gcc -c -o Base64.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Base64.c
+aarch64-none-linux-gnu-gcc -c -o Cwd.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Cwd.c
+aarch64-none-linux-gnu-gcc -c -o Dumper.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Dumper.c
+aarch64-none-linux-gnu-gcc -c -o HiRes.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        HiRes.c
+aarch64-none-linux-gnu-gcc -c -o IO.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        IO.c
+aarch64-none-linux-gnu-gcc -c -o Peek.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Peek.c
+aarch64-none-linux-gnu-gcc -c -o attrs.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        attrs.c
+aarch64-none-linux-gnu-gcc -c -o poll.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        poll.c
+aarch64-none-linux-gnu-gcc -c -o stdio.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        stdio.c
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_case':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_case':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_case':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_case':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_case':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_case':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+aarch64-none-linux-gnu-gcc -c -o DynaLoader.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        DynaLoader.c
+aarch64-none-linux-gnu-gcc -c -o MD5.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        MD5.c
+aarch64-none-linux-gnu-gcc -c -o Storable.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Storable.c
+aarch64-none-linux-gnu-gcc -c -o Parser.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Parser.c
+aarch64-none-linux-gnu-gcc -c -o specrand.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        specrand.c
+aarch64-none-linux-gnu-gcc -c -o Hostname.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Hostname.c
+aarch64-none-linux-gnu-gcc -c -o Opcode.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        Opcode.c
+utf8.c: In function 'Perl_is_uni_xdigit_lc':
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c:1045:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c:1045:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c:1045:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c:1045:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c:1045:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c:1045:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_is_uni_xdigit' at utf8.c:1046:5:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_is_uni_xdigit':
+utf8.c:1045:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_is_uni_xdigit' at utf8.c:1046:5:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_is_uni_xdigit':
+utf8.c:1045:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_is_uni_xdigit' at utf8.c:1046:5:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_is_uni_xdigit':
+utf8.c:1045:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_is_uni_xdigit' at utf8.c:1046:5:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_is_uni_xdigit':
+utf8.c:1045:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_is_uni_xdigit' at utf8.c:1046:5:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_is_uni_xdigit':
+utf8.c:1045:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_is_uni_xdigit' at utf8.c:1046:5:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_is_uni_xdigit':
+utf8.c:1045:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1045 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12,
+    inlined from 'Perl_to_uni_upper' at utf8.c:1054:12,
+    inlined from 'Perl_to_uni_upper_lc' at utf8.c:1171:17:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_upper_lc':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12,
+    inlined from 'Perl_to_uni_upper' at utf8.c:1054:12,
+    inlined from 'Perl_to_uni_upper_lc' at utf8.c:1171:17:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_upper_lc':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12,
+    inlined from 'Perl_to_uni_upper' at utf8.c:1054:12,
+    inlined from 'Perl_to_uni_upper_lc' at utf8.c:1171:17:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_upper_lc':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12,
+    inlined from 'Perl_to_uni_upper' at utf8.c:1054:12,
+    inlined from 'Perl_to_uni_upper_lc' at utf8.c:1171:17:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_upper_lc':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12,
+    inlined from 'Perl_to_uni_upper' at utf8.c:1054:12,
+    inlined from 'Perl_to_uni_upper_lc' at utf8.c:1171:17:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_upper_lc':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12,
+    inlined from 'Perl_to_uni_upper' at utf8.c:1054:12,
+    inlined from 'Perl_to_uni_upper_lc' at utf8.c:1171:17:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_upper_lc':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12,
+    inlined from 'Perl_to_uni_lower' at utf8.c:1068:12,
+    inlined from 'Perl_to_uni_lower_lc' at utf8.c:1191:17:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_lower_lc':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12,
+    inlined from 'Perl_to_uni_lower' at utf8.c:1068:12,
+    inlined from 'Perl_to_uni_lower_lc' at utf8.c:1191:17:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_lower_lc':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12,
+    inlined from 'Perl_to_uni_lower' at utf8.c:1068:12,
+    inlined from 'Perl_to_uni_lower_lc' at utf8.c:1191:17:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_lower_lc':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12,
+    inlined from 'Perl_to_uni_lower' at utf8.c:1068:12,
+    inlined from 'Perl_to_uni_lower_lc' at utf8.c:1191:17:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_lower_lc':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12,
+    inlined from 'Perl_to_uni_lower' at utf8.c:1068:12,
+    inlined from 'Perl_to_uni_lower_lc' at utf8.c:1191:17:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_lower_lc':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12,
+    inlined from 'Perl_to_uni_lower' at utf8.c:1068:12,
+    inlined from 'Perl_to_uni_lower_lc' at utf8.c:1191:17:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_lower_lc':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12,
+    inlined from 'Perl_to_uni_title' at utf8.c:1061:12,
+    inlined from 'Perl_to_uni_title_lc' at utf8.c:1181:17:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_title_lc':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12,
+    inlined from 'Perl_to_uni_title' at utf8.c:1061:12,
+    inlined from 'Perl_to_uni_title_lc' at utf8.c:1181:17:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_title_lc':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12,
+    inlined from 'Perl_to_uni_title' at utf8.c:1061:12,
+    inlined from 'Perl_to_uni_title_lc' at utf8.c:1181:17:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_title_lc':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12,
+    inlined from 'Perl_to_uni_title' at utf8.c:1061:12,
+    inlined from 'Perl_to_uni_title_lc' at utf8.c:1181:17:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_title_lc':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12,
+    inlined from 'Perl_to_uni_title' at utf8.c:1061:12,
+    inlined from 'Perl_to_uni_title_lc' at utf8.c:1181:17:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_title_lc':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12,
+    inlined from 'Perl_to_uni_title' at utf8.c:1061:12,
+    inlined from 'Perl_to_uni_title_lc' at utf8.c:1181:17:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_uni_title_lc':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_upper':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_upper':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_upper':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_upper':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_upper':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_upper' at utf8.c:1504:12:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_upper':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_lower':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_lower':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_lower':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_lower':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_lower':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_lower' at utf8.c:1544:12:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_lower':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_title':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_title':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_title':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_title':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_title':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_title' at utf8.c:1524:12:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_title':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_fold' at utf8.c:1565:12:
+utf8.c:157:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  157 |         *d++ = (U8)(((uv >> 30) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_fold':
+utf8.c:1404:8: note: at offset 7 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_fold' at utf8.c:1565:12:
+utf8.c:158:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  158 |         *d++ = (U8)(((uv >> 24) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_fold':
+utf8.c:1404:8: note: at offset 8 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_fold' at utf8.c:1565:12:
+utf8.c:159:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  159 |         *d++ = (U8)(((uv >> 18) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_fold':
+utf8.c:1404:8: note: at offset 9 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_fold' at utf8.c:1565:12:
+utf8.c:160:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  160 |         *d++ = (U8)(((uv >> 12) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_fold':
+utf8.c:1404:8: note: at offset 10 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_fold' at utf8.c:1565:12:
+utf8.c:161:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  161 |         *d++ = (U8)(((uv >>  6) & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_fold':
+utf8.c:1404:8: note: at offset 11 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+In function 'Perl_uvuni_to_utf8_flags',
+    inlined from 'Perl_uvuni_to_utf8' at utf8.c:172:12,
+    inlined from 'Perl_to_utf8_case' at utf8.c:1412:5,
+    inlined from 'Perl_to_utf8_fold' at utf8.c:1565:12:
+utf8.c:162:14: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  162 |         *d++ = (U8)(( uv        & 0x3f) | 0x80);
+      |         ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+utf8.c: In function 'Perl_to_utf8_fold':
+utf8.c:1404:8: note: at offset 12 into destination object 'tmpbuf' of size 7
+ 1404 |     U8 tmpbuf[UTF8_MAXBYTES_CASE+1];
+      |        ^~~~~~
+aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline       av.o deb.o doio.o doop.o dump.o globals.o gv.o hv.o locale.o mg.o numeric.o op.o pad.o perl.o perlapi.o perlio.o perlmain.o perly.o pp.o pp_ctl.o pp_hot.o pp_pack.o pp_sort.o pp_sys.o regcomp.o regexec.o run.o scope.o sv.o taint.o toke.o universal.o utf8.o util.o xsutils.o Base64.o Cwd.o Dumper.o HiRes.o IO.o Peek.o attrs.o poll.o stdio.o DynaLoader.o MD5.o Storable.o Parser.o specrand.o Hostname.o Opcode.o             -lm        -o perlbench
+specmake -j16 options 2> options.err | tee options.out
+COMP: aarch64-none-linux-gnu-gcc -c -o options.o -DSPEC_CPU -DNDEBUG -DPERL_CORE   -Ofast -static -fsigned-char       -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline        <source>
+C: CC="aarch64-none-linux-gnu-gcc"
+C: COBJOPT="-c -o options"
+P: CPUFLAGS="-DSPEC_CPU -DNDEBUG"
+P: BENCH_FLAGS="-DPERL_CORE"
+P: BENCH_CFLAGS=""
+O: OPTIMIZE=""
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY="-DSPEC_CPU_LINUX_X64 -fgnu89-inline"
+O: EXTRA_CFLAGS=""
+O: EXTRA_OPTIMIZE=""
+O: EXTRA_COPTIMIZE=""
+P: EXTRA_PORTABILITY=""
+P: EXTRA_CPORTABILITY=""
+LINK: aarch64-none-linux-gnu-gcc   -Ofast -static -fsigned-char  -DSPEC_CPU_LP64 -DSPEC_CPU_LINUX_X64 -fgnu89-inline       <objects>   -lm        -o options
+C: LD="aarch64-none-linux-gnu-gcc"
+O: COPTIMIZE="-Ofast -static -fsigned-char"
+P: PORTABILITY="-DSPEC_CPU_LP64"
+P: CPORTABILITY="-DSPEC_CPU_LINUX_X64 -fgnu89-inline"
+C: MATH_LIBS="-lm"
+C: LDOUT="-o options"
+
+Build successes: 400.perlbench(base)
+
+Setting Up Run Directories
+  Setting up 400.perlbench ref base aarch64.Ofast.tcgrs.20260320165734.jit default: created (run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000)
+Running Benchmarks
+  Running 400.perlbench ref base aarch64.Ofast.tcgrs.20260320165734.jit default
+/data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/bin/specinvoke -d /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/benchspec/CPU2006/400.perlbench/run/run_base_ref_aarch64.Ofast.tcgrs.20260320165734.jit.0000 -e speccmds.err -o speccmds.stdout -f speccmds.cmd -C
+
+400.perlbench: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+400.perlbench: copy 0 non-zero return code (exit code=0, signal=15)
+
+
+400.perlbench: copy 0 non-zero return code (exit code=0, signal=15)
+
+Invalid run; unable to continue.
+If you wish to ignore errors please use '-I' or ignore_errors
+
+The log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.688.log
+The debug log for this run is in /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.688.log.debug
+
+*
+* Temporary files were NOT deleted; keeping temporaries such as
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/result/CPU2006.688.log.debug and
+* /data/Sync/all/projects/2026-02-11-cc-work/2025-08-13-cogbt/cpu2006v11_run_x64_Ofast_ld64/tmp/CPU2006.688
+* (These may be large!)
+*
+runspec finished at Fri Mar 20 17:47:08 2026; 2975 total seconds elapsed
